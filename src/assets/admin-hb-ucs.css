@@ -1,0 +1,40 @@
+/* Scoped admin UI polish for HB UCS pages only */
+
+/* Body classes are generated from the menu slugs. Keep selectors narrow to avoid bleeding into other admin screens. */
+body.toplevel_page_hb-ucs .wrap,
+body[class*='hb-ucs_page_'] .wrap {
+  max-width: 1200px;
+}
+
+body.toplevel_page_hb-ucs .widefat td,
+body[class*='hb-ucs_page_'] .widefat td {
+  vertical-align: top;
+}
+
+body.toplevel_page_hb-ucs .form-table th,
+body[class*='hb-ucs_page_'] .form-table th {
+  width: 260px;
+}
+
+/* Make select2/selectWoo consistent width and avoid tiny artifacts */
+body.toplevel_page_hb-ucs .select2-container,
+body[class*='hb-ucs_page_'] .select2-container {
+  min-width: 320px;
+}
+
+body.toplevel_page_hb-ucs .select2-container--default .select2-selection--multiple,
+body[class*='hb-ucs_page_'] .select2-container--default .select2-selection--multiple {
+  min-height: 34px;
+}
+
+/* Ensure native multiple selects look sane if SelectWoo fails */
+body.toplevel_page_hb-ucs select[multiple],
+body[class*='hb-ucs_page_'] select[multiple] {
+  min-height: 120px;
+}
+
+/* Small spacing tweaks */
+body.toplevel_page_hb-ucs .description,
+body[class*='hb-ucs_page_'] .description {
+  margin-top: 4px;
+}
