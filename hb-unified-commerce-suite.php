@@ -31,6 +31,7 @@ register_activation_hook(__FILE__, function () {
             'qls'           => true,
             'b2b'           => false,
             'roles'         => false,
+            'subscriptions' => false,
         ],
     ];
     $opt = get_option('hb_ucs_settings', []);

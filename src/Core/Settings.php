@@ -13,6 +13,7 @@ class Settings {
     const OPT_QLS = 'hb_ucs_qls';           // QLS specifieke instellingen
     const OPT_INVOICE_EMAIL = 'hb_ucs_invoice_email_settings'; // Invoice e-mail module instellingen
     const OPT_CUSTOMER_ORDER_NOTE = 'hb_ucs_customer_order_note_settings'; // Klantnotitie module instellingen
+    const OPT_SUBSCRIPTIONS = 'hb_ucs_subscriptions_settings'; // Subscriptions module instellingen
     const LEGACY_QLS = 'qls_exclude_settings'; // oude plugin optie (migratie)
 
     public function init(): void {
@@ -35,6 +36,7 @@ class Settings {
         add_action('admin_post_hb_ucs_qls_recalc', [$this, 'handle_recalc_qls']);
         add_action('admin_post_hb_ucs_save_invoice_email', [$this, 'handle_save_invoice_email']);
         add_action('admin_post_hb_ucs_save_customer_order_note', [$this, 'handle_save_customer_order_note']);
+        add_action('admin_post_hb_ucs_save_subscriptions', [$this, 'handle_save_subscriptions']);
 
         // Zorg voor QLS defaults bij eerste run
         add_option(self::OPT_QLS, $this->defaults_qls());
@@ -44,6 +46,9 @@ class Settings {
 
         // Defaults voor Klantnotitie module settings
         add_option(self::OPT_CUSTOMER_ORDER_NOTE, $this->defaults_customer_order_note());
+
+        // Defaults voor Subscriptions module settings
+        add_option(self::OPT_SUBSCRIPTIONS, $this->defaults_subscriptions());
     }
 
     public function enqueue_admin_assets(string $hook): void {
@@ -120,6 +125,7 @@ class Settings {
                 'b2b'           => 0,
                 'roles'         => 0,
                 'customer_order_note' => 0,
+                'subscriptions' => 0,
             ],
         ];
     }
@@ -145,6 +151,44 @@ class Settings {
     private function defaults_customer_order_note(): array {
         return [
             'delete_data_on_uninstall' => 0,
+        ];
+    }
+
+    private function defaults_subscriptions(): array {
+        return [
+            // Engine:
+            // - manual: geen dependency op WooCommerce Subscriptions; klant rekent elke periode opnieuw af.
+            // - wcs: gebruikt WooCommerce Subscriptions (optioneel) voor automatische renewals.
+            'engine' => 'manual',
+            'recurring_enabled' => 0,
+            'recurring_webhook_token' => '',
+            'delete_data_on_uninstall' => 0,
+            'frequencies' => [
+                '1w' => [
+                    'enabled' => 1,
+                    'label'   => __('Elke week', 'hb-ucs'),
+                    'interval'=> 1,
+                    'period'  => 'week',
+                ],
+                '2w' => [
+                    'enabled' => 1,
+                    'label'   => __('Elke 2 weken', 'hb-ucs'),
+                    'interval'=> 2,
+                    'period'  => 'week',
+                ],
+                '3w' => [
+                    'enabled' => 1,
+                    'label'   => __('Elke 3 weken', 'hb-ucs'),
+                    'interval'=> 3,
+                    'period'  => 'week',
+                ],
+                '4w' => [
+                    'enabled' => 1,
+                    'label'   => __('Elke 4 weken', 'hb-ucs'),
+                    'interval'=> 4,
+                    'period'  => 'week',
+                ],
+            ],
         ];
     }
 
@@ -232,6 +276,15 @@ class Settings {
 
         add_submenu_page(
             'hb-ucs',
+            __('Abonnementen', 'hb-ucs'),
+            __('Abonnementen', 'hb-ucs'),
+            'manage_options',
+            'hb-ucs-subscriptions',
+            [$this, 'render_subscriptions']
+        );
+
+        add_submenu_page(
+            'hb-ucs',
             __('B2B klanten', 'hb-ucs'),
             __('B2B', 'hb-ucs'),
             'manage_options',
@@ -308,6 +361,14 @@ class Settings {
             echo '<label><input type="checkbox" name="'.esc_attr(self::OPT).'[modules][customer_order_note]" value="1" '.$checked.'/> '.esc_html__('Activeren', 'hb-ucs').'</label>';
             echo '<p class="description">'.esc_html__('Voegt een interne klantnotitie toe op klantniveau en kopieert deze als snapshot naar nieuwe orders voor paklijsten.', 'hb-ucs').'</p>';
         }, 'hb-ucs', 'hb_ucs_modules');
+
+        add_settings_field('subscriptions', __('Abonnementen', 'hb-ucs'), function () {
+            $opt = get_option(self::OPT, $this->defaults_main());
+            $mods = $opt['modules'] ?? [];
+            $checked = !empty($mods['subscriptions']) ? 'checked' : '';
+            echo '<label><input type="checkbox" name="'.esc_attr(self::OPT).'[modules][subscriptions]" value="1" '.$checked.'/> '.esc_html__('Activeren', 'hb-ucs').'</label>';
+            echo '<p class="description">'.esc_html__('Maak van reguliere producten optioneel een abonnement (1–4 weken).', 'hb-ucs').'</p>';
+        }, 'hb-ucs', 'hb_ucs_modules');
     }
 
     public function render(): void {
@@ -373,6 +434,32 @@ class Settings {
             echo '<div class="notice notice-success is-dismissible"><p>';
             echo esc_html__('Instellingen opgeslagen.', 'hb-ucs');
             echo '</p></div>';
+        }
+
+        if (!empty($_GET['hb_ucs_subs_ran'])) {
+            echo '<div class="notice notice-info is-dismissible"><p>';
+            echo esc_html__('HB UCS: renewal job handmatig uitgevoerd. Controleer WooCommerce logs/abonnementen voor resultaat.', 'hb-ucs');
+            echo '</p></div>';
+        }
+
+        if (!empty($_GET['hb_ucs_subs_demo'])) {
+            $flag = sanitize_key((string) $_GET['hb_ucs_subs_demo']);
+            if ($flag === 'created' && !empty($_GET['sub_id']) && is_numeric($_GET['sub_id'])) {
+                $subId = (int) $_GET['sub_id'];
+                $editUrl = admin_url('post.php?post=' . $subId . '&action=edit');
+                echo '<div class="notice notice-success is-dismissible"><p>';
+                echo esc_html__('Demo abonnement aangemaakt.', 'hb-ucs') . ' ';
+                echo '<a href="' . esc_url($editUrl) . '">' . esc_html__('Open abonnement', 'hb-ucs') . '</a>';
+                echo '</p></div>';
+            } elseif ($flag === 'not_found') {
+                echo '<div class="notice notice-warning is-dismissible"><p>';
+                echo esc_html__('Geen recente bestelling gevonden met een abonnement-regel. Plaats eerst een testbestelling met een abonnement-optie, en probeer opnieuw.', 'hb-ucs');
+                echo '</p></div>';
+            } elseif ($flag === 'failed') {
+                echo '<div class="notice notice-error is-dismissible"><p>';
+                echo esc_html__('Demo abonnement aanmaken is mislukt.', 'hb-ucs');
+                echo '</p></div>';
+            }
         }
 
         if ($enabled) {
@@ -483,6 +570,188 @@ class Settings {
         echo '</label>';
         echo '</td>';
         echo '</tr>';
+        echo '</tbody></table>';
+
+        submit_button(__('Instellingen opslaan', 'hb-ucs'));
+        echo '</form>';
+
+        echo '</div>';
+    }
+
+    public function render_subscriptions(): void {
+        if (!class_exists('WooCommerce')) {
+            echo '<div class="wrap">';
+            echo '<h1>' . esc_html__('Abonnementen', 'hb-ucs') . '</h1>';
+            echo '<div class="notice notice-error"><p>' . esc_html__('WooCommerce is vereist voor deze module.', 'hb-ucs') . '</p></div>';
+            echo '</div>';
+            return;
+        }
+
+        $main = get_option(self::OPT, $this->defaults_main());
+        $mods = $main['modules'] ?? [];
+        $enabled = !empty($mods['subscriptions']);
+        $opt = get_option(self::OPT_SUBSCRIPTIONS, $this->defaults_subscriptions());
+        $freqs = is_array($opt['frequencies'] ?? null) ? (array) $opt['frequencies'] : [];
+        $recurringEnabled = !empty($opt['recurring_enabled']);
+        $webhookToken = isset($opt['recurring_webhook_token']) ? (string) $opt['recurring_webhook_token'] : '';
+        if ($webhookToken === '') {
+            // Only for display; actual generation happens on save.
+            $webhookToken = '—';
+        }
+
+        echo '<div class="wrap">';
+        echo '<h1>' . esc_html__('Abonnementen', 'hb-ucs') . '</h1>';
+
+        if (!empty($_GET['updated'])) {
+            echo '<div class="notice notice-success is-dismissible"><p>';
+            echo esc_html__('Instellingen opgeslagen.', 'hb-ucs');
+            echo '</p></div>';
+        }
+
+        if ($enabled) {
+            echo '<div class="notice notice-success"><p>' . esc_html__('Module status: ingeschakeld.', 'hb-ucs') . '</p></div>';
+        } else {
+            $modulesUrl = add_query_arg(['page' => 'hb-ucs'], admin_url('admin.php'));
+            echo '<div class="notice notice-warning"><p>';
+            echo esc_html__('Module status: uitgeschakeld.', 'hb-ucs') . ' ';
+            echo '<a href="' . esc_url($modulesUrl) . '">' . esc_html__('Schakel in via Modules.', 'hb-ucs') . '</a>';
+            echo '</p></div>';
+        }
+
+        $engine = isset($opt['engine']) ? sanitize_key((string) $opt['engine']) : 'manual';
+        if ($engine !== 'manual' && $engine !== 'wcs') {
+            $engine = 'manual';
+        }
+        if ($engine === 'wcs' && !term_exists('subscription', 'product_type')) {
+            echo '<div class="notice notice-warning"><p>';
+            echo esc_html__('WooCommerce Subscriptions lijkt niet actief. Kies "Handmatig" of installeer/activeer WooCommerce Subscriptions.', 'hb-ucs');
+            echo '</p></div>';
+        }
+
+        // Mollie must be able to reach the webhook URL from the outside.
+        // On localhost/private IP this will fail with a 422 (unreachable webhookUrl).
+        if ($recurringEnabled) {
+            $home = (string) home_url('/');
+            $host = (string) (wp_parse_url($home, PHP_URL_HOST) ?? '');
+            $host = strtolower(trim($host));
+
+            $endsWithLocal = (strlen($host) >= 6 && substr($host, -6) === '.local');
+            $isLocalHost = ($host === 'localhost' || $host === '127.0.0.1' || $host === '::1' || $endsWithLocal);
+
+            $isPrivateIp = false;
+            if (!$isLocalHost && filter_var($host, FILTER_VALIDATE_IP)) {
+                // Detect RFC1918 private IPv4 ranges.
+                if (strpos($host, '10.') === 0 || strpos($host, '192.168.') === 0) {
+                    $isPrivateIp = true;
+                } elseif (preg_match('/^172\.(1[6-9]|2\d|3[0-1])\./', $host)) {
+                    $isPrivateIp = true;
+                }
+            }
+
+            if ($isLocalHost || $isPrivateIp) {
+                echo '<div class="notice notice-error"><p><strong>' . esc_html__('Let op: Mollie webhook onbereikbaar', 'hb-ucs') . '</strong><br/>';
+                echo esc_html__('Je site draait op een lokale/private URL. Mollie kan de webhookUrl niet bereiken en zal de eerste betaling weigeren (422). Test recurring op een publiek bereikbare staging/live URL (HTTPS) of gebruik een tunnel (ngrok/Cloudflare Tunnel).', 'hb-ucs');
+                echo '</p></div>';
+            }
+        }
+
+        echo '<p>' . esc_html__('Met deze module kun je op hetzelfde product een abonnement-keuze aanbieden (naast eenmalige aankoop).', 'hb-ucs') . '</p>';
+
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        echo '<input type="hidden" name="action" value="hb_ucs_save_subscriptions" />';
+        wp_nonce_field('hb_ucs_save_subscriptions', 'hb_ucs_save_subscriptions_nonce');
+
+        $del = !empty($opt['delete_data_on_uninstall']) ? 'checked' : '';
+
+        echo '<h2>' . esc_html__('Afrekenen & verlengen', 'hb-ucs') . '</h2>';
+        echo '<table class="form-table" role="presentation"><tbody>';
+        echo '<tr>';
+        echo '<th scope="row"><label for="hb_ucs_subscriptions_engine">' . esc_html__('Engine', 'hb-ucs') . '</label></th>';
+        echo '<td>';
+        echo '<select id="hb_ucs_subscriptions_engine" name="hb_ucs_subscriptions[engine]">';
+        echo '<option value="manual" ' . selected($engine, 'manual', false) . '>' . esc_html__('Handmatig (geen dependency)', 'hb-ucs') . '</option>';
+        $wcsDisabled = term_exists('subscription', 'product_type') ? '' : 'disabled';
+        echo '<option value="wcs" ' . selected($engine, 'wcs', false) . ' ' . $wcsDisabled . '>' . esc_html__('WooCommerce Subscriptions (automatisch, vereist plugin)', 'hb-ucs') . '</option>';
+        echo '</select>';
+        echo '<p class="description">' . esc_html__('Handmatig: geen dependency op WooCommerce Subscriptions. Je kunt optioneel automatische verlengingen via Mollie inschakelen (zie hieronder). WCS: gebruikt WooCommerce Subscriptions voor automatische renewals (indien geïnstalleerd).', 'hb-ucs') . '</p>';
+        echo '</td>';
+        echo '</tr>';
+        echo '</tbody></table>';
+
+        echo '<h2>' . esc_html__('Automatische verlengingen (Mollie)', 'hb-ucs') . '</h2>';
+        echo '<table class="form-table" role="presentation"><tbody>';
+        echo '<tr>';
+        echo '<th scope="row">' . esc_html__('Inschakelen', 'hb-ucs') . '</th>';
+        echo '<td>';
+        echo '<label><input type="checkbox" name="hb_ucs_subscriptions[recurring_enabled]" value="1" ' . checked($recurringEnabled, true, false) . ' /> ';
+        echo esc_html__('Start automatische verlengingen via Mollie (SEPA incasso).', 'hb-ucs');
+        echo '</label>';
+        echo '<p class="description">' . esc_html__('Eerste betaling gebeurt via iDEAL/creditcard; daarna worden verlengingen via SEPA Direct Debit geprobeerd. Hiervoor moet Mollie een customer/mandate hebben aangemaakt op de eerste betaling.', 'hb-ucs') . '</p>';
+        echo '</td>';
+        echo '</tr>';
+
+        echo '<tr>';
+        echo '<th scope="row">' . esc_html__('Webhook URL', 'hb-ucs') . '</th>';
+        echo '<td>';
+        echo '<input type="text" class="large-text" readonly value="' . esc_attr(add_query_arg([
+            'hb_ucs_mollie_webhook' => '1',
+            'token' => $webhookToken,
+        ], home_url('/'))) . '" />';
+        echo '<p class="description">' . esc_html__('Deze URL wordt automatisch als webhookUrl meegegeven bij elke recurring betaling. Token wordt automatisch ingevuld na opslaan.', 'hb-ucs') . '</p>';
+        echo '</td>';
+        echo '</tr>';
+
+        echo '<tr>';
+        echo '<th scope="row">' . esc_html__('Test', 'hb-ucs') . '</th>';
+        echo '<td>';
+        $runUrl = wp_nonce_url(admin_url('admin-post.php?action=hb_ucs_subs_run_now'), 'hb_ucs_subs_run_now', 'hb_ucs_subs_run_now_nonce');
+        echo '<a class="button" href="' . esc_url($runUrl) . '">' . esc_html__('Renewals nu uitvoeren', 'hb-ucs') . '</a>';
+        echo '&nbsp;';
+        $demoUrl = wp_nonce_url(admin_url('admin-post.php?action=hb_ucs_subs_create_demo'), 'hb_ucs_subs_create_demo', 'hb_ucs_subs_create_demo_nonce');
+        echo '<a class="button" href="' . esc_url($demoUrl) . '">' . esc_html__('Maak demo abonnement', 'hb-ucs') . '</a>';
+        echo '<p class="description">' . esc_html__('Handig om te testen zonder te wachten op WP-Cron. Dit maakt alleen renewal orders/betalingen aan voor abonnementen die “due” zijn.', 'hb-ucs') . '</p>';
+        echo '<p class="description">' . esc_html__('“Maak demo abonnement” maakt een abonnement-record aan op basis van de meest recente bestelling met een abonnement-regel, zodat je de backend-weergave kunt bekijken.', 'hb-ucs') . '</p>';
+        echo '</td>';
+        echo '</tr>';
+        echo '</tbody></table>';
+
+        echo '<h2>' . esc_html__('Frequenties', 'hb-ucs') . '</h2>';
+        echo '<p class="description">' . esc_html__('Beheer welke frequenties beschikbaar zijn op productpagina’s. Per product kun je daarna de prijs per frequentie instellen.', 'hb-ucs') . '</p>';
+        echo '<table class="form-table" role="presentation"><tbody>';
+
+        foreach (['1w' => 1, '2w' => 2, '3w' => 3, '4w' => 4] as $key => $interval) {
+            $row = is_array($freqs[$key] ?? null) ? (array) $freqs[$key] : [];
+            $rowEnabled = !empty($row['enabled']);
+            $rowLabel = (string) ($row['label'] ?? '');
+            if ($rowLabel === '') {
+                $rowLabel = sprintf(__('Elke %d week/weken', 'hb-ucs'), (int) $interval);
+            }
+
+            echo '<tr>';
+            echo '<th scope="row">' . esc_html(sprintf(__('Frequentie %s', 'hb-ucs'), $key)) . '</th>';
+            echo '<td>';
+            echo '<label style="display:inline-block;margin-right:16px;">';
+            echo '<input type="checkbox" name="hb_ucs_subscriptions[frequencies][' . esc_attr($key) . '][enabled]" value="1" ' . checked($rowEnabled, true, false) . ' /> ';
+            echo esc_html__('Ingeschakeld', 'hb-ucs');
+            echo '</label>';
+            echo '<label>';
+            echo esc_html__('Label', 'hb-ucs') . ': ';
+            echo '<input type="text" class="regular-text" name="hb_ucs_subscriptions[frequencies][' . esc_attr($key) . '][label]" value="' . esc_attr($rowLabel) . '" />';
+            echo '</label>';
+            echo '<p class="description">' . esc_html(sprintf(__('Interval: %d week/weken (vast).', 'hb-ucs'), (int) $interval)) . '</p>';
+            echo '</td>';
+            echo '</tr>';
+        }
+
+        echo '<tr>';
+        echo '<th scope="row">' . esc_html__('Data verwijderen bij uninstall', 'hb-ucs') . '</th>';
+        echo '<td>';
+        echo '<label><input type="checkbox" name="hb_ucs_subscriptions[delete_data_on_uninstall]" value="1" ' . $del . ' /> ';
+        echo esc_html__('Verwijder module-instellingen en gegenereerde subscription-producten bij uninstall.', 'hb-ucs');
+        echo '</label>';
+        echo '</td>';
+        echo '</tr>';
+
         echo '</tbody></table>';
 
         submit_button(__('Instellingen opslaan', 'hb-ucs'));
@@ -778,6 +1047,57 @@ class Settings {
         update_option(self::OPT_CUSTOMER_ORDER_NOTE, $clean, false);
 
         $redirect = add_query_arg(['page' => 'hb-ucs-customer-order-note', 'updated' => 'true'], admin_url('admin.php'));
+        wp_safe_redirect($redirect);
+        exit;
+    }
+
+    public function handle_save_subscriptions(): void {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Onvoldoende rechten.', 'hb-ucs'));
+        }
+        check_admin_referer('hb_ucs_save_subscriptions', 'hb_ucs_save_subscriptions_nonce');
+
+        $raw = isset($_POST['hb_ucs_subscriptions']) ? (array) $_POST['hb_ucs_subscriptions'] : [];
+
+        $defaults = $this->defaults_subscriptions();
+        $defaultFreqs = (array) ($defaults['frequencies'] ?? []);
+
+        $cleanFreqs = [];
+        foreach (['1w' => 1, '2w' => 2, '3w' => 3, '4w' => 4] as $key => $interval) {
+            $incoming = isset($raw['frequencies'][$key]) && is_array($raw['frequencies'][$key]) ? (array) $raw['frequencies'][$key] : [];
+            $label = isset($incoming['label']) ? (string) wp_unslash($incoming['label']) : (string) (($defaultFreqs[$key]['label'] ?? ''));
+            $label = trim($label);
+            if ($label === '') {
+                $label = sprintf(__('Elke %d week/weken', 'hb-ucs'), (int) $interval);
+            }
+
+            $cleanFreqs[$key] = [
+                'enabled'  => empty($incoming['enabled']) ? 0 : 1,
+                'label'    => $label,
+                'interval' => (int) $interval,
+                'period'   => 'week',
+            ];
+        }
+
+        $incomingToken = isset($raw['recurring_webhook_token']) ? (string) wp_unslash($raw['recurring_webhook_token']) : '';
+        $incomingToken = trim($incomingToken);
+        $existing = get_option(self::OPT_SUBSCRIPTIONS, $this->defaults_subscriptions());
+        $existingToken = is_array($existing) && isset($existing['recurring_webhook_token']) ? (string) $existing['recurring_webhook_token'] : '';
+        $token = $existingToken !== '' ? $existingToken : $incomingToken;
+        if ($token === '') {
+            $token = wp_generate_password(32, false, false);
+        }
+
+        $clean = [
+            'engine' => (isset($raw['engine']) && sanitize_key((string) $raw['engine']) === 'wcs') ? 'wcs' : 'manual',
+            'recurring_enabled' => empty($raw['recurring_enabled']) ? 0 : 1,
+            'recurring_webhook_token' => $token,
+            'delete_data_on_uninstall' => empty($raw['delete_data_on_uninstall']) ? 0 : 1,
+            'frequencies' => $cleanFreqs,
+        ];
+        update_option(self::OPT_SUBSCRIPTIONS, $clean, false);
+
+        $redirect = add_query_arg(['page' => 'hb-ucs-subscriptions', 'updated' => 'true'], admin_url('admin.php'));
         wp_safe_redirect($redirect);
         exit;
     }

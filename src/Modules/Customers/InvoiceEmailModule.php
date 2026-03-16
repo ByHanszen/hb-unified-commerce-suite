@@ -295,6 +295,8 @@ class InvoiceEmailModule {
             'customer_reset_password',
             'customer_new_account',
             'customer_invoice',
+            'customer_renewal_invoice',
+            'customer_on_hold_renewal_order',
             'customer_completed_renewal_order',
             'customer_processing_renewal_order',
         ];
@@ -320,7 +322,7 @@ class InvoiceEmailModule {
         $customer_email_ids = [
             'customer_completed_order','customer_processing_order','customer_on_hold_order',
             'customer_refunded_order','customer_note','customer_reset_password','customer_new_account',
-            'customer_invoice','customer_completed_renewal_order','customer_processing_renewal_order'
+            'customer_invoice','customer_renewal_invoice','customer_on_hold_renewal_order','customer_completed_renewal_order','customer_processing_renewal_order'
         ];
         if (!in_array($email_id, $customer_email_ids, true)) return $attachments;
 

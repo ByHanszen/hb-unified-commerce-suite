@@ -1,0 +1,1552 @@
+.hb-ucs-account-shell {
+  --hb-ucs-shell-bg: transparent;
+  --hb-ucs-card-bg: var(--sections-background-color, transparent);
+  --hb-ucs-card-bg-soft: var(--sections-background-color, transparent);
+  --hb-ucs-card-border: var(--sections-border-color, transparent);
+  --hb-ucs-text: var(--general-text-color, inherit);
+  --hb-ucs-text-muted: var(--general-text-color, inherit);
+  --hb-ucs-heading: var(--typography-section-titles-color, var(--general-text-color, inherit));
+  --hb-ucs-accent: var(--links-normal-color, currentColor);
+  --hb-ucs-accent-strong: var(--links-hover-color, currentColor);
+  --hb-ucs-accent-contrast: var(--forms-buttons-normal-text-color, inherit);
+  --hb-ucs-success-bg: var(--sections-background-color, transparent);
+  --hb-ucs-success-text: var(--forms-buttons-normal-text-color, var(--general-text-color, inherit));
+  --hb-ucs-warning-bg: var(--sections-background-color, transparent);
+  --hb-ucs-warning-text: var(--forms-buttons-normal-text-color, var(--general-text-color, inherit));
+  --hb-ucs-danger-bg: var(--sections-background-color, transparent);
+  --hb-ucs-danger-text: var(--forms-buttons-normal-text-color, var(--general-text-color, inherit));
+  --hb-ucs-neutral-bg: var(--sections-background-color, transparent);
+  --hb-ucs-neutral-text: var(--forms-buttons-normal-text-color, var(--general-text-color, inherit));
+  --hb-ucs-shadow: none;
+  --hb-ucs-radius-xl: 32px;
+  --hb-ucs-radius-lg: var(--sections-border-radius, 24px);
+  --hb-ucs-radius-md: var(--sections-border-radius, 18px);
+  --hb-ucs-radius-sm: 12px;
+  --hb-ucs-section-padding: var(--sections-padding, 24px);
+  --hb-ucs-button-radius: var(--forms-buttons-border-radius, 999px);
+  --hb-ucs-button-padding: var(--forms-buttons-padding, 12px 22px);
+  --hb-ucs-button-text: var(--forms-buttons-normal-text-color, inherit);
+  --hb-ucs-button-hover-text: var(--forms-buttons-hover-text-color, var(--forms-buttons-normal-text-color, inherit));
+  --hb-ucs-badge-active-color: var(--links-normal-color, var(--hb-ucs-button-text));
+  --hb-ucs-badge-paused-color: var(--links-hover-color, var(--hb-ucs-button-hover-text));
+  --hb-ucs-badge-cancelled-color: var(--forms-buttons-hover-text-color, var(--hb-ucs-button-hover-text));
+  --hb-ucs-badge-neutral-color: var(--general-text-color, var(--hb-ucs-text));
+  --hb-ucs-info-color: #1e85be;
+  --hb-ucs-success-color: #8fae1b;
+  --hb-ucs-error-color: #b81c23;
+  --hb-ucs-gap-lg: 32px;
+  --hb-ucs-gap-md: 24px;
+  --hb-ucs-gap-sm: 16px;
+  --hb-ucs-gap-xs: 12px;
+  background: var(--hb-ucs-shell-bg);
+  color: var(--hb-ucs-text);
+}
+
+.hb-ucs-account-shell,
+.hb-ucs-account-shell * {
+  box-sizing: border-box;
+}
+
+.hb-ucs-account-shell a {
+  color: inherit;
+}
+
+.hb-ucs-account-hero,
+.hb-ucs-panel,
+.hb-ucs-subscription-card,
+.hb-ucs-empty-state,
+.hb-ucs-subscription-item-card {
+  background: var(--hb-ucs-card-bg);
+  border-color: var(--hb-ucs-card-border);
+  border-style: var(--sections-border-type, solid);
+  border-width: var(--sections-border-top-width, 1px) var(--sections-border-right-width, 1px) var(--sections-border-bottom-width, 1px) var(--sections-border-left-width, 1px);
+  border-radius: var(--hb-ucs-radius-lg);
+  box-shadow: var(--hb-ucs-shadow);
+}
+
+.hb-ucs-account-shell--list,
+.hb-ucs-account-shell--detail {
+  display: grid;
+  gap: var(--hb-ucs-gap-lg);
+}
+
+.hb-ucs-section-nav,
+.hb-ucs-action-row__main,
+.hb-ucs-action-row__summary,
+.hb-ucs-action-row__buttons,
+.hb-ucs-subscription-item-card__controls,
+.hb-ucs-address-grid,
+.hb-ucs-compact-sections {
+  display: flex;
+  gap: 12px;
+}
+
+.hb-ucs-compact-sections {
+  display: grid;
+  gap: var(--hb-ucs-gap-md);
+}
+
+.hb-ucs-account-hero {
+  padding: var(--hb-ucs-section-padding);
+  background: var(--hb-ucs-card-bg);
+}
+
+.hb-ucs-account-hero__heading {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.hb-ucs-account-eyebrow {
+  display: inline-flex;
+  margin-bottom: 8px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--hb-ucs-text-muted);
+}
+
+.hb-ucs-account-title,
+.hb-ucs-subscription-card h3,
+.hb-ucs-panel__header h3,
+.hb-ucs-subscription-item-card h4,
+.hb-ucs-action-card__header h4,
+.hb-ucs-address-block h4 {
+  margin: 0;
+  color: inherit;
+}
+
+.hb-ucs-account-title {
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.1;
+}
+
+.hb-ucs-account-intro,
+.hb-ucs-panel__header p,
+.hb-ucs-action-card__header p,
+.hb-ucs-subscription-item-card__heading p,
+.hb-ucs-subscription-item-card__help,
+.hb-ucs-empty-state p {
+  margin: 0;
+  color: inherit;
+  opacity: 0.8;
+}
+
+.hb-ucs-account-backlink {
+  margin: 0;
+}
+
+.hb-ucs-account-backlink a {
+  text-decoration: none;
+  font-weight: 600;
+  color: inherit;
+}
+
+.hb-ucs-section-nav {
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.hb-ucs-section-nav__button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 44px;
+  padding: var(--hb-ucs-button-padding);
+  border-radius: var(--hb-ucs-button-radius);
+  color: var(--hb-ucs-button-text);
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  white-space: normal;
+  flex: 1 1 180px;
+}
+
+.hb-ucs-section-nav__button.is-active {
+  color: var(--hb-ucs-button-hover-text);
+}
+
+.hb-ucs-account-shell .hb-ucs-section-nav__button,
+.hb-ucs-account-shell .button.hb-ucs-section-nav__button {
+  border-color: var(--forms-buttons-border-color, var(--hb-ucs-card-border));
+  border-style: var(--forms-buttons-border-type, var(--sections-border-type, solid));
+  border-width: 2px;
+}
+
+.hb-ucs-account-shell .hb-ucs-section-nav__button:hover,
+.hb-ucs-account-shell .button.hb-ucs-section-nav__button:hover,
+.hb-ucs-account-shell .hb-ucs-section-nav__button:focus,
+.hb-ucs-account-shell .button.hb-ucs-section-nav__button:focus {
+  border-color: var(--forms-buttons-hover-border-color, var(--forms-buttons-border-color, var(--hb-ucs-card-border)));
+}
+
+.hb-ucs-account-shell .hb-ucs-section-nav__button.is-active,
+.hb-ucs-account-shell .button.hb-ucs-section-nav__button.is-active {
+  border-color: var(--forms-buttons-hover-border-color, var(--forms-buttons-border-color, var(--hb-ucs-card-border)));
+}
+
+.hb-ucs-accordion-panel[hidden] {
+  display: none;
+}
+
+.hb-ucs-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 8px 16px;
+  border-radius: var(--hb-ucs-button-radius);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  background: color-mix(in srgb, var(--sections-background-color, transparent) 82%, currentColor 18%);
+  color: var(--hb-ucs-badge-neutral-color);
+  border-color: currentColor;
+  border-style: var(--sections-border-type, solid);
+  border-width: var(--sections-border-top-width, 1px) var(--sections-border-right-width, 1px) var(--sections-border-bottom-width, 1px) var(--sections-border-left-width, 1px);
+}
+
+.hb-ucs-status-badge--active {
+  color: var(--hb-ucs-badge-active-color);
+  background: color-mix(in srgb, var(--sections-background-color, transparent) 78%, var(--hb-ucs-badge-active-color) 22%);
+}
+
+.hb-ucs-status-badge--paused {
+  color: var(--hb-ucs-badge-paused-color);
+  background: color-mix(in srgb, var(--sections-background-color, transparent) 78%, var(--hb-ucs-badge-paused-color) 22%);
+}
+
+.hb-ucs-status-badge--cancelled {
+  color: var(--hb-ucs-badge-cancelled-color);
+  background: color-mix(in srgb, var(--sections-background-color, transparent) 82%, var(--hb-ucs-badge-cancelled-color) 18%);
+}
+
+.hb-ucs-status-badge--neutral {
+  color: var(--hb-ucs-badge-neutral-color);
+  background: color-mix(in srgb, var(--sections-background-color, transparent) 88%, var(--hb-ucs-badge-neutral-color) 12%);
+}
+
+.hb-ucs-hero-meta,
+.hb-ucs-subscription-card__meta,
+.hb-ucs-info-list,
+.hb-ucs-field-grid,
+.hb-ucs-subscription-card-grid,
+.hb-ucs-action-grid,
+.hb-ucs-subscription-items-list {
+  display: grid;
+  gap: var(--hb-ucs-gap-sm);
+}
+
+.hb-ucs-hero-meta,
+.hb-ucs-subscription-card__meta {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-top: 24px;
+}
+
+.hb-ucs-hero-meta__item,
+.hb-ucs-subscription-card__meta-item,
+.hb-ucs-info-list__row,
+.hb-ucs-subscription-items-footer__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hb-ucs-hero-meta__item span,
+.hb-ucs-subscription-card__meta-item span,
+.hb-ucs-info-list__row span,
+.hb-ucs-subscription-items-footer__meta span,
+.hb-ucs-quantity-field span,
+.hb-ucs-subscription-card__label {
+  color: inherit;
+  opacity: 0.8;
+  font-size: 13px;
+}
+
+.hb-ucs-subscription-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.hb-ucs-subscription-card {
+  display: grid;
+  gap: 20px;
+  padding: var(--hb-ucs-section-padding);
+}
+
+.hb-ucs-subscription-card__header,
+.hb-ucs-subscription-card__footer,
+.hb-ucs-subscription-items-footer,
+.hb-ucs-subscription-item-card__top,
+.hb-ucs-product-picker-summary,
+.hb-ucs-related-order,
+.hb-ucs-action-card__header {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hb-ucs-subscription-card__header {
+  align-items: flex-start;
+}
+
+.hb-ucs-subscription-card__items {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.hb-ucs-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--hb-ucs-card-bg-soft);
+  color: inherit;
+  border: 1px solid var(--hb-ucs-card-border);
+  font-size: 13px;
+}
+
+.hb-ucs-chip--muted {
+  background: var(--hb-ucs-neutral-bg);
+}
+
+.hb-ucs-subscription-card__notice,
+.hb-ucs-inline-notice {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: var(--hb-ucs-radius-sm);
+  background: var(--hb-ucs-warning-bg);
+  color: inherit;
+  border: 1px solid var(--hb-ucs-card-border);
+}
+
+.hb-ucs-account-shell .woocommerce-info.hb-ucs-inline-notice,
+.hb-ucs-account-shell .woocommerce-info.hb-ucs-inline-help {
+  position: relative;
+  margin: 0;
+  padding: 1em 1.25em 1em 3.5em;
+  border: 0;
+  border-top: 3px solid #1e85be;
+  border-radius: 0;
+  background-color: #f6f5f8;
+  color: #515151;
+  list-style: none;
+  word-wrap: break-word;
+}
+
+.hb-ucs-account-shell .woocommerce-info.hb-ucs-inline-notice::before,
+.hb-ucs-account-shell .woocommerce-info.hb-ucs-inline-help::before {
+  content: '\e028';
+  font-family: WooCommerce;
+  display: inline-block;
+  position: absolute;
+  top: 1em;
+  inset-inline-start: 1.5em;
+  color: #1e85be;
+  line-height: 1;
+}
+
+.hb-ucs-empty-state {
+  padding: 36px;
+  text-align: center;
+}
+
+.hb-ucs-account-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(320px, 0.95fr);
+  gap: var(--hb-ucs-gap-lg);
+  align-items: start;
+}
+
+.hb-ucs-account-main,
+.hb-ucs-account-sidebar {
+  display: grid;
+  gap: var(--hb-ucs-gap-lg);
+}
+
+.hb-ucs-panel {
+  padding: var(--hb-ucs-section-padding);
+}
+
+.hb-ucs-panel__header {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 22px;
+}
+
+.hb-ucs-action-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.hb-ucs-action-list {
+  display: grid;
+  gap: 12px;
+}
+
+.hb-ucs-action-row {
+  display: grid;
+  gap: 12px;
+  padding: var(--hb-ucs-section-padding);
+  border-color: var(--hb-ucs-card-border);
+  border-style: var(--sections-border-type, solid);
+  border-width: var(--sections-border-top-width, 1px) var(--sections-border-right-width, 1px) var(--sections-border-bottom-width, 1px) var(--sections-border-left-width, 1px);
+  border-radius: var(--hb-ucs-radius-md);
+  background: var(--hb-ucs-card-bg-soft);
+}
+
+.hb-ucs-action-row--danger {
+  background: var(--hb-ucs-card-bg-soft);
+}
+
+.hb-ucs-action-row__main,
+.hb-ucs-action-row__summary,
+.hb-ucs-action-row__buttons {
+  align-items: center;
+}
+
+.hb-ucs-action-row__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+}
+
+.hb-ucs-action-row__summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.hb-ucs-action-row__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: #f6f5f8;
+  border: 1px solid #d9d5e0;
+  border-top: 3px solid var(--hb-ucs-info-color);
+  color: var(--hb-ucs-info-color);
+  font-size: 18px;
+  flex: 0 0 auto;
+}
+
+.hb-ucs-action-row--schedule .hb-ucs-action-row__icon {
+  border-top-color: var(--hb-ucs-info-color);
+  color: var(--hb-ucs-info-color);
+}
+
+.hb-ucs-action-row--pause .hb-ucs-action-row__icon {
+  border-top-color: var(--hb-ucs-success-color);
+  color: var(--hb-ucs-success-color);
+}
+
+.hb-ucs-action-row--danger .hb-ucs-action-row__icon {
+  border-top-color: var(--hb-ucs-error-color);
+  color: var(--hb-ucs-error-color);
+}
+
+.hb-ucs-action-row__icon:hover,
+.hb-ucs-action-row__icon:focus {
+  background: #f6f5f8;
+}
+
+.hb-ucs-action-row__copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hb-ucs-action-row__copy span {
+  color: inherit;
+  opacity: 0.8;
+  font-size: 13px;
+}
+
+.hb-ucs-action-row__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+}
+
+.hb-ucs-action-row__body {
+  display: grid;
+  gap: 16px;
+  padding-top: 4px;
+}
+
+.hb-ucs-action-row__footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.hb-ucs-icon-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  color: #1e85be;
+  background-color: #f6f5f8;
+  border: 1px solid #d9d5e0;
+  line-height: 1;
+  box-shadow: none;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hb-ucs-icon-button:hover,
+.hb-ucs-icon-button:focus {
+  color: #1e85be;
+  background-color: #f6f5f8;
+  border-color: #d9d5e0;
+}
+
+.hb-ucs-icon-button.is-active {
+  background-color: #ebe9ef;
+}
+
+.hb-ucs-toggle-button.is-active {
+  color: var(--hb-ucs-button-hover-text);
+}
+
+.hb-ucs-action-row__buttons .hb-ucs-toggle-button {
+  min-width: 78px;
+}
+
+.hb-ucs-inline-help {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: transparent;
+  color: inherit;
+  border: 1px solid var(--hb-ucs-card-border);
+  font-size: 14px;
+}
+
+.hb-ucs-inline-help[hidden] {
+  display: none;
+}
+
+.hb-ucs-inline-help--static {
+  background: #f6f5f8;
+}
+
+.hb-ucs-account-shell .hb-ucs-inline-help[hidden] {
+  display: none;
+}
+
+.hb-ucs-button--compact,
+.hb-ucs-account-shell .button.hb-ucs-button--compact {
+  min-height: 40px;
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
+.hb-ucs-action-card {
+  display: grid;
+  gap: 18px;
+  padding: var(--hb-ucs-section-padding);
+  border-color: var(--hb-ucs-card-border);
+  border-style: var(--sections-border-type, solid);
+  border-width: var(--sections-border-top-width, 1px) var(--sections-border-right-width, 1px) var(--sections-border-bottom-width, 1px) var(--sections-border-left-width, 1px);
+  border-radius: var(--hb-ucs-radius-md);
+  background: var(--hb-ucs-card-bg-soft);
+}
+
+.hb-ucs-action-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
+  background: transparent;
+  border: 1px solid var(--hb-ucs-card-border);
+  font-size: 22px;
+  flex: 0 0 auto;
+}
+
+.hb-ucs-action-card--danger {
+  background: var(--hb-ucs-card-bg-soft);
+}
+
+.hb-ucs-action-card--danger .hb-ucs-action-card__icon {
+  background: transparent;
+}
+
+.hb-ucs-field-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.hb-ucs-account-shell .form-row,
+.hb-ucs-account-shell p.form-row {
+  margin: 0;
+}
+
+.hb-ucs-account-shell label {
+  display: grid;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.hb-ucs-account-shell input[type='number'],
+.hb-ucs-account-shell input[type='search'],
+.hb-ucs-account-shell input[type='datetime-local'],
+.hb-ucs-account-shell input[type='date'],
+.hb-ucs-account-shell select,
+.hb-ucs-product-modal input[type='search'],
+.hb-ucs-product-modal select {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid var(--hb-ucs-card-border);
+  border-radius: 14px;
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+}
+
+.hb-ucs-account-shell input:focus,
+.hb-ucs-account-shell select:focus,
+.hb-ucs-product-modal input:focus,
+.hb-ucs-product-modal select:focus,
+.hb-ucs-product-modal__item:focus,
+.hb-ucs-button:focus {
+  outline: none;
+  border-color: var(--hb-ucs-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.hb-ucs-subscription-items-form {
+  display: grid;
+  gap: 24px;
+}
+
+.hb-ucs-subscription-items-list--compact {
+  gap: 12px;
+}
+
+.hb-ucs-subscription-item-card {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 20px;
+  padding: 20px;
+}
+
+.hb-ucs-subscription-item-card__media {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.hb-ucs-subscription-item-card__image-el {
+  width: 92px;
+  height: 92px;
+  border-radius: 20px;
+  object-fit: cover;
+  background: transparent;
+}
+
+.hb-ucs-subscription-item-card__content {
+  display: grid;
+  gap: 16px;
+}
+
+.hb-ucs-subscription-item-card--compact {
+  padding: var(--hb-ucs-section-padding);
+  border-radius: var(--hb-ucs-radius-md);
+}
+
+.hb-ucs-subscription-item-card__top {
+  align-items: flex-start;
+}
+
+.hb-ucs-subscription-item-card__top--compact {
+  gap: 14px;
+}
+
+.hb-ucs-subscription-item-card__controls {
+  align-items: flex-end;
+  margin-left: auto;
+}
+
+.hb-ucs-subscription-item-card__body {
+  display: grid;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.hb-ucs-subscription-item-card__body[hidden] {
+  display: none;
+}
+
+.hb-ucs-subscription-item-card__heading {
+  display: grid;
+  gap: 6px;
+}
+
+.hb-ucs-subscription-item-card__heading p span {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.hb-ucs-subscription-item-card__heading--center {
+  text-align: center;
+  justify-items: center;
+}
+
+.hb-ucs-subscription-item-card__help {
+  text-align: center;
+}
+
+.hb-ucs-quantity-field {
+  min-width: 108px;
+}
+
+.hb-ucs-quantity-field--compact {
+  min-width: 86px;
+}
+
+.hb-ucs-quantity-field--compact input {
+  min-height: 42px;
+  padding: 10px 12px;
+}
+
+.hb-ucs-quantity-field input {
+  text-align: center;
+}
+
+.hb-ucs-quantity-field--inline {
+  align-self: stretch;
+}
+
+.hb-ucs-remove-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: inherit;
+  font-weight: 500;
+}
+
+.hb-ucs-remove-toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.hb-ucs-subscription-items-footer {
+  padding-top: 4px;
+  flex-wrap: wrap;
+}
+
+.hb-ucs-info-list {
+  gap: 14px;
+}
+
+.hb-ucs-info-list__row {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--hb-ucs-card-border);
+}
+
+.hb-ucs-info-list__row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.hb-ucs-address-block {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  padding: var(--hb-ucs-section-padding);
+  border-radius: var(--hb-ucs-radius-md);
+  background: var(--hb-ucs-card-bg-soft);
+  border-color: var(--hb-ucs-card-border);
+  border-style: var(--sections-border-type, solid);
+  border-width: var(--sections-border-top-width, 1px) var(--sections-border-right-width, 1px) var(--sections-border-bottom-width, 1px) var(--sections-border-left-width, 1px);
+}
+
+.hb-ucs-address-grid {
+  align-items: stretch;
+}
+
+.hb-ucs-address-grid > * {
+  flex: 1 1 0;
+}
+
+.hb-ucs-related-orders {
+  display: grid;
+  gap: 12px;
+}
+
+.hb-ucs-related-order {
+  padding: 16px 18px;
+  border: 1px solid var(--hb-ucs-card-border);
+  border-radius: 16px;
+  background: transparent;
+  text-decoration: none;
+  flex-wrap: wrap;
+}
+
+.hb-ucs-related-order__main,
+.hb-ucs-related-order__meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.hb-ucs-related-order__main span,
+.hb-ucs-related-order__meta span {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.hb-ucs-button,
+.hb-ucs-account-shell .button,
+.hb-ucs-product-modal .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: var(--hb-ucs-button-padding);
+  border-radius: var(--hb-ucs-button-radius);
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--hb-ucs-button-text);
+  transition: color var(--forms-buttons-hover-transition-duration, 0.2s) ease, box-shadow var(--forms-buttons-hover-transition-duration, 0.2s) ease, background-color var(--forms-buttons-hover-transition-duration, 0.2s) ease, border-color var(--forms-buttons-hover-transition-duration, 0.2s) ease;
+}
+
+.hb-ucs-button:hover,
+.hb-ucs-account-shell .button:hover,
+.hb-ucs-product-modal .button:hover {
+  color: var(--hb-ucs-button-hover-text);
+}
+
+.hb-ucs-button--primary,
+.hb-ucs-account-shell .button.hb-ucs-button--primary {
+  color: var(--hb-ucs-button-text);
+}
+
+.hb-ucs-button--secondary,
+.hb-ucs-account-shell .button.hb-ucs-button--secondary {
+  color: var(--hb-ucs-button-text);
+}
+
+.hb-ucs-button--danger,
+.hb-ucs-account-shell .button.hb-ucs-button--danger {
+  color: var(--hb-ucs-button-text);
+}
+
+.hb-ucs-subscription-card__footer {
+  justify-content: flex-end;
+}
+
+.hb-ucs-subscription-card__footer .button {
+  width: auto;
+}
+
+.hb-ucs-action-row__copy strong {
+  display: block;
+}
+
+.hb-ucs-product-picker-field,
+.hb-ucs-product-picker-attributes {
+  display: grid;
+  gap: 14px;
+}
+
+.hb-ucs-product-picker-summary {
+  gap: 12px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.hb-ucs-product-picker-label {
+  flex: 1 1 260px;
+  min-height: 52px;
+  padding: 14px 16px;
+  border: 1px solid var(--hb-ucs-card-border);
+  border-radius: 16px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+}
+
+.hb-ucs-product-picker-attribute-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.hb-ucs-open-product-modal span[aria-hidden='true'] {
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+.hb-ucs-product-modal[hidden] {
+  display: none;
+}
+
+.hb-ucs-product-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  --hb-ucs-card-border: var(--hb-ucs-card-border, transparent);
+  --hb-ucs-accent: var(--hb-ucs-accent, currentColor);
+  --hb-ucs-modal-bg: var(--hb-ucs-card-bg, transparent);
+}
+
+.hb-ucs-product-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(29, 20, 13, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.hb-ucs-product-modal__dialog {
+  position: relative;
+  z-index: 1;
+  width: min(960px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  margin: 24px auto;
+  background: var(--hb-ucs-modal-bg);
+  border: 1px solid var(--hb-ucs-card-border);
+  border-radius: 28px;
+  box-shadow: 0 24px 70px rgba(32, 23, 14, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.hb-ucs-product-modal__header,
+.hb-ucs-product-modal__filters {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--hb-ucs-card-border);
+}
+
+.hb-ucs-product-modal__header h3 {
+  margin: 0;
+  color: var(--hb-ucs-heading);
+}
+
+.hb-ucs-product-modal__close {
+  border: 0;
+  background: transparent;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--hb-ucs-heading);
+}
+
+.hb-ucs-product-modal__filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 12px;
+}
+
+.hb-ucs-product-modal__results {
+  padding: 20px 24px 24px;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.hb-ucs-product-modal__item {
+  text-align: left;
+  padding: 16px;
+  border: 1px solid var(--hb-ucs-card-border);
+  border-radius: 18px;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hb-ucs-product-modal__item:hover,
+.hb-ucs-product-modal__item:focus {
+  border-color: var(--hb-ucs-accent);
+}
+
+.hb-ucs-product-modal__item small,
+.hb-ucs-product-modal__empty,
+.hb-ucs-product-modal__no-results {
+  color: var(--hb-ucs-text-muted);
+}
+
+.hb-ucs-product-modal__empty,
+.hb-ucs-product-modal__no-results {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+body.hb-ucs-product-modal-open {
+  overflow: hidden;
+}
+
+.hb-ucs-account-hero--stacked {
+  text-align: center;
+}
+
+.hb-ucs-account-hero--stacked .hb-ucs-account-hero__content {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
+
+.hb-ucs-account-hero--stacked .hb-ucs-account-intro {
+  opacity: 0.7;
+}
+
+.hb-ucs-account-note {
+  margin: 0;
+  max-width: 640px;
+  opacity: 0.78;
+  text-align: center;
+}
+
+.hb-ucs-account-hero--stacked .hb-ucs-hero-meta--summary {
+  width: min(520px, 100%);
+  margin-top: 8px;
+}
+
+.hb-ucs-account-hero--stacked .hb-ucs-hero-meta__item {
+  align-items: center;
+  text-align: center;
+}
+
+.hb-ucs-subscription-summary-pill {
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-inline: 18px;
+}
+
+.hb-ucs-schedule-modal__dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.hb-ucs-schedule-modal__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hb-ucs-schedule-modal__header p {
+  margin: 6px 0 0;
+  opacity: 0.78;
+}
+
+.hb-ucs-schedule-modal__form {
+  display: grid;
+  gap: 0;
+}
+
+.hb-ucs-schedule-modal__body {
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+}
+
+.hb-ucs-schedule-modal__summary {
+  margin: 0;
+}
+
+.hb-ucs-footer-field--modal {
+  margin: 0;
+}
+
+.hb-ucs-schedule-modal__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hb-ucs-schedule-modal__meta span {
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.hb-ucs-schedule-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 0 24px 24px;
+  flex-wrap: wrap;
+}
+
+.hb-ucs-panel-actions--overview {
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+
+.hb-ucs-quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--hb-ucs-gap-sm);
+}
+
+.hb-ucs-quick-action-card {
+  min-width: 0;
+}
+
+.hb-ucs-quick-action-card__button {
+  width: 100%;
+  min-height: 108px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 22px 18px;
+  border-radius: var(--hb-ucs-radius-lg);
+  border-color: var(--hb-ucs-card-border);
+  border-style: var(--sections-border-type, solid);
+  border-width: var(--sections-border-top-width, 1px) var(--sections-border-right-width, 1px) var(--sections-border-bottom-width, 1px) var(--sections-border-left-width, 1px);
+  background: var(--hb-ucs-card-bg);
+  color: var(--hb-ucs-text);
+  text-align: left;
+}
+
+.hb-ucs-quick-action-card__button:hover,
+.hb-ucs-quick-action-card__button:focus {
+  border-color: var(--forms-buttons-hover-border-color, var(--forms-buttons-border-color, var(--hb-ucs-card-border)));
+}
+
+.hb-ucs-quick-action-card__icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 42px;
+  font-size: 18px;
+  border: 1px solid currentColor;
+  background: color-mix(in srgb, var(--sections-background-color, transparent) 82%, currentColor 18%);
+}
+
+.hb-ucs-quick-action-card__icon--pause {
+  color: var(--hb-ucs-success-color);
+}
+
+.hb-ucs-quick-action-card__icon--schedule {
+  color: var(--hb-ucs-info-color);
+}
+
+.hb-ucs-quick-action-card__icon--cancel {
+  color: var(--hb-ucs-error-color);
+}
+
+.hb-ucs-quick-action-card__copy {
+  display: grid;
+  gap: 4px;
+}
+
+.hb-ucs-quick-action-card__copy strong,
+.hb-ucs-quick-action-card__copy small {
+  color: inherit;
+}
+
+.hb-ucs-products-panel {
+  display: grid;
+  gap: 24px;
+  padding: var(--hb-ucs-section-padding);
+}
+
+.hb-ucs-subscription-items-list--compact {
+  gap: 0;
+}
+
+.hb-ucs-panel__header--products {
+  text-align: center;
+}
+
+.hb-ucs-subscription-item-card--dashboard {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 20px;
+  padding: 22px 0;
+  position: relative;
+  background: transparent;
+  border-width: 0 0 1px;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.hb-ucs-subscription-item-card--dashboard:first-child {
+  border-top: 1px solid var(--hb-ucs-card-border);
+}
+
+.hb-ucs-subscription-item-card__content {
+  display: grid;
+  gap: 16px;
+}
+
+.hb-ucs-subscription-item-card--dashboard.is-marked-remove {
+  opacity: 0.65;
+}
+
+.hb-ucs-subscription-item-card--dashboard .hb-ucs-subscription-item-card__media {
+  align-items: flex-start;
+}
+
+.hb-ucs-subscription-item-card--dashboard .hb-ucs-subscription-item-card__image-el,
+.hb-ucs-subscription-item-card--dashboard .woocommerce-placeholder {
+  width: 104px;
+  height: 104px;
+  border-radius: 24px;
+  object-fit: cover;
+}
+
+.hb-ucs-product-card__dismiss {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--hb-ucs-text);
+  font-size: 28px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.hb-ucs-product-card__price {
+  font-weight: 700;
+}
+
+.hb-ucs-product-card__price span,
+.hb-ucs-product-card__variation-summary {
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.hb-ucs-product-card__editor {
+  display: grid;
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hb-ucs-card-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.hb-ucs-product-card__controls {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.hb-ucs-product-card__meta-label,
+.hb-ucs-footer-field span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.hb-ucs-product-card__links {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-height: 40px;
+}
+
+.hb-ucs-product-card__divider,
+.hb-ucs-product-card__help-link {
+  opacity: 0.72;
+  font-size: 14px;
+}
+
+.hb-ucs-text-action.button,
+.hb-ucs-text-action {
+  padding: 0;
+  min-height: auto;
+  border: 0;
+  background: transparent;
+  color: var(--links-normal-color, var(--hb-ucs-accent));
+  text-decoration: underline;
+}
+
+.hb-ucs-text-action.button:hover,
+.hb-ucs-text-action:hover,
+.hb-ucs-text-action.button:focus,
+.hb-ucs-text-action:focus {
+  background: transparent;
+  color: var(--links-hover-color, var(--hb-ucs-accent-strong));
+}
+
+.hb-ucs-quantity-field--stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--hb-ucs-card-border);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--hb-ucs-card-bg);
+}
+
+.hb-ucs-quantity-field--stepper span {
+  margin-right: 4px;
+}
+
+.hb-ucs-quantity-field--stepper input {
+  width: 58px;
+  min-height: 42px;
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+  text-align: center;
+  box-shadow: none;
+}
+
+.hb-ucs-qty-stepper__button {
+  width: 42px;
+  height: 42px;
+  border-radius: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.hb-ucs-qty-stepper__button.minus {
+  border-right: 1px solid var(--hb-ucs-card-border);
+}
+
+.hb-ucs-qty-stepper__button.plus {
+  border-left: 1px solid var(--hb-ucs-card-border);
+}
+
+.hb-ucs-products-add {
+  display: flex;
+  justify-content: flex-start;
+  padding-top: 20px;
+}
+
+.hb-ucs-products-add__button {
+  min-height: 48px;
+}
+
+.hb-ucs-subscription-item-card__body--visible {
+  display: block;
+}
+
+.hb-ucs-subscription-item-card__picker--editor {
+  padding: 0;
+}
+
+.hb-ucs-product-card__qty {
+  min-width: 152px;
+}
+
+.hb-ucs-product-picker-field,
+.hb-ucs-product-picker-attributes {
+  padding: 0;
+}
+
+.hb-ucs-product-picker-field__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hb-ucs-product-picker-field__label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.78;
+}
+
+.hb-ucs-product-picker-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.hb-ucs-product-picker-label {
+  min-height: 48px;
+  border-radius: 14px;
+  background: var(--hb-ucs-card-bg);
+}
+
+.hb-ucs-product-picker-attributes {
+  padding-top: 4px;
+}
+
+.hb-ucs-product-picker-attribute-grid .form-row {
+  margin: 0;
+}
+
+.hb-ucs-product-picker-attribute-grid label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.78;
+}
+
+.hb-ucs-product-picker-attribute-grid select {
+  min-height: 48px;
+  border-radius: 14px;
+}
+
+.hb-ucs-subscription-items-footer--dashboard {
+  display: flex;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+}
+
+.hb-ucs-footer-field {
+  margin: 0;
+}
+
+.hb-ucs-footer-field input,
+.hb-ucs-footer-field select {
+  width: 100%;
+}
+
+.hb-ucs-detail-secondary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--hb-ucs-gap-md);
+}
+
+.hb-ucs-panel--secondary {
+  padding: var(--hb-ucs-section-padding);
+}
+
+.hb-ucs-remove-toggle--inline {
+  margin: 0;
+}
+
+.hb-ucs-remove-toggle--inline input {
+  margin-right: 6px;
+}
+
+@media (max-width: 1024px) {
+  .hb-ucs-account-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .hb-ucs-quick-actions-grid,
+  .hb-ucs-detail-secondary {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 782px) {
+  .hb-ucs-account-hero,
+  .hb-ucs-panel,
+  .hb-ucs-subscription-card {
+    padding: var(--hb-ucs-section-padding);
+  }
+
+  .hb-ucs-subscription-item-card {
+    grid-template-columns: 1fr;
+  }
+
+  .hb-ucs-subscription-item-card__media {
+    justify-content: flex-start;
+  }
+
+  .hb-ucs-subscription-card__header,
+  .hb-ucs-subscription-card__footer,
+  .hb-ucs-subscription-items-footer,
+  .hb-ucs-subscription-item-card__top,
+  .hb-ucs-product-picker-summary,
+  .hb-ucs-related-order,
+  .hb-ucs-action-card__header,
+  .hb-ucs-subscription-item-card__controls,
+  .hb-ucs-address-grid,
+  .hb-ucs-product-card__controls,
+  .hb-ucs-product-card__links,
+  .hb-ucs-quick-action-card__button {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hb-ucs-subscription-item-card--dashboard {
+    grid-template-columns: 1fr;
+  }
+
+  .hb-ucs-product-card__dismiss {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+  }
+
+  .hb-ucs-product-picker-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .hb-ucs-schedule-modal__header,
+  .hb-ucs-schedule-modal__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hb-ucs-action-row__main,
+  .hb-ucs-action-row__summary {
+    grid-template-columns: 1fr;
+  }
+
+  .hb-ucs-action-row__buttons {
+    justify-content: flex-start;
+  }
+
+  .hb-ucs-action-row__footer {
+    justify-content: stretch;
+  }
+
+  .hb-ucs-action-row__footer .button,
+  .hb-ucs-subscription-item-card__controls .button {
+    width: 100%;
+  }
+
+  .hb-ucs-section-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .hb-ucs-section-nav__button {
+    width: 100%;
+    flex-basis: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .hb-ucs-product-modal__filters,
+  .hb-ucs-field-grid,
+  .hb-ucs-product-picker-attribute-grid,
+  .hb-ucs-product-modal__dialog {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    margin: 8px auto;
+    border-radius: 20px;
+  }
+}

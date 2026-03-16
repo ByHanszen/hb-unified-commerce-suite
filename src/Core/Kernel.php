@@ -28,6 +28,10 @@ class Kernel {
             (new \HB\UCS\Modules\Roles\RolesModule())->init();
         }
 
+        if (!empty($mods['subscriptions']) && class_exists('HB\\UCS\\Modules\\Subscriptions\\SubscriptionsModule')) {
+            (new \HB\UCS\Modules\Subscriptions\SubscriptionsModule())->init();
+        }
+
         if (!empty($mods['customer_order_note']) && class_exists('HB\\UCS\\Modules\\CustomerOrderNote\\CustomerOrderNoteModule')) {
             (new \HB\UCS\Modules\CustomerOrderNote\CustomerOrderNoteModule())->init();
         }

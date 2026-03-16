@@ -1,0 +1,653 @@
+/* global jQuery */
+(function ($) {
+  'use strict';
+
+  var productPickerConfig = null;
+
+  function getProductPickerConfig() {
+    if (productPickerConfig !== null) {
+      return productPickerConfig;
+    }
+
+    productPickerConfig = { variableConfigs: {}, variationLookup: {}, chooseOptionLabel: 'Kies een optie…' };
+    var element = document.getElementById('hb-ucs-product-picker-config');
+    if (!element) {
+      return productPickerConfig;
+    }
+
+    try {
+      productPickerConfig = JSON.parse(element.textContent || '{}') || productPickerConfig;
+    } catch (e) {
+      productPickerConfig = { variableConfigs: {}, variationLookup: {}, chooseOptionLabel: 'Kies een optie…' };
+    }
+
+    return productPickerConfig;
+  }
+
+  function updateSchemePrices($form, variation) {
+    if (!variation || !variation.hb_ucs_subs) return;
+
+    // Some setups may pass custom data as a JSON string.
+    if (typeof variation.hb_ucs_subs === 'string') {
+      try {
+        variation.hb_ucs_subs = JSON.parse(variation.hb_ucs_subs);
+      } catch (e) {
+        return;
+      }
+    }
+
+    var $scope = $form && $form.length ? $form.closest('form.cart') : $(document);
+    var $wrap = $scope.find('.hb-ucs-subscriptions');
+    if (!$wrap.length) {
+      $wrap = $scope;
+    }
+
+    Object.keys(variation.hb_ucs_subs).forEach(function (scheme) {
+      var data = variation.hb_ucs_subs[scheme] || {};
+      var html = data.price_html || '';
+      var $targets = $wrap.find('.hb-ucs-subs-price[data-scheme="' + scheme + '"]');
+      if (!$targets.length) {
+        $targets = $scope.find('.hb-ucs-subs-price[data-scheme="' + scheme + '"]');
+      }
+      if (!$targets.length) {
+        $targets = $('.hb-ucs-subs-price[data-scheme="' + scheme + '"]');
+      }
+      $targets.html(html);
+    });
+  }
+
+  function resetSchemePrices($form) {
+    var $scope = $form && $form.length ? $form.closest('form.cart') : $(document);
+    var $wrap = $scope.find('.hb-ucs-subscriptions');
+    if (!$wrap.length) {
+      $wrap = $scope;
+    }
+    $wrap.find('.hb-ucs-subs-price').html('');
+  }
+
+  function normalizeText(value) {
+    return String(value || '').toLowerCase().trim();
+  }
+
+  function filterProductModal($modal) {
+    var term = normalizeText($modal.find('.hb-ucs-product-modal__search').val());
+    var category = String($modal.find('.hb-ucs-product-modal__category').val() || '');
+    var visible = 0;
+
+    $modal.find('.hb-ucs-product-modal__item').each(function () {
+      var $item = $(this);
+      var haystack = normalizeText($item.data('productSearch'));
+      var categories = String($item.data('productCategories') || '');
+      var matchesTerm = !term || haystack.indexOf(term) !== -1;
+      var matchesCategory = !category || categories.split(',').indexOf(category) !== -1;
+      var show = matchesTerm && matchesCategory;
+
+      $item.prop('hidden', !show);
+      if (show) {
+        visible += 1;
+      }
+    });
+
+    $modal.find('.hb-ucs-product-modal__no-results').prop('hidden', visible > 0);
+  }
+
+  function closeProductModal($modal) {
+    if (!$modal || !$modal.length) {
+      return;
+    }
+    $modal.attr('hidden', 'hidden').attr('aria-hidden', 'true').removeData('activeInput');
+    $('body').removeClass('hb-ucs-product-modal-open');
+  }
+
+  function closeSimpleModal($modal) {
+    if (!$modal || !$modal.length) {
+      return;
+    }
+
+    $modal.attr('hidden', 'hidden').attr('aria-hidden', 'true');
+    $('body').removeClass('hb-ucs-product-modal-open');
+  }
+
+  function openSimpleModal($modal) {
+    if (!$modal || !$modal.length) {
+      return;
+    }
+
+    $modal.removeAttr('hidden').attr('aria-hidden', 'false');
+    $('body').addClass('hb-ucs-product-modal-open');
+    window.setTimeout(function () {
+      var focusTarget = $modal.find('input, select, textarea, button').filter(':visible').first();
+      if (focusTarget.length) {
+        focusTarget.trigger('focus');
+      }
+    }, 10);
+  }
+
+  function openProductModal($modal, inputId, title) {
+    if (!$modal || !$modal.length) {
+      return;
+    }
+    $modal.data('activeInput', inputId || '');
+    $modal.find('#hb-ucs-product-modal-title').text(title || 'Kies een product');
+    $modal.removeAttr('hidden').attr('aria-hidden', 'false');
+    $('body').addClass('hb-ucs-product-modal-open');
+    filterProductModal($modal);
+    window.setTimeout(function () {
+      $modal.find('.hb-ucs-product-modal__search').trigger('focus');
+    }, 10);
+  }
+
+  function getNextSubscriptionItemIndex($list) {
+    var maxIndex = -1;
+    $list.find('input[name]').each(function () {
+      var name = String($(this).attr('name') || '');
+      var match = name.match(/^items\[(\d+)\]\[product_id\]$/);
+      if (!match) {
+        return;
+      }
+
+      var index = parseInt(match[1], 10);
+      if (!Number.isNaN(index)) {
+        maxIndex = Math.max(maxIndex, index);
+      }
+    });
+
+    return maxIndex + 1;
+  }
+
+  function createSubscriptionItemRow(templateId, listId) {
+    var template = document.getElementById(String(templateId || ''));
+    var $list = $('#' + String(listId || ''));
+    if (!template || !$list.length) {
+      return $();
+    }
+
+    var nextIndex = getNextSubscriptionItemIndex($list);
+    var html = String(template.innerHTML || '').replace(/__HB_UCS_INDEX__/g, String(nextIndex));
+    var $row = $(html);
+    if (!$row.length) {
+      return $();
+    }
+
+    $list.append($row);
+    return $row;
+  }
+
+  function setSubscriptionRowPrice($row, price) {
+    if (!$row || !$row.length) {
+      return;
+    }
+
+    var $heading = $row.find('.hb-ucs-subscription-item-card__heading').first();
+    var $price = $heading.find('.hb-ucs-product-card__price').first();
+    if (!price) {
+      if ($price.length) {
+        $price.remove();
+      }
+      return;
+    }
+
+    if (!$price.length) {
+      $price = $('<p class="hb-ucs-product-card__price"></p>').insertAfter($heading.find('h4').first());
+    }
+    $price.html(price + ' <span>per levering</span>');
+  }
+
+  function collectSelectedAttributeValues($field) {
+    var values = {};
+    if (!$field || !$field.length) {
+      return values;
+    }
+
+    $field.find('.hb-ucs-product-picker-attributes select').each(function () {
+      var match = String($(this).attr('name') || '').match(/\[([^\]]+)\]$/);
+      if (!match) {
+        return;
+      }
+      var key = String(match[1] || '');
+      var value = String($(this).val() || '');
+      if (key && value) {
+        values[key] = value;
+      }
+    });
+
+    return values;
+  }
+
+  function findMatchingVariationData(productId, selectedAttributes) {
+    var config = getProductPickerConfig();
+    var variationLookup = config && config.variationLookup ? config.variationLookup : {};
+    var variations = variationLookup[String(productId)] || variationLookup[productId] || [];
+    var selectedKeys = Object.keys(selectedAttributes || {});
+
+    if (!variations.length || !selectedKeys.length) {
+      return null;
+    }
+
+    for (var i = 0; i < variations.length; i += 1) {
+      var variation = variations[i] || {};
+      var attributes = variation.attributes || {};
+      var isMatch = true;
+
+      for (var j = 0; j < selectedKeys.length; j += 1) {
+        var key = selectedKeys[j];
+        var selectedValue = String(selectedAttributes[key] || '');
+        var currentValue = String(attributes[key] || '');
+        if (!currentValue) {
+          continue;
+        }
+        if (currentValue !== selectedValue) {
+          isMatch = false;
+          break;
+        }
+      }
+
+      if (isMatch) {
+        return variation;
+      }
+    }
+
+    return null;
+  }
+
+  function updateRowVariationPreview($field) {
+    if (!$field || !$field.length) {
+      return;
+    }
+
+    var $row = $field.closest('.hb-ucs-subscription-item-card');
+    var productId = String($field.find('.hb-ucs-product-picker-value').val() || '');
+    if (!productId) {
+      return;
+    }
+
+    var selectedAttributes = collectSelectedAttributeValues($field);
+    var variation = findMatchingVariationData(productId, selectedAttributes);
+    if (variation) {
+      setSubscriptionRowPrice($row, String(variation.price_html || ''));
+      if (variation.image_html) {
+        $row.find('.hb-ucs-subscription-item-card__media').first().html(String(variation.image_html));
+      }
+      $row.find('.hb-ucs-product-card__variation-summary').first().text(String(variation.summary || ''));
+      return;
+    }
+
+    if ($field.find('.hb-ucs-product-picker-attributes select').length) {
+      setSubscriptionRowPrice($row, '');
+      $row.find('.hb-ucs-product-card__variation-summary').first().text('');
+    }
+  }
+
+  function updateSubscriptionRowPreview($row, $item) {
+    if (!$row || !$row.length || !$item || !$item.length) {
+      return;
+    }
+
+    var label = String($item.data('productLabel') || '');
+    var summary = String($item.data('productSummary') || '');
+    var price = String($item.data('productPrice') || '');
+    var imageHtml = '';
+    try {
+      imageHtml = window.atob(String($item.attr('data-product-image') || ''));
+    } catch (e) {
+      imageHtml = '';
+    }
+
+    if (label) {
+      $row.find('.hb-ucs-subscription-item-card__heading h4').first().text(label);
+    }
+
+    var $price = $row.find('.hb-ucs-product-card__price').first();
+    if (price) {
+      if ($price.length) {
+        $price.html(price + ' <span>per levering</span>');
+      }
+    } else if ($price.length) {
+      $price.remove();
+    }
+
+    if (imageHtml) {
+      $row.find('.hb-ucs-subscription-item-card__media').first().html(imageHtml);
+    }
+
+    $row.find('.hb-ucs-product-card__variation-summary').first().text(summary);
+  }
+
+  function cleanupPendingSubscriptionRow($modal) {
+    if (!$modal || !$modal.length) {
+      return;
+    }
+
+    var $pendingRow = $modal.data('pendingNewRow');
+    if ($pendingRow && $pendingRow.length) {
+      var $input = $pendingRow.find('.hb-ucs-product-picker-value').first();
+      if ($input.length && !$input.val()) {
+        $pendingRow.remove();
+      }
+    }
+
+    $modal.removeData('pendingNewRow');
+  }
+
+  function renderAttributeSelectors($field, productId, selectedAttributes) {
+    var config = getProductPickerConfig();
+    var variableConfigs = config && config.variableConfigs ? config.variableConfigs : {};
+    var attributes = variableConfigs[String(productId)] || variableConfigs[productId] || [];
+    var $container = $field.find('.hb-ucs-product-picker-attributes');
+    var attributesName = String($container.data('attributesName') || '');
+
+    if (!$container.length || !attributesName) {
+      return;
+    }
+
+    if (!attributes.length) {
+      $container.empty();
+      return;
+    }
+
+    selectedAttributes = selectedAttributes || {};
+    var chooseOptionLabel = String((config && config.chooseOptionLabel) || 'Kies een optie…');
+    var html = '<div class="hb-ucs-product-picker-attribute-grid">';
+    attributes.forEach(function (attribute) {
+      var key = String(attribute.key || '');
+      if (!key) {
+        return;
+      }
+      var currentValue = String(selectedAttributes[key] || '');
+      html += '<p class="form-row form-row-wide">';
+      html += '<label>' + $('<div>').text(String(attribute.label || key)).html() + '</label>';
+      html += '<select class="input-text" name="' + $('<div>').text(attributesName + '[' + key + ']').html() + '">';
+      html += '<option value="">' + $('<div>').text(chooseOptionLabel).html() + '</option>';
+      (attribute.options || []).forEach(function (option) {
+        var value = String(option.value || '');
+        var label = String(option.label || value);
+        var selected = currentValue === value ? ' selected="selected"' : '';
+        html += '<option value="' + $('<div>').text(value).html() + '"' + selected + '>' + $('<div>').text(label).html() + '</option>';
+      });
+      html += '</select>';
+      html += '</p>';
+    });
+    html += '</div>';
+    $container.html(html);
+  }
+
+  function initAccountProductPickers(context) {
+    var $modal = $('#hb-ucs-product-modal');
+    if (!$modal.length) {
+      return;
+    }
+
+    $(document).off('click.hbUcsProductModalOpen', '.hb-ucs-open-product-modal');
+    $(document).on('click.hbUcsProductModalOpen', '.hb-ucs-open-product-modal', function (event) {
+      event.preventDefault();
+      var $button = $(this);
+      var inputId = String($button.data('pickerInput') || '');
+      var templateId = String($button.data('hbUcsAddItemTemplate') || '');
+      var listId = String($button.data('hbUcsAddItemList') || '');
+
+      $modal.removeData('pendingNewRow');
+      if (!inputId && templateId && listId) {
+        var $newRow = createSubscriptionItemRow(templateId, listId);
+        if (!$newRow.length) {
+          return;
+        }
+        $modal.data('pendingNewRow', $newRow);
+        inputId = String($newRow.find('.hb-ucs-product-picker-value').first().attr('id') || '');
+      }
+
+      openProductModal($modal, inputId, $button.data('pickerTitle'));
+    });
+
+    $modal.off('click.hbUcsProductModalClose', '[data-close-product-modal]');
+    $modal.on('click.hbUcsProductModalClose', '[data-close-product-modal]', function (event) {
+      event.preventDefault();
+      cleanupPendingSubscriptionRow($modal);
+      closeProductModal($modal);
+    });
+
+    $modal.off('input.hbUcsProductModalFilter change.hbUcsProductModalFilter', '.hb-ucs-product-modal__search, .hb-ucs-product-modal__category');
+    $modal.on('input.hbUcsProductModalFilter change.hbUcsProductModalFilter', '.hb-ucs-product-modal__search, .hb-ucs-product-modal__category', function () {
+      filterProductModal($modal);
+    });
+
+    $modal.off('click.hbUcsProductModalPick', '.hb-ucs-product-modal__item');
+    $modal.on('click.hbUcsProductModalPick', '.hb-ucs-product-modal__item', function (event) {
+      event.preventDefault();
+      var $item = $(this);
+      var inputId = String($modal.data('activeInput') || '');
+      var targetProductId = String($item.data('targetProductId') || $item.data('productId') || '');
+      var selectedAttributes = {};
+      try {
+        selectedAttributes = JSON.parse(String($item.attr('data-selected-attributes') || '{}')) || {};
+      } catch (e) {
+        selectedAttributes = {};
+      }
+
+      var $field = $();
+      var $input = $();
+      var $pendingRow = $modal.data('pendingNewRow');
+      if (inputId) {
+        $input = $('#' + inputId);
+        if ($input.length) {
+          $field = $input.closest('.hb-ucs-product-picker-field');
+        }
+      }
+
+      if (!$input.length || !$field.length) {
+        closeProductModal($modal);
+        return;
+      }
+
+      $input.val(targetProductId);
+      $field.find('.hb-ucs-product-picker-label').text(String($item.data('productLabel') || ''));
+      $field.find('.hb-ucs-open-product-modal').html('<span aria-hidden="true">＋</span> Wijzig');
+      renderAttributeSelectors($field, targetProductId, selectedAttributes);
+      updateSubscriptionRowPreview(($pendingRow && $pendingRow.length) ? $pendingRow : $field.closest('.hb-ucs-subscription-item-card'), $item);
+      updateRowVariationPreview($field);
+      cleanupPendingSubscriptionRow($modal);
+      closeProductModal($modal);
+    });
+
+    $(document).off('change.hbUcsProductAttributes', '.hb-ucs-product-picker-attributes select');
+    $(document).on('change.hbUcsProductAttributes', '.hb-ucs-product-picker-attributes select', function () {
+      updateRowVariationPreview($(this).closest('.hb-ucs-product-picker-field'));
+    });
+
+    $(document).off('keydown.hbUcsProductModalEsc');
+    $(document).on('keydown.hbUcsProductModalEsc', function (event) {
+      if (event.key === 'Escape' && !$modal.is('[hidden]')) {
+        cleanupPendingSubscriptionRow($modal);
+        closeProductModal($modal);
+      }
+    });
+  }
+
+  function setToggleState($trigger, expanded) {
+    if (!$trigger || !$trigger.length) {
+      return;
+    }
+
+    $trigger.attr('aria-expanded', expanded ? 'true' : 'false');
+    if ($trigger.hasClass('hb-ucs-toggle-button')) {
+      var label = expanded ? String($trigger.data('hbUcsLabelExpanded') || 'Sluit') : String($trigger.data('hbUcsLabelCollapsed') || 'Open');
+      $trigger.text(label);
+      $trigger.toggleClass('is-active', expanded);
+    }
+    if ($trigger.hasClass('hb-ucs-icon-button')) {
+      $trigger.toggleClass('is-active', expanded);
+    }
+    if ($trigger.hasClass('hb-ucs-section-nav__button')) {
+      $trigger.attr('aria-pressed', expanded ? 'true' : 'false');
+      $trigger.toggleClass('is-active', expanded);
+    }
+  }
+
+  function initAccountCompactUi() {
+    $(document).off('click.hbUcsSectionNav', '.hb-ucs-section-nav__button');
+    $(document).on('click.hbUcsSectionNav', '.hb-ucs-section-nav__button', function (event) {
+      event.preventDefault();
+
+      var $button = $(this);
+      var targetId = String($button.data('hbUcsPanelTarget') || '');
+      if (!targetId) {
+        return;
+      }
+
+      var $shell = $button.closest('.hb-ucs-account-shell--detail');
+      var $panels = $shell.find('.hb-ucs-accordion-panel');
+      var $target = $('#' + targetId);
+      if (!$target.length) {
+        return;
+      }
+
+      $panels.prop('hidden', true).removeClass('is-active');
+      $shell.find('.hb-ucs-section-nav__button').each(function () {
+        setToggleState($(this), false);
+      });
+
+      $target.prop('hidden', false).addClass('is-active');
+      setToggleState($button, true);
+    });
+
+    $(document).off('click.hbUcsGenericToggle', '[data-hb-ucs-toggle]');
+    $(document).on('click.hbUcsGenericToggle', '[data-hb-ucs-toggle]', function (event) {
+      event.preventDefault();
+
+      var $button = $(this);
+      var targetId = String($button.data('hbUcsToggle') || '');
+      if (!targetId) {
+        return;
+      }
+
+      var $target = $('#' + targetId);
+      if (!$target.length) {
+        return;
+      }
+
+      var expanded = $target.prop('hidden');
+      $target.prop('hidden', !expanded);
+      setToggleState($button, expanded);
+    });
+
+    $(document).off('click.hbUcsScrollTarget', '[data-hb-ucs-scroll-target]');
+    $(document).on('click.hbUcsScrollTarget', '[data-hb-ucs-scroll-target]', function (event) {
+      event.preventDefault();
+
+      var targetId = String($(this).data('hbUcsScrollTarget') || '');
+      if (!targetId) {
+        return;
+      }
+
+      var target = document.getElementById(targetId);
+      if (!target) {
+        return;
+      }
+
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      window.setTimeout(function () {
+        var focusTarget = target.querySelector('input, select, textarea, button');
+        if (focusTarget) {
+          focusTarget.focus();
+        }
+      }, 220);
+    });
+
+    $(document).off('click.hbUcsOpenModal', '[data-hb-ucs-open-modal]');
+    $(document).on('click.hbUcsOpenModal', '[data-hb-ucs-open-modal]', function (event) {
+      event.preventDefault();
+
+      var modalId = String($(this).data('hbUcsOpenModal') || '');
+      if (!modalId) {
+        return;
+      }
+
+      openSimpleModal($('#' + modalId));
+    });
+
+    $(document).off('click.hbUcsCloseModal', '[data-hb-ucs-close-modal]');
+    $(document).on('click.hbUcsCloseModal', '[data-hb-ucs-close-modal]', function (event) {
+      event.preventDefault();
+      closeSimpleModal($(this).closest('.hb-ucs-schedule-modal'));
+    });
+
+    $(document).off('click.hbUcsQtyStep', '.hb-ucs-qty-stepper__button');
+    $(document).on('click.hbUcsQtyStep', '.hb-ucs-qty-stepper__button', function (event) {
+      event.preventDefault();
+
+      var step = parseInt(String($(this).data('hbUcsQtyStep') || '0'), 10);
+      var $input = $(this).siblings('input[type="number"]');
+      if (!$input.length || !step) {
+        return;
+      }
+
+      var min = parseInt(String($input.attr('min') || '1'), 10);
+      var current = parseInt(String($input.val() || min), 10);
+      if (Number.isNaN(current)) {
+        current = min;
+      }
+
+      var nextValue = Math.max(min, current + step);
+      $input.val(nextValue).trigger('change');
+    });
+
+    $(document).off('click.hbUcsRemoveToggle', '[data-hb-ucs-remove-toggle]');
+    $(document).on('click.hbUcsRemoveToggle', '[data-hb-ucs-remove-toggle]', function (event) {
+      event.preventDefault();
+
+      var fieldName = String($(this).data('hbUcsRemoveToggle') || '');
+      if (!fieldName) {
+        return;
+      }
+
+      var $card = $(this).closest('.hb-ucs-subscription-item-card');
+      var $checkbox = $card.find('input[type="checkbox"][name="' + fieldName.replace(/"/g, '\\"') + '"]');
+      if (!$checkbox.length || $checkbox.is(':disabled')) {
+        return;
+      }
+
+      var isChecked = !$checkbox.prop('checked');
+      $checkbox.prop('checked', isChecked).trigger('change');
+      $card.toggleClass('is-marked-remove', isChecked);
+    });
+
+    $(document).off('change.hbUcsRemoveCheckbox', '.hb-ucs-remove-toggle input[type="checkbox"]');
+    $(document).on('change.hbUcsRemoveCheckbox', '.hb-ucs-remove-toggle input[type="checkbox"]', function () {
+      $(this).closest('.hb-ucs-subscription-item-card').toggleClass('is-marked-remove', $(this).is(':checked'));
+    });
+
+    $(document).off('keydown.hbUcsSimpleModalEsc');
+    $(document).on('keydown.hbUcsSimpleModalEsc', function (event) {
+      if (event.key !== 'Escape') {
+        return;
+      }
+
+      var $openModal = $('.hb-ucs-schedule-modal').filter(function () {
+        return !$(this).is('[hidden]');
+      }).first();
+
+      if ($openModal.length) {
+        closeSimpleModal($openModal);
+      }
+    });
+  }
+
+  $(function () {
+    var $body = $(document.body);
+
+    // Delegated handlers so dynamic builders (Elementor) also work.
+    $body.on('found_variation', '.variations_form', function (e, variation) {
+      updateSchemePrices($(this), variation);
+    });
+
+    $body.on('show_variation', '.variations_form', function (e, variation) {
+      updateSchemePrices($(this), variation);
+    });
+
+    $body.on('woocommerce_variation_has_changed reset_data hide_variation', '.variations_form', function () {
+      resetSchemePrices($(this));
+    });
+
+    initAccountProductPickers($body);
+    initAccountCompactUi();
+  });
+})(jQuery);
