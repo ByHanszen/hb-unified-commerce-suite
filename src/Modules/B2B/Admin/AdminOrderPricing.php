@@ -13,6 +13,8 @@ if (!defined('ABSPATH')) exit;
 class AdminOrderPricing {
     private PriceEngine $engine;
 
+    private const META_MANUAL_PRICE_LOCK = '_hb_ucs_b2b_manual_price_lock';
+
     public function __construct(PriceEngine $engine) {
         $this->engine = $engine;
     }
@@ -21,6 +23,39 @@ class AdminOrderPricing {
         add_action('woocommerce_admin_order_data_after_order_details', [$this, 'render_box']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue']);
         add_action('wp_ajax_hb_ucs_b2b_recalc_order_prices', [$this, 'ajax_recalc']);
+        add_action('woocommerce_before_save_order_items', [$this, 'capture_manual_price_locks'], 10, 2);
+    }
+
+    /**
+     * Persist per-line-item manual price locks coming from admin order edit UI.
+     * JS adds hidden inputs hb_ucs_b2b_manual_price_lock[ITEM_ID]=1 when the admin edits totals manually.
+     *
+     * @param int   $order_id
+     * @param array $items
+     */
+    public function capture_manual_price_locks(int $order_id, array $items): void {
+        if ($order_id <= 0) return;
+        if (!is_admin()) return;
+        if (!Validator::can_manage()) return;
+
+        if (empty($items['hb_ucs_b2b_manual_price_lock']) || !is_array($items['hb_ucs_b2b_manual_price_lock'])) {
+            return;
+        }
+
+        $locks = $items['hb_ucs_b2b_manual_price_lock'];
+        foreach ($locks as $item_id => $flag) {
+            $iid = absint($item_id);
+            if ($iid <= 0) continue;
+
+            $item = \WC_Order_Factory::get_order_item($iid);
+            if (!$item) continue;
+
+            $enabled = (string)$flag === '1' || $flag === 1 || $flag === true;
+            if ($enabled) {
+                $item->update_meta_data(self::META_MANUAL_PRICE_LOCK, '1');
+                $item->save();
+            }
+        }
     }
 
     public function enqueue(string $hook): void {
@@ -62,7 +97,7 @@ class AdminOrderPricing {
 
         echo '<div class="order_data_column">';
         echo '<h4>' . esc_html__('B2B prijzen', 'hb-ucs') . '</h4>';
-        echo '<p class="description">' . esc_html__('Gebruik dit om bestaande orderregels opnieuw te prijzen op basis van de geselecteerde klant (ex btw).', 'hb-ucs') . '</p>';
+        echo '<p class="description">' . esc_html__('Gebruik dit om bestaande orderregels opnieuw te prijzen op basis van de geselecteerde klant (ex btw). Handmatig aangepaste regelprijzen worden overgeslagen; Shift-klik forceert overschrijven.', 'hb-ucs') . '</p>';
         echo '<p>';
         echo '<button type="button" class="button" id="hb-ucs-b2b-recalc" data-order-id="' . (int)$order->get_id() . '">' . esc_html__('Herbereken prijzen volgens klant', 'hb-ucs') . '</button>';
         echo '</p>';
@@ -90,12 +125,20 @@ class AdminOrderPricing {
             $order->set_customer_id($customer_id);
         }
 
+        $force = !empty($_POST['force']);
+
         $settings = new SettingsStore();
         $s = $settings->get();
         $baseMode = (string)($s['price_base'] ?? 'regular');
 
         foreach ($order->get_items('line_item') as $item_id => $item) {
             if (!($item instanceof \WC_Order_Item_Product)) continue;
+
+            $locked = (string)$item->get_meta(self::META_MANUAL_PRICE_LOCK, true);
+            if (!$force && $locked !== '') {
+                continue;
+            }
+
             $product = $item->get_product();
             if (!$product) continue;
 
@@ -123,6 +166,10 @@ class AdminOrderPricing {
             // IMPORTANT: Keep original subtotal and discounted total so Woo shows a line discount.
             $item->set_subtotal($line_subtotal_ex);
             $item->set_total($line_total_ex);
+
+            if ($force) {
+                $item->delete_meta_data(self::META_MANUAL_PRICE_LOCK);
+            }
         }
 
         // Recalculate taxes & totals.

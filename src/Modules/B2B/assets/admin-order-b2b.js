@@ -1,5 +1,24 @@
 /* global HB_UCS_B2B_ORDER */
 jQuery(function ($) {
+  function getOrderItemIdFromInputName(name) {
+    if (!name || typeof name !== 'string') return 0;
+    const m = name.match(/\[(\d+)\]/);
+    if (!m || !m[1]) return 0;
+    const id = parseInt(m[1], 10);
+    return id > 0 ? id : 0;
+  }
+
+  function ensureManualPriceLockField(itemId, $context) {
+    if (!itemId || itemId <= 0) return;
+    const fieldName = 'hb_ucs_b2b_manual_price_lock[' + itemId + ']';
+    const $root = ($context && $context.length) ? $context : $('#woocommerce-order-items');
+    if (!$root.length) return;
+
+    if ($root.find('input[type="hidden"][name="' + fieldName + '"]').length) return;
+
+    $root.append('<input type="hidden" name="' + fieldName + '" value="1" />');
+  }
+
   function showNotice(message, type) {
     type = type || 'warning';
     const $wrap = $('#woocommerce-order-data');
@@ -50,7 +69,7 @@ jQuery(function ($) {
 
     const data = {
       order_id: window.woocommerce_admin_meta_boxes.post_id,
-      items: $('table.woocommerce_order_items :input[name], .wc-order-totals-items :input[name]').serialize(),
+      items: $('table.woocommerce_order_items :input[name], .wc-order-totals-items :input[name], #woocommerce-order-items input[name^="hb_ucs_b2b_manual_price_lock["]').serialize(),
       action: 'woocommerce_save_order_items',
       security: window.woocommerce_admin_meta_boxes.order_item_nonce
     };
@@ -118,7 +137,8 @@ jQuery(function ($) {
           action: 'hb_ucs_b2b_recalc_order_prices',
           nonce: HB_UCS_B2B_ORDER.nonce,
           order_id: orderId,
-          customer_id: customerId
+          customer_id: customerId,
+          force: opts.force ? 1 : 0
         })
           .done(function (resp) {
             if (resp && resp.success) {
@@ -163,8 +183,18 @@ jQuery(function ($) {
     }, 250);
   }
 
-  $(document).on('click', '#hb-ucs-b2b-recalc', function () {
-    doRecalc($(this));
+  // Track manual edits to line item totals/subtotals and lock those items, so B2B recalc won't overwrite them.
+  $(document).on('input change', '#woocommerce-order-items input.line_total, #woocommerce-order-items input.line_subtotal', function () {
+    const name = $(this).attr('name') || '';
+    const itemId = getOrderItemIdFromInputName(name);
+    if (itemId > 0) {
+      ensureManualPriceLockField(itemId, $('#woocommerce-order-items'));
+    }
+  });
+
+  $(document).on('click', '#hb-ucs-b2b-recalc', function (e) {
+    // Shift-click forces recalculation even for locked items (overwrites manual prices).
+    doRecalc($(this), { force: !!(e && e.shiftKey) });
   });
 
   // Optional auto recalculation when customer changes.
