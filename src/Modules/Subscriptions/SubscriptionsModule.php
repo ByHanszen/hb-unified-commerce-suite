@@ -11,6 +11,7 @@ if (!defined('ABSPATH')) exit;
 class SubscriptionsModule {
     private const RENEWAL_CRON_RECURRENCE = 'hb_ucs_every_minute';
     private const ACCOUNT_ENDPOINT = 'abonnementen';
+    private const USER_META_MOLLIE_CUSTOMER_ID = '_hb_ucs_mollie_customer_id';
 
     private const META_ENABLED = '_hb_ucs_subs_enabled';
     private const META_PRICE_PREFIX = '_hb_ucs_subs_price_'; // suffix: 1w|2w|3w|4w
@@ -127,6 +128,7 @@ class SubscriptionsModule {
         add_action('woocommerce_before_calculate_totals', [$this, 'maybe_apply_manual_subscription_pricing'], 20, 1);
 
         // Recurring engine (manual): validate first payment method at checkout.
+        add_filter('woocommerce_available_payment_gateways', [$this, 'filter_first_subscription_payment_gateways'], 20);
         add_action('woocommerce_after_checkout_validation', [$this, 'validate_first_payment_method'], 10, 2);
 
         // Make initial Mollie payment a "first" payment so Mollie creates a mandate.
@@ -209,14 +211,77 @@ class SubscriptionsModule {
             return $data;
         }
 
+        $customerId = $this->get_or_create_mollie_customer_id_for_order($order);
+        if ($customerId === '') {
+            return $data;
+        }
+
         if (isset($data['payment']) && is_array($data['payment'])) {
+            $data['payment']['customerId'] = $customerId;
             $data['payment']['sequenceType'] = 'first';
         } else {
             // Payments API request.
+            $data['customerId'] = $customerId;
             $data['sequenceType'] = 'first';
         }
 
         return $data;
+    }
+
+    private function get_or_create_mollie_customer_id_for_order($order): string {
+        if (!$order || !is_object($order)) {
+            return '';
+        }
+
+        $customerId = method_exists($order, 'get_meta') ? (string) $order->get_meta('_mollie_customer_id', true) : '';
+        if ($customerId !== '') {
+            return $customerId;
+        }
+
+        $userId = method_exists($order, 'get_user_id') ? (int) $order->get_user_id() : 0;
+        if ($userId > 0) {
+            $customerId = (string) get_user_meta($userId, self::USER_META_MOLLIE_CUSTOMER_ID, true);
+            if ($customerId !== '') {
+                if (method_exists($order, 'update_meta_data')) {
+                    $order->update_meta_data('_mollie_customer_id', $customerId);
+                }
+                return $customerId;
+            }
+        }
+
+        $email = method_exists($order, 'get_billing_email') ? sanitize_email((string) $order->get_billing_email()) : '';
+        if ($email === '') {
+            return '';
+        }
+
+        $firstName = method_exists($order, 'get_billing_first_name') ? trim((string) $order->get_billing_first_name()) : '';
+        $lastName = method_exists($order, 'get_billing_last_name') ? trim((string) $order->get_billing_last_name()) : '';
+        $name = trim($firstName . ' ' . $lastName);
+        if ($name === '') {
+            $name = $email;
+        }
+
+        $customer = $this->mollie_request('POST', 'customers', [
+            'name' => $name,
+            'email' => $email,
+        ]);
+        if (is_wp_error($customer) || !is_array($customer) || empty($customer['id'])) {
+            return '';
+        }
+
+        $customerId = (string) $customer['id'];
+        if ($customerId === '') {
+            return '';
+        }
+
+        if ($userId > 0) {
+            update_user_meta($userId, self::USER_META_MOLLIE_CUSTOMER_ID, $customerId);
+        }
+        if (method_exists($order, 'update_meta_data')) {
+            $order->update_meta_data('_mollie_customer_id', $customerId);
+        }
+
+        return $customerId;
     }
 
     public function register_subscription_post_type(): void {
@@ -3288,10 +3353,13 @@ class SubscriptionsModule {
     private function get_allowed_first_gateways(): array {
         $allowed = [
             'mollie_wc_gateway_ideal',
-            'mollie_wc_gateway_creditcard',
         ];
         $allowed = apply_filters('hb_ucs_subs_allowed_first_gateways', $allowed);
         return array_values(array_filter(array_map('strval', is_array($allowed) ? $allowed : [])));
+    }
+
+    private function is_mollie_gateway(string $paymentMethod): bool {
+        return strpos(trim($paymentMethod), 'mollie_wc_gateway_') === 0;
     }
 
     private function get_available_checkout_gateway_ids(): array {
@@ -3305,6 +3373,62 @@ class SubscriptionsModule {
         }
 
         return array_values(array_filter(array_map('strval', array_keys($gateways))));
+    }
+
+    private function cart_contains_subscription(): bool {
+        if (!function_exists('WC') || !WC() || !WC()->cart || !method_exists(WC()->cart, 'get_cart')) {
+            return false;
+        }
+
+        foreach (WC()->cart->get_cart() as $cartItem) {
+            if (!is_array($cartItem)) {
+                continue;
+            }
+
+            $data = isset($cartItem[self::CART_KEY]) && is_array($cartItem[self::CART_KEY]) ? $cartItem[self::CART_KEY] : null;
+            if (!$data) {
+                continue;
+            }
+
+            $scheme = (string) ($data['scheme'] ?? '');
+            if ($scheme !== '' && $scheme !== '0') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function filter_first_subscription_payment_gateways($gateways) {
+        if (!$this->recurring_enabled() || $this->get_engine() !== 'manual') {
+            return $gateways;
+        }
+        if (!$this->cart_contains_subscription()) {
+            return $gateways;
+        }
+        if (!is_array($gateways) || empty($gateways)) {
+            return $gateways;
+        }
+
+        $allowed = $this->get_allowed_first_gateways();
+        if (empty($allowed)) {
+            foreach (array_keys($gateways) as $gatewayId) {
+                if ($this->is_mollie_gateway((string) $gatewayId)) {
+                    unset($gateways[$gatewayId]);
+                }
+            }
+
+            return $gateways;
+        }
+
+        foreach (array_keys($gateways) as $gatewayId) {
+            $gatewayId = (string) $gatewayId;
+            if ($this->is_mollie_gateway($gatewayId) && !in_array($gatewayId, $allowed, true)) {
+                unset($gateways[$gatewayId]);
+            }
+        }
+
+        return $gateways;
     }
 
     private function payment_method_requires_mandate(string $paymentMethod): bool {
@@ -3412,20 +3536,7 @@ class SubscriptionsModule {
             return;
         }
 
-        $hasSub = false;
-        if (function_exists('WC') && WC() && WC()->cart && method_exists(WC()->cart, 'get_cart')) {
-            foreach (WC()->cart->get_cart() as $cartItem) {
-                if (!is_array($cartItem)) continue;
-                $d = isset($cartItem[self::CART_KEY]) && is_array($cartItem[self::CART_KEY]) ? $cartItem[self::CART_KEY] : null;
-                if (!$d) continue;
-                $scheme = (string) ($d['scheme'] ?? '');
-                if ($scheme !== '' && $scheme !== '0') {
-                    $hasSub = true;
-                    break;
-                }
-            }
-        }
-        if (!$hasSub) {
+        if (!$this->cart_contains_subscription()) {
             return;
         }
 
@@ -3439,6 +3550,11 @@ class SubscriptionsModule {
         $available = $this->get_available_checkout_gateway_ids();
         if ($paymentMethod !== '' && !empty($available) && !in_array($paymentMethod, $available, true)) {
             $errors->add('hb_ucs_subs_first_payment_method', __('De gekozen betaalmethode is niet beschikbaar voor dit abonnement.', 'hb-ucs'));
+            return;
+        }
+
+        if ($paymentMethod !== '' && $this->is_mollie_gateway($paymentMethod) && !in_array($paymentMethod, $this->get_allowed_first_gateways(), true)) {
+            $errors->add('hb_ucs_subs_first_payment_method', __('De gekozen online betaalmethode is niet beschikbaar voor dit abonnement.', 'hb-ucs'));
         }
     }
 
