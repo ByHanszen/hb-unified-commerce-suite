@@ -157,6 +157,8 @@ class SubscriptionsModule {
 
         // Mollie webhook endpoint.
         add_filter('query_vars', [$this, 'register_query_vars']);
+        add_action('admin_post_nopriv_hb_ucs_run_renewals', [$this, 'handle_renewals_admin_post']);
+        add_action('admin_post_hb_ucs_run_renewals', [$this, 'handle_renewals_admin_post']);
         add_action('template_redirect', [$this, 'maybe_handle_mollie_webhook']);
         add_action('template_redirect', [$this, 'maybe_handle_renewals_cron_request']);
         add_action('template_redirect', [$this, 'maybe_handle_account_subscription_action']);
@@ -3158,6 +3160,16 @@ class SubscriptionsModule {
         }
 
         $token = (string) get_query_var('token');
+        $this->process_renewals_request($token);
+    }
+
+    public function handle_renewals_admin_post(): void {
+        $token = isset($_REQUEST['token']) ? sanitize_text_field((string) wp_unslash($_REQUEST['token'])) : '';
+        $this->process_renewals_request($token);
+    }
+
+    private function process_renewals_request(string $token): void {
+        $token = trim($token);
         if ($token === '' || !hash_equals($this->get_webhook_token(), $token)) {
             status_header(403);
             echo 'Forbidden';
