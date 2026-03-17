@@ -59,6 +59,38 @@
   box-sizing: border-box;
 }
 
+.single-product form.cart > .quantity {
+  flex: 0 0 auto;
+}
+
+.single-product form.cart > .single_add_to_cart_button,
+.single-product form.cart .woocommerce-variation-add-to-cart,
+.single-product form.cart .variations_button {
+  flex: 0 0 100%;
+  width: 100%;
+}
+
+.single-product form.cart .woocommerce-variation-add-to-cart,
+.single-product form.cart .variations_button {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.single-product form.cart .woocommerce-variation-add-to-cart .quantity,
+.single-product form.cart .variations_button .quantity {
+  flex: 0 0 auto;
+}
+
+.single-product form.cart .woocommerce-variation-add-to-cart .single_add_to_cart_button,
+.single-product form.cart .variations_button .single_add_to_cart_button,
+.single-product form.cart > .single_add_to_cart_button {
+  flex: 0 0 100%;
+  width: 100%;
+  margin-left: 0;
+}
+
 .hb-ucs-subscriptions__title {
   margin: 0 0 8px;
 }
