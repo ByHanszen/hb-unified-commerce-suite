@@ -9,6 +9,7 @@ use HB\UCS\Core\Settings;
 if (!defined('ABSPATH')) exit;
 
 class SubscriptionsModule {
+    private const RENEWAL_CRON_RECURRENCE = 'hb_ucs_every_minute';
     private const ACCOUNT_ENDPOINT = 'abonnementen';
 
     private const META_ENABLED = '_hb_ucs_subs_enabled';
@@ -150,6 +151,7 @@ class SubscriptionsModule {
         add_filter('woocommerce_email_enabled_customer_invoice', [$this, 'maybe_disable_default_customer_order_email_for_renewals'], 10, 2);
 
         // Cron renewals.
+        add_filter('cron_schedules', [$this, 'register_cron_schedules']);
         add_action('init', [$this, 'ensure_cron_scheduled']);
         add_action('hb_ucs_subs_process_renewals', [$this, 'process_due_renewals']);
 
@@ -3087,6 +3089,15 @@ class SubscriptionsModule {
         return trim($token);
     }
 
+    public function register_cron_schedules(array $schedules): array {
+        $schedules[self::RENEWAL_CRON_RECURRENCE] = [
+            'interval' => MINUTE_IN_SECONDS,
+            'display' => __('Elke minuut (HB UCS abonnementen)', 'hb-ucs'),
+        ];
+
+        return $schedules;
+    }
+
     public function ensure_cron_scheduled(): void {
         if (!function_exists('wp_next_scheduled') || !function_exists('wp_schedule_event')) {
             return;
@@ -3101,8 +3112,21 @@ class SubscriptionsModule {
             return;
         }
 
+        $needsReschedule = false;
+        if (function_exists('wp_get_scheduled_event')) {
+            $event = wp_get_scheduled_event('hb_ucs_subs_process_renewals');
+            if ($event && isset($event->schedule) && (string) $event->schedule !== self::RENEWAL_CRON_RECURRENCE) {
+                $needsReschedule = true;
+            }
+        }
+
+        if ($needsReschedule && $next) {
+            wp_unschedule_event($next, 'hb_ucs_subs_process_renewals');
+            $next = false;
+        }
+
         if (!$next) {
-            wp_schedule_event(time() + 300, 'hourly', 'hb_ucs_subs_process_renewals');
+            wp_schedule_event(time() + MINUTE_IN_SECONDS, self::RENEWAL_CRON_RECURRENCE, 'hb_ucs_subs_process_renewals');
         }
     }
 
