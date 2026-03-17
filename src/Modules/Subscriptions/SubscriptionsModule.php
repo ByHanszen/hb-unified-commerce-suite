@@ -158,6 +158,7 @@ class SubscriptionsModule {
         // Mollie webhook endpoint.
         add_filter('query_vars', [$this, 'register_query_vars']);
         add_action('template_redirect', [$this, 'maybe_handle_mollie_webhook']);
+        add_action('template_redirect', [$this, 'maybe_handle_renewals_cron_request']);
         add_action('template_redirect', [$this, 'maybe_handle_account_subscription_action']);
 
         // Customer self-service in My Account.
@@ -3140,9 +3141,40 @@ class SubscriptionsModule {
 
     public function register_query_vars(array $vars): array {
         $vars[] = 'hb_ucs_mollie_webhook';
+        $vars[] = 'hb_ucs_run_renewals';
         $vars[] = 'token';
         $vars[] = self::ACCOUNT_ENDPOINT;
         return $vars;
+    }
+
+    public function maybe_handle_renewals_cron_request(): void {
+        if (!function_exists('get_query_var')) {
+            return;
+        }
+
+        $flag = get_query_var('hb_ucs_run_renewals');
+        if ((string) $flag !== '1') {
+            return;
+        }
+
+        $token = (string) get_query_var('token');
+        if ($token === '' || !hash_equals($this->get_webhook_token(), $token)) {
+            status_header(403);
+            echo 'Forbidden';
+            exit;
+        }
+
+        if (!$this->recurring_enabled() || $this->get_engine() !== 'manual') {
+            status_header(200);
+            echo 'Renewals disabled';
+            exit;
+        }
+
+        $this->process_due_renewals();
+
+        status_header(200);
+        echo 'OK';
+        exit;
     }
 
     private function get_mollie_api_key(): string {
