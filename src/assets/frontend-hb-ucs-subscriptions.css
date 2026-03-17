@@ -44,6 +44,7 @@
 
 .single-product form.cart .hb-ucs-subscriptions--product {
   display: block !important;
+  float: none !important;
   clear: both;
   order: -10;
   flex: 1 0 100% !important;
@@ -54,6 +55,15 @@
   padding: 12px;
   border: 1px solid #e5e5e5;
   box-sizing: border-box;
+}
+
+.single-product form.cart .hb-ucs-subscriptions--product ~ .quantity,
+.single-product form.cart .hb-ucs-subscriptions--product ~ .single_add_to_cart_button,
+.single-product form.cart .hb-ucs-subscriptions--product ~ button.single_add_to_cart_button,
+.single-product form.cart .hb-ucs-subscriptions--product ~ .single_variation_wrap,
+.single-product form.cart .hb-ucs-subscriptions--product ~ .woocommerce-variation-add-to-cart,
+.single-product form.cart .hb-ucs-subscriptions--product ~ .variations_button {
+  clear: both;
 }
 
 .hb-ucs-subscriptions__title {
