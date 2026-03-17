@@ -4661,10 +4661,10 @@ class SubscriptionsModule {
             $selected = '0';
         }
 
-        echo '<div class="hb-ucs-subscriptions" style="margin:12px 0;padding:12px;border:1px solid #e5e5e5;">';
-        echo '<p style="margin:0 0 8px;"><strong>' . esc_html__('Kies aankooptype', 'hb-ucs') . '</strong></p>';
+        echo '<div class="hb-ucs-subscriptions hb-ucs-subscriptions--product">';
+        echo '<p class="hb-ucs-subscriptions__title"><strong>' . esc_html__('Kies aankooptype', 'hb-ucs') . '</strong></p>';
 
-        echo '<label style="display:block;margin:0 0 6px;">';
+        echo '<label class="hb-ucs-subscriptions__option">';
         echo '<input type="radio" name="hb_ucs_subs_scheme" value="0" ' . checked($selected, '0', false) . ' /> ';
         echo esc_html__('Eenmalige aankoop', 'hb-ucs');
         echo '</label>';
@@ -4672,7 +4672,7 @@ class SubscriptionsModule {
         foreach ($freqs as $scheme => $row) {
             $label = (string) $row['label'];
 
-            echo '<label style="display:block;margin:0 0 6px;">';
+            echo '<label class="hb-ucs-subscriptions__option">';
             echo '<input type="radio" name="hb_ucs_subs_scheme" value="' . esc_attr($scheme) . '" ' . checked($selected, (string) $scheme, false) . ' /> ';
             echo esc_html($label);
             if ($product->is_type('simple')) {
@@ -4688,11 +4688,11 @@ class SubscriptionsModule {
         }
 
         if ($product->is_type('variable')) {
-            echo '<p class="description" style="margin:8px 0 0;">' . esc_html__('Kies eerst een variatie; de abonnementsprijs kan per variatie verschillen.', 'hb-ucs') . '</p>';
+            echo '<p class="description hb-ucs-subscriptions__description">' . esc_html__('Kies eerst een variatie; de abonnementsprijs kan per variatie verschillen.', 'hb-ucs') . '</p>';
         }
 
         if ($this->get_engine() === 'wcs' && !$this->wcs_available()) {
-            echo '<p class="description" style="margin:8px 0 0;">' . esc_html__('Let op: WooCommerce Subscriptions is niet actief; zet de engine op Handmatig of activeer WooCommerce Subscriptions.', 'hb-ucs') . '</p>';
+            echo '<p class="description hb-ucs-subscriptions__description">' . esc_html__('Let op: WooCommerce Subscriptions is niet actief; zet de engine op Handmatig of activeer WooCommerce Subscriptions.', 'hb-ucs') . '</p>';
         }
 
         echo '</div>';

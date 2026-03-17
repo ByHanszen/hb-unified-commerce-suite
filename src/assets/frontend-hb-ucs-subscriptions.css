@@ -42,6 +42,36 @@
   color: var(--hb-ucs-text);
 }
 
+.single-product form.cart {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.single-product form.cart .hb-ucs-subscriptions--product {
+  order: -10;
+  flex: 0 0 100%;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid #e5e5e5;
+  box-sizing: border-box;
+}
+
+.hb-ucs-subscriptions__title {
+  margin: 0 0 8px;
+}
+
+.hb-ucs-subscriptions__option {
+  display: block;
+  margin: 0 0 6px;
+}
+
+.hb-ucs-subscriptions__description {
+  margin: 8px 0 0;
+}
+
 .hb-ucs-account-shell,
 .hb-ucs-account-shell * {
   box-sizing: border-box;
