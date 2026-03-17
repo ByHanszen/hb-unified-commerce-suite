@@ -12,6 +12,7 @@ class SubscriptionsModule {
     private const RENEWAL_CRON_RECURRENCE = 'hb_ucs_every_minute';
     private const ACCOUNT_ENDPOINT = 'abonnementen';
     private const USER_META_MOLLIE_CUSTOMER_ID = '_hb_ucs_mollie_customer_id';
+    private const ORDER_META_CONTAINS_SUBSCRIPTION = '_hb_ucs_contains_subscription';
 
     private const META_ENABLED = '_hb_ucs_subs_enabled';
     private const META_PRICE_PREFIX = '_hb_ucs_subs_price_'; // suffix: 1w|2w|3w|4w
@@ -180,6 +181,7 @@ class SubscriptionsModule {
         add_filter('woocommerce_get_item_data', [$this, 'display_cart_item_data'], 10, 2);
 
         // Order item meta.
+        add_action('woocommerce_checkout_create_order', [$this, 'mark_order_subscription_meta'], 10, 2);
         add_action('woocommerce_checkout_create_order_line_item', [$this, 'add_order_item_meta'], 10, 4);
 
         // Stock mapping: subscription child products do not manage stock; reduce base stock instead.
@@ -188,9 +190,21 @@ class SubscriptionsModule {
     }
 
     private function order_contains_subscription($order): bool {
-        if (!$order || !is_object($order) || !method_exists($order, 'get_items')) {
+        if (!$order || !is_object($order)) {
             return false;
         }
+
+        if (method_exists($order, 'get_meta')) {
+            $flag = (string) $order->get_meta(self::ORDER_META_CONTAINS_SUBSCRIPTION, true);
+            if ($flag === 'yes') {
+                return true;
+            }
+        }
+
+        if (!method_exists($order, 'get_items')) {
+            return false;
+        }
+
         foreach ($order->get_items('line_item') as $item) {
             if (!is_object($item) || !method_exists($item, 'get_meta')) {
                 continue;
@@ -201,6 +215,10 @@ class SubscriptionsModule {
             }
         }
         return false;
+    }
+
+    private function mollie_customer_storage_enabled(): bool {
+        return get_option('mollie-payments-for-woocommerce_customer_details', 'yes') === 'yes';
     }
 
     public function maybe_mark_mollie_first_payment(array $data, $order): array {
@@ -3553,9 +3571,26 @@ class SubscriptionsModule {
             return;
         }
 
+        if ($paymentMethod !== '' && $this->is_mollie_gateway($paymentMethod) && !$this->mollie_customer_storage_enabled()) {
+            $errors->add('hb_ucs_subs_mollie_customer_storage_required', __('Automatische verlengingen via Mollie vereisen dat klantopslag in de Mollie plugin is ingeschakeld.', 'hb-ucs'));
+            return;
+        }
+
         if ($paymentMethod !== '' && $this->is_mollie_gateway($paymentMethod) && !in_array($paymentMethod, $this->get_allowed_first_gateways(), true)) {
             $errors->add('hb_ucs_subs_first_payment_method', __('De gekozen online betaalmethode is niet beschikbaar voor dit abonnement.', 'hb-ucs'));
         }
+    }
+
+    public function mark_order_subscription_meta($order, array $data): void {
+        if (!$order || !is_object($order) || !method_exists($order, 'update_meta_data')) {
+            return;
+        }
+
+        if (!$this->cart_contains_subscription()) {
+            return;
+        }
+
+        $order->update_meta_data(self::ORDER_META_CONTAINS_SUBSCRIPTION, 'yes');
     }
 
     public function maybe_create_subscriptions_from_manual_order(int $orderId, $postedData = null, $order = null): void {
