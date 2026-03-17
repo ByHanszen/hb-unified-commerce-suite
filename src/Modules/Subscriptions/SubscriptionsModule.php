@@ -237,11 +237,15 @@ class SubscriptionsModule {
         if (isset($data['payment']) && is_array($data['payment'])) {
             $data['payment']['customerId'] = $customerId;
             $data['payment']['sequenceType'] = 'first';
+            unset($data['payment']['captureMode'], $data['payment']['captureDelay']);
         } else {
             // Payments API request.
             $data['customerId'] = $customerId;
             $data['sequenceType'] = 'first';
+            unset($data['captureMode'], $data['captureDelay']);
         }
+
+        unset($data['captureMode'], $data['captureDelay']);
 
         return $data;
     }
