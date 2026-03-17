@@ -11,7 +11,6 @@ if (!defined('ABSPATH')) exit;
 class SubscriptionsModule {
     private const RENEWAL_CRON_RECURRENCE = 'hb_ucs_every_minute';
     private const ACCOUNT_ENDPOINT = 'abonnementen';
-    private const USER_META_MOLLIE_CUSTOMER_ID = '_hb_ucs_mollie_customer_id';
     private const ORDER_META_CONTAINS_SUBSCRIPTION = '_hb_ucs_contains_subscription';
 
     private const META_ENABLED = '_hb_ucs_subs_enabled';
@@ -221,6 +220,25 @@ class SubscriptionsModule {
         return get_option('mollie-payments-for-woocommerce_customer_details', 'yes') === 'yes';
     }
 
+    private function get_mollie_payment_description($order): string {
+        if (!$order || !is_object($order)) {
+            return __('Bestelling', 'hb-ucs');
+        }
+
+        $orderNumber = method_exists($order, 'get_order_number') ? trim((string) $order->get_order_number()) : '';
+        $fullName = method_exists($order, 'get_formatted_billing_full_name') ? trim(wp_strip_all_tags((string) $order->get_formatted_billing_full_name(), true)) : '';
+
+        if ($fullName === '') {
+            $firstName = method_exists($order, 'get_billing_first_name') ? trim((string) $order->get_billing_first_name()) : '';
+            $lastName = method_exists($order, 'get_billing_last_name') ? trim((string) $order->get_billing_last_name()) : '';
+            $fullName = trim($firstName . ' ' . $lastName);
+        }
+
+        $description = trim(sprintf('Bestelling %s %s', $orderNumber, $fullName));
+
+        return $description !== '' ? $description : __('Bestelling', 'hb-ucs');
+    }
+
     public function maybe_mark_mollie_first_payment(array $data, $order): array {
         if (!$this->recurring_enabled() || $this->get_engine() !== 'manual') {
             return $data;
@@ -229,81 +247,16 @@ class SubscriptionsModule {
             return $data;
         }
 
-        $customerId = $this->get_or_create_mollie_customer_id_for_order($order);
-        if ($customerId === '') {
-            return $data;
-        }
-
         if (isset($data['payment']) && is_array($data['payment'])) {
-            $data['payment']['customerId'] = $customerId;
             $data['payment']['sequenceType'] = 'first';
             unset($data['payment']['captureMode'], $data['payment']['captureDelay']);
         } else {
-            // Payments API request.
-            $data['customerId'] = $customerId;
             $data['sequenceType'] = 'first';
-            unset($data['captureMode'], $data['captureDelay']);
         }
 
         unset($data['captureMode'], $data['captureDelay']);
 
         return $data;
-    }
-
-    private function get_or_create_mollie_customer_id_for_order($order): string {
-        if (!$order || !is_object($order)) {
-            return '';
-        }
-
-        $customerId = method_exists($order, 'get_meta') ? (string) $order->get_meta('_mollie_customer_id', true) : '';
-        if ($customerId !== '') {
-            return $customerId;
-        }
-
-        $userId = method_exists($order, 'get_user_id') ? (int) $order->get_user_id() : 0;
-        if ($userId > 0) {
-            $customerId = (string) get_user_meta($userId, self::USER_META_MOLLIE_CUSTOMER_ID, true);
-            if ($customerId !== '') {
-                if (method_exists($order, 'update_meta_data')) {
-                    $order->update_meta_data('_mollie_customer_id', $customerId);
-                }
-                return $customerId;
-            }
-        }
-
-        $email = method_exists($order, 'get_billing_email') ? sanitize_email((string) $order->get_billing_email()) : '';
-        if ($email === '') {
-            return '';
-        }
-
-        $firstName = method_exists($order, 'get_billing_first_name') ? trim((string) $order->get_billing_first_name()) : '';
-        $lastName = method_exists($order, 'get_billing_last_name') ? trim((string) $order->get_billing_last_name()) : '';
-        $name = trim($firstName . ' ' . $lastName);
-        if ($name === '') {
-            $name = $email;
-        }
-
-        $customer = $this->mollie_request('POST', 'customers', [
-            'name' => $name,
-            'email' => $email,
-        ]);
-        if (is_wp_error($customer) || !is_array($customer) || empty($customer['id'])) {
-            return '';
-        }
-
-        $customerId = (string) $customer['id'];
-        if ($customerId === '') {
-            return '';
-        }
-
-        if ($userId > 0) {
-            update_user_meta($userId, self::USER_META_MOLLIE_CUSTOMER_ID, $customerId);
-        }
-        if (method_exists($order, 'update_meta_data')) {
-            $order->update_meta_data('_mollie_customer_id', $customerId);
-        }
-
-        return $customerId;
     }
 
     public function register_subscription_post_type(): void {
@@ -4514,7 +4467,7 @@ class SubscriptionsModule {
                 'currency' => (string) get_woocommerce_currency(),
                 'value' => $amountValue,
             ],
-            'description' => sprintf('HB UCS renewal order #%d', (int) $order->get_id()),
+            'description' => $this->get_mollie_payment_description($order),
             'customerId' => $customerId,
             'mandateId' => $mandateId,
             'sequenceType' => 'recurring',

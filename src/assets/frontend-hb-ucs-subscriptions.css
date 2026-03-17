@@ -28,8 +28,10 @@
   --hb-ucs-button-text: var(--forms-buttons-normal-text-color, inherit);
   --hb-ucs-button-hover-text: var(--forms-buttons-hover-text-color, var(--forms-buttons-normal-text-color, inherit));
   --hb-ucs-badge-active-color: var(--links-normal-color, var(--hb-ucs-button-text));
-  --hb-ucs-badge-paused-color: var(--links-hover-color, var(--hb-ucs-button-hover-text));
-  --hb-ucs-badge-cancelled-color: var(--forms-buttons-hover-text-color, var(--hb-ucs-button-hover-text));
+  --hb-ucs-badge-paused-color: #94660c;
+  --hb-ucs-badge-paused-bg: #f8dda7;
+  --hb-ucs-badge-cancelled-color: #777777;
+  --hb-ucs-badge-cancelled-bg: #e5e5e5;
   --hb-ucs-badge-neutral-color: var(--general-text-color, var(--hb-ucs-text));
   --hb-ucs-info-color: #1e85be;
   --hb-ucs-success-color: #8fae1b;
@@ -264,12 +266,14 @@
 
 .hb-ucs-status-badge--paused {
   color: var(--hb-ucs-badge-paused-color);
-  background: color-mix(in srgb, var(--sections-background-color, transparent) 78%, var(--hb-ucs-badge-paused-color) 22%);
+  background: var(--hb-ucs-badge-paused-bg);
+  border-color: var(--hb-ucs-badge-paused-bg);
 }
 
 .hb-ucs-status-badge--cancelled {
   color: var(--hb-ucs-badge-cancelled-color);
-  background: color-mix(in srgb, var(--sections-background-color, transparent) 82%, var(--hb-ucs-badge-cancelled-color) 18%);
+  background: var(--hb-ucs-badge-cancelled-bg);
+  border-color: var(--hb-ucs-badge-cancelled-bg);
 }
 
 .hb-ucs-status-badge--neutral {
