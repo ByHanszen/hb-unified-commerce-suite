@@ -815,7 +815,7 @@ class SubscriptionsModule {
             echo '<div class="hb-ucs-subscription-card__meta">';
             echo '<div class="hb-ucs-subscription-card__meta-item"><span>' . esc_html__('Volgende orderdatum', 'hb-ucs') . '</span><strong>' . esc_html($nextPayment > 0 ? $this->format_wp_datetime($nextPayment) : '—') . '</strong></div>';
             echo '<div class="hb-ucs-subscription-card__meta-item"><span>' . esc_html__('Frequentie', 'hb-ucs') . '</span><strong>' . esc_html($this->get_subscription_scheme_label((string) get_post_meta($subId, self::SUB_META_SCHEME, true))) . '</strong></div>';
-            echo '<div class="hb-ucs-subscription-card__meta-item"><span>' . esc_html__('Totaal', 'hb-ucs') . '</span><strong>' . wp_kses_post(function_exists('wc_price') ? wc_price($this->get_subscription_total_amount($subId)) : number_format($this->get_subscription_total_amount($subId), 2, '.', '')) . '</strong></div>';
+            echo '<div class="hb-ucs-subscription-card__meta-item"><span>' . esc_html__('Totaal', 'hb-ucs') . '</span><strong>' . wp_kses_post(function_exists('wc_price') ? wc_price($this->get_subscription_total_amount($subId, true)) : number_format($this->get_subscription_total_amount($subId, true), 2, '.', '')) . '</strong></div>';
             echo '</div>';
             if (!empty($itemSummary)) {
                 echo '<div class="hb-ucs-subscription-card__items">';
@@ -852,7 +852,7 @@ class SubscriptionsModule {
         $contact = $this->get_subscription_contact_snapshot($userId, null, $subId);
         $relatedOrders = $this->get_subscription_related_orders($subId);
         $manageDisabled = in_array($status, ['cancelled', 'expired'], true);
-        $totalAmount = $this->get_subscription_total_amount($subId);
+        $totalAmount = $this->get_subscription_total_amount($subId, true);
         $scheduleModalId = 'hb-ucs-schedule-modal-' . $subId;
         $contactPanelId = 'hb-ucs-panel-contact-' . $subId;
         $ordersPanelId = 'hb-ucs-panel-orders-' . $subId;
@@ -1420,7 +1420,7 @@ class SubscriptionsModule {
         $selectedId = (int) ($item['base_product_id'] ?? 0);
         $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
         $variationSummary = (string) ($item['variation_summary'] ?? '');
-        $unitPrice = (float) ($item['unit_price'] ?? 0.0);
+        $unitPrice = $this->get_subscription_item_display_amount($item, 1, true);
         $unitPriceHtml = $unitPrice > 0 ? (function_exists('wc_price') ? wc_price($unitPrice) : number_format($unitPrice, 2, '.', '')) : '';
         $itemLabel = isset($item['display_label']) && (string) $item['display_label'] !== '' ? (string) $item['display_label'] : ($selectedId > 0 ? $this->get_subscription_item_label($item) : __('Nieuw product', 'hb-ucs'));
 
@@ -2009,12 +2009,68 @@ class SubscriptionsModule {
         ]);
     }
 
-    private function get_subscription_total_amount(int $subId): float {
+    private function get_subscription_total_amount(int $subId, bool $includeTax = false): float {
         $amount = 0.0;
         foreach ($this->get_subscription_items($subId) as $item) {
-            $amount += ((float) ($item['unit_price'] ?? 0.0) * (int) ($item['qty'] ?? 1));
+            if ($includeTax) {
+                $amount += $this->get_subscription_item_display_amount($item, (int) ($item['qty'] ?? 1), true);
+            } else {
+                $amount += ((float) ($item['unit_price'] ?? 0.0) * (int) ($item['qty'] ?? 1));
+            }
         }
         return (float) wc_format_decimal((string) $amount);
+    }
+
+    private function get_subscription_item_display_amount(array $item, int $qty = 1, bool $includeTax = true): float {
+        $qty = max(1, $qty);
+        $unitPrice = (float) ($item['unit_price'] ?? 0.0);
+        if ($unitPrice <= 0) {
+            return 0.0;
+        }
+
+        $productId = (int) ($item['base_variation_id'] ?? 0);
+        if ($productId <= 0) {
+            $productId = (int) ($item['base_product_id'] ?? 0);
+        }
+
+        $product = $productId > 0 ? wc_get_product($productId) : false;
+        return $this->get_product_price_display_amount($product, $unitPrice, $qty, $includeTax);
+    }
+
+    private function get_product_price_display_amount($product, float $price, int $qty = 1, bool $includeTax = true): float {
+        $qty = max(1, $qty);
+        $amount = $price * $qty;
+
+        if (!$includeTax || !function_exists('wc_tax_enabled') || !wc_tax_enabled() || !function_exists('wc_get_price_including_tax')) {
+            return (float) wc_format_decimal((string) $amount);
+        }
+
+        if (!$product || !is_object($product)) {
+            return (float) wc_format_decimal((string) $amount);
+        }
+
+        return (float) wc_format_decimal((string) wc_get_price_including_tax($product, [
+            'qty' => $qty,
+            'price' => $price,
+        ]));
+    }
+
+    private function get_product_price_storage_amount($product, float $displayPrice, int $qty = 1): float {
+        $qty = max(1, $qty);
+        $amount = $displayPrice * $qty;
+
+        if (!function_exists('wc_tax_enabled') || !wc_tax_enabled() || !function_exists('wc_get_price_excluding_tax')) {
+            return (float) wc_format_decimal((string) $amount);
+        }
+
+        if (!$product || !is_object($product)) {
+            return (float) wc_format_decimal((string) $amount);
+        }
+
+        return (float) wc_format_decimal((string) wc_get_price_excluding_tax($product, [
+            'qty' => $qty,
+            'price' => $displayPrice,
+        ]));
     }
 
     private function get_subscription_related_orders(int $subId): array {
@@ -2264,12 +2320,20 @@ class SubscriptionsModule {
             $qty = 1;
         }
 
+        $displayItem = [
+            'base_product_id' => $baseProductId,
+            'base_variation_id' => $baseVariationId,
+            'qty' => $qty,
+            'unit_price' => (float) wc_format_decimal($unitPrice !== '' ? $unitPrice : '0'),
+        ];
+        $displayUnitPrice = $this->get_subscription_item_display_amount($displayItem, 1, true);
+
         echo '<div class="woocommerce_order_items_wrapper">';
         echo '<table class="woocommerce_order_items widefat" cellspacing="0">';
         echo '<thead><tr>';
         echo '<th class="item" colspan="2">' . esc_html__('Item', 'hb-ucs') . '</th>';
         echo '<th class="quantity">' . esc_html__('Aantal', 'hb-ucs') . '</th>';
-        echo '<th class="line_cost">' . esc_html__('Prijs (per stuk)', 'hb-ucs') . '</th>';
+        echo '<th class="line_cost">' . esc_html__('Prijs (per stuk, incl. btw)', 'hb-ucs') . '</th>';
         echo '</tr></thead>';
         echo '<tbody>';
         echo '<tr class="item">';
@@ -2287,7 +2351,7 @@ class SubscriptionsModule {
         echo '<input type="number" min="1" step="1" name="hb_ucs_sub_qty" value="' . esc_attr((string) $qty) . '" style="width:80px;" />';
         echo '</td>';
         echo '<td class="line_cost">';
-        echo '<input type="text" name="hb_ucs_sub_unit_price" value="' . esc_attr($unitPrice) . '" style="width:110px;" />';
+        echo '<input type="text" name="hb_ucs_sub_unit_price" value="' . esc_attr((string) wc_format_decimal((string) $displayUnitPrice, wc_get_price_decimals())) . '" style="width:110px;" />';
         echo '</td>';
         echo '</tr>';
         echo '</tbody>';
@@ -2478,7 +2542,13 @@ class SubscriptionsModule {
 
         if (isset($_POST['hb_ucs_sub_unit_price']) && function_exists('wc_format_decimal')) {
             $rawPrice = (string) wp_unslash($_POST['hb_ucs_sub_unit_price']);
-            $firstItem['unit_price'] = (float) wc_format_decimal($rawPrice, wc_get_price_decimals());
+            $displayPrice = (float) wc_format_decimal($rawPrice, wc_get_price_decimals());
+            $selectedId = (int) ($firstItem['base_variation_id'] ?? 0);
+            if ($selectedId <= 0) {
+                $selectedId = (int) ($firstItem['base_product_id'] ?? 0);
+            }
+            $product = $selectedId > 0 && function_exists('wc_get_product') ? wc_get_product($selectedId) : false;
+            $firstItem['unit_price'] = $this->get_product_price_storage_amount($product, $displayPrice, 1);
         }
 
         $items[0] = $firstItem;
@@ -2598,7 +2668,7 @@ class SubscriptionsModule {
             if ($interval <= 0) {
                 $interval = 1;
             }
-            $amount = $this->get_subscription_total_amount($postId);
+            $amount = $this->get_subscription_total_amount($postId, true);
             $price = function_exists('wc_price') ? wc_price($amount) : number_format($amount, 2, '.', '');
 
             $every = sprintf(
@@ -4433,6 +4503,9 @@ class SubscriptionsModule {
             }
         }
 
+        if (function_exists('wc_tax_enabled') && wc_tax_enabled()) {
+            $order->calculate_taxes();
+        }
         $order->calculate_totals(false);
         if ($requiresMandate) {
             $order->update_status('on-hold', __('HB UCS: renewal aangemaakt, wacht op SEPA incasso.', 'hb-ucs'));
@@ -4624,7 +4697,7 @@ class SubscriptionsModule {
 
                 echo '<div class="form-field hb-ucs-subs-scheme" data-base-price="' . esc_attr((string) $basePriceFloat) . '" data-scheme="' . esc_attr($scheme) . '" style="padding:10px 0;border-top:1px solid #f0f0f1;">';
                 echo '<strong>' . esc_html($label) . '</strong><br/>';
-                echo '<span class="description">' . sprintf(esc_html__('Basisprijs: %s', 'hb-ucs'), wp_kses_post(wc_price($basePriceFloat))) . '</span>';
+                echo '<span class="description">' . sprintf(esc_html__('Basisprijs incl. btw: %s', 'hb-ucs'), wp_kses_post(wc_price($this->get_product_price_display_amount(wc_get_product($productId), $basePriceFloat, 1, true)))) . '</span>';
 
                 echo '<p style="margin:8px 0 0;">';
                 echo '<label style="display:inline-block;margin-right:12px;">';
@@ -4638,7 +4711,7 @@ class SubscriptionsModule {
                 echo '</select>';
 
                 echo '<input type="text" class="short" name="hb_ucs_subs_disc_value[' . esc_attr($scheme) . ']" value="' . esc_attr((string) ($disc['value'] ?? '')) . '" placeholder="0" />';
-                echo '<span class="description" style="margin-left:10px;">' . esc_html__('Nieuwe prijs:', 'hb-ucs') . ' <strong class="hb-ucs-subs-new-price">' . wp_kses_post(wc_price((float) ($pricing['final'] ?? $basePriceFloat))) . '</strong></span>';
+                echo '<span class="description" style="margin-left:10px;">' . esc_html__('Nieuwe prijs incl. btw:', 'hb-ucs') . ' <strong class="hb-ucs-subs-new-price">' . wp_kses_post(wc_price($this->get_product_price_display_amount(wc_get_product($productId), (float) ($pricing['final'] ?? $basePriceFloat), 1, true))) . '</strong></span>';
                 echo '</p>';
 
                 echo '<details style="margin-top:8px;"><summary>' . esc_html__('Geavanceerd: vaste abonnementsprijs (override)', 'hb-ucs') . '</summary>';
@@ -5374,7 +5447,7 @@ class SubscriptionsModule {
         $baseFloat = $base === '' ? 0.0 : (float) wc_format_decimal($base);
 
         echo '<div class="hb-ucs-variation-subscriptions" data-base-price="' . esc_attr((string) $baseFloat) . '" style="padding:8px 0;">';
-        echo '<p><strong>' . esc_html__('Abonnement prijzen', 'hb-ucs') . '</strong><br/><span class="description">' . sprintf(esc_html__('Basisprijs: %s', 'hb-ucs'), wp_kses_post(wc_price($baseFloat))) . '</span></p>';
+        echo '<p><strong>' . esc_html__('Abonnement prijzen', 'hb-ucs') . '</strong><br/><span class="description">' . sprintf(esc_html__('Basisprijs incl. btw: %s', 'hb-ucs'), wp_kses_post(wc_price($this->get_product_price_display_amount($variationObj, $baseFloat, 1, true)))) . '</span></p>';
 
         foreach ($freqs as $scheme => $row) {
             $scheme = (string) $scheme;
@@ -5399,7 +5472,7 @@ class SubscriptionsModule {
             echo '</select>';
 
             echo '<input type="text" class="short" name="hb_ucs_subs_disc_value[' . esc_attr($scheme) . '][' . esc_attr((string) $variationId) . ']" value="' . esc_attr((string) ($disc['value'] ?? '')) . '" placeholder="0" />';
-            echo '<span class="description" style="margin-left:10px;">' . esc_html__('Nieuwe prijs:', 'hb-ucs') . ' <strong class="hb-ucs-subs-new-price">' . wp_kses_post(wc_price((float) ($pricing['final'] ?? $baseFloat))) . '</strong></span>';
+            echo '<span class="description" style="margin-left:10px;">' . esc_html__('Nieuwe prijs incl. btw:', 'hb-ucs') . ' <strong class="hb-ucs-subs-new-price">' . wp_kses_post(wc_price($this->get_product_price_display_amount($variationObj, (float) ($pricing['final'] ?? $baseFloat), 1, true))) . '</strong></span>';
 
             echo '<details style="margin-top:6px;"><summary>' . esc_html__('Vaste abonnementsprijs (override)', 'hb-ucs') . '</summary>';
             echo '<p style="margin:6px 0 0;">';
