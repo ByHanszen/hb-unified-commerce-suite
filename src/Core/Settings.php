@@ -1105,7 +1105,7 @@ class Settings {
     // ====== Helper: recalc legacy meta ======
     private function recalc_legacy_meta(int $days): int {
         $opt = get_option(self::OPT_QLS, $this->defaults_qls());
-        $date_after = gmdate('Y-m-d H:i:s', time() - max(0, $days) * DAY_IN_SECONDS);
+        $date_after = gmdate('Y-m-d H:i:s', current_time('timestamp', true) - max(0, $days) * DAY_IN_SECONDS);
 
         $query = new \WC_Order_Query([
             'limit'   => -1,

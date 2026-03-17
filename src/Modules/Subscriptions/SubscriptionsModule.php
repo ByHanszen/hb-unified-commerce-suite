@@ -313,16 +313,70 @@ class SubscriptionsModule {
         }
     }
 
-    private function format_wp_datetime(int $timestamp, string $format = 'd-m-Y H:i'): string {
+    private function get_wp_date_format(): string {
+        $format = (string) get_option('date_format');
+        return $format !== '' ? $format : 'Y-m-d';
+    }
+
+    private function get_wp_time_format(): string {
+        $format = (string) get_option('time_format');
+        return $format !== '' ? $format : 'H:i';
+    }
+
+    private function get_wp_datetime_format(): string {
+        return trim($this->get_wp_date_format() . ' ' . $this->get_wp_time_format());
+    }
+
+    private function format_wp_date(int $timestamp, ?string $format = null): string {
         if ($timestamp <= 0) {
             return '';
         }
+
+        $format = $format !== null && $format !== '' ? $format : $this->get_wp_date_format();
 
         try {
             return wp_date($format, $timestamp, wp_timezone());
         } catch (\Throwable $e) {
             return '';
         }
+    }
+
+    private function format_wp_datetime(int $timestamp, ?string $format = null): string {
+        if ($timestamp <= 0) {
+            return '';
+        }
+
+        $format = $format !== null && $format !== '' ? $format : $this->get_wp_datetime_format();
+
+        try {
+            return wp_date($format, $timestamp, wp_timezone());
+        } catch (\Throwable $e) {
+            return '';
+        }
+    }
+
+    private function format_wc_datetime_for_site_settings($value, bool $includeTime = true): string {
+        if (!$value || !is_object($value) || !method_exists($value, 'getTimestamp')) {
+            return '';
+        }
+
+        return $includeTime
+            ? $this->format_wp_datetime((int) $value->getTimestamp())
+            : $this->format_wp_date((int) $value->getTimestamp());
+    }
+
+    private function get_wp_timezone_label(): string {
+        $tzString = wp_timezone_string();
+        if ($tzString !== '') {
+            return $tzString;
+        }
+
+        $offset = (float) get_option('gmt_offset', 0);
+        $sign = $offset < 0 ? '-' : '+';
+        $hours = (int) floor(abs($offset));
+        $minutes = (int) round((abs($offset) - $hours) * 60);
+
+        return sprintf('UTC%s%02d:%02d', $sign, $hours, $minutes);
     }
 
     private function parse_datetime_local(string $raw): int {
@@ -757,7 +811,7 @@ class SubscriptionsModule {
         $scheduleModalId = 'hb-ucs-schedule-modal-' . $subId;
         $contactPanelId = 'hb-ucs-panel-contact-' . $subId;
         $ordersPanelId = 'hb-ucs-panel-orders-' . $subId;
-        $summaryDate = $nextPayment > 0 ? $this->format_wp_datetime($nextPayment, 'j M Y') : '—';
+        $summaryDate = $nextPayment > 0 ? $this->format_wp_date($nextPayment) : '—';
 
         echo '<div class="woocommerce-account-hb-ucs-subscription hb-ucs-account-shell hb-ucs-account-shell--detail">';
         echo '<p class="hb-ucs-account-backlink"><a href="' . esc_url($this->get_account_subscription_url()) . '">← ' . esc_html__('Terug naar abonnementen', 'hb-ucs') . '</a></p>';
@@ -839,7 +893,7 @@ class SubscriptionsModule {
         echo '<input type="hidden" name="scheme" value="' . esc_attr($scheme) . '" />';
         echo '<div class="hb-ucs-schedule-modal__body">';
         echo '<div class="hb-ucs-schedule-modal__summary woocommerce-info">' . esc_html__('Deze wijziging geldt voor toekomstige orders. Afhankelijk van de betaalmethode kan de verzending 1 tot 3 dagen duren. Openstaande bestellingen blijven ongewijzigd.', 'hb-ucs') . '</div>';
-        echo '<label class="hb-ucs-footer-field hb-ucs-footer-field--modal"><span>' . esc_html__('Volgende orderdatum', 'hb-ucs') . '</span><input type="date" class="input-text" name="next_payment" value="' . esc_attr($this->format_date_input($nextPayment)) . '" min="' . esc_attr($this->format_date_input((int) current_time('timestamp'))) . '" ' . disabled($manageDisabled, true, false) . ' /></label>';
+        echo '<label class="hb-ucs-footer-field hb-ucs-footer-field--modal"><span>' . esc_html__('Volgende orderdatum', 'hb-ucs') . '</span><input type="date" class="input-text" name="next_payment" value="' . esc_attr($this->format_date_input($nextPayment)) . '" min="' . esc_attr($this->format_date_input(time())) . '" ' . disabled($manageDisabled, true, false) . ' /></label>';
         echo '<div class="hb-ucs-schedule-modal__meta"><span>' . esc_html__('Frequentie', 'hb-ucs') . '</span><strong>' . esc_html($this->get_subscription_scheme_label($scheme)) . '</strong></div>';
         echo '</div>';
         echo '<div class="hb-ucs-schedule-modal__actions">';
@@ -919,7 +973,7 @@ class SubscriptionsModule {
                 }
                 echo '<a class="hb-ucs-related-order" href="' . esc_url($order->get_view_order_url()) . '">';
                 echo '<div class="hb-ucs-related-order__main"><strong>#' . esc_html((string) $order->get_id()) . '</strong><span>' . esc_html((string) $row['type']) . '</span></div>';
-                echo '<div class="hb-ucs-related-order__meta"><span>' . esc_html(wc_get_order_status_name($order->get_status())) . '</span><span>' . esc_html($order->get_date_created() ? $order->get_date_created()->date_i18n('d-m-Y H:i') : '—') . '</span><strong>' . wp_kses_post($order->get_formatted_order_total()) . '</strong></div>';
+                echo '<div class="hb-ucs-related-order__meta"><span>' . esc_html(wc_get_order_status_name($order->get_status())) . '</span><span>' . esc_html($this->format_wc_datetime_for_site_settings($order->get_date_created())) . '</span><strong>' . wp_kses_post($order->get_formatted_order_total()) . '</strong></div>';
                 echo '</a>';
             }
             echo '</div>';
@@ -2232,6 +2286,7 @@ class SubscriptionsModule {
         echo '<p><label for="hb_ucs_sub_end_date"><strong>' . esc_html__('Einddatum', 'hb-ucs') . '</strong></label><br/>';
         echo '<input type="datetime-local" name="hb_ucs_sub_end_date" id="hb_ucs_sub_end_date" value="' . esc_attr($this->format_datetime_local($endDate)) . '" style="width:100%;" />';
         echo '</p>';
+        echo '<p><small>' . esc_html(sprintf(__('Datums en tijden gebruiken de WordPress tijdzone: %s.', 'hb-ucs'), $this->get_wp_timezone_label())) . '</small></p>';
     }
 
     public function render_subscription_related_orders_metabox($post): void {
@@ -2268,7 +2323,7 @@ class SubscriptionsModule {
             $po = wc_get_order($parentOrderId);
             if ($po && is_object($po)) {
                 $link = admin_url('post.php?post=' . $parentOrderId . '&action=edit');
-                $date = method_exists($po, 'get_date_created') && $po->get_date_created() ? $po->get_date_created()->date_i18n('Y-m-d H:i') : '—';
+                $date = $this->format_wc_datetime_for_site_settings(method_exists($po, 'get_date_created') ? $po->get_date_created() : null);
                 $total = method_exists($po, 'get_formatted_order_total') ? $po->get_formatted_order_total() : (string) $po->get_total();
                 echo '<tr>';
                 echo '<td><a href="' . esc_url($link) . '">#' . esc_html((string) $parentOrderId) . '</a></td>';
@@ -2288,7 +2343,7 @@ class SubscriptionsModule {
                 }
                 $id = (int) $o->get_id();
                 $link = admin_url('post.php?post=' . $id . '&action=edit');
-                $date = method_exists($o, 'get_date_created') && $o->get_date_created() ? $o->get_date_created()->date_i18n('Y-m-d H:i') : '—';
+                $date = $this->format_wc_datetime_for_site_settings(method_exists($o, 'get_date_created') ? $o->get_date_created() : null);
                 $total = method_exists($o, 'get_formatted_order_total') ? $o->get_formatted_order_total() : (string) $o->get_total();
                 echo '<tr>';
                 echo '<td><a href="' . esc_url($link) . '">#' . esc_html((string) $id) . '</a></td>';
@@ -2520,19 +2575,19 @@ class SubscriptionsModule {
         if ($column === 'hb_ucs_start_date') {
             $post = get_post($postId);
             $ts = $post && isset($post->post_date_gmt) ? strtotime((string) $post->post_date_gmt . ' GMT') : 0;
-            echo esc_html($ts ? date_i18n('Y-m-d', $ts) : '—');
+            echo esc_html($ts ? $this->format_wp_date($ts) : '—');
             return;
         }
 
         if ($column === 'hb_ucs_trial_end') {
             $ts = (int) get_post_meta($postId, self::SUB_META_TRIAL_END, true);
-            echo esc_html($ts > 0 ? date_i18n('Y-m-d', $ts) : '—');
+            echo esc_html($ts > 0 ? $this->format_wp_date($ts) : '—');
             return;
         }
 
         if ($column === 'hb_ucs_next_payment') {
             $nextPayment = (int) get_post_meta($postId, self::SUB_META_NEXT_PAYMENT, true);
-            echo esc_html($nextPayment > 0 ? date_i18n('Y-m-d H:i', $nextPayment) : '—');
+            echo esc_html($nextPayment > 0 ? $this->format_wp_datetime($nextPayment) : '—');
             return;
         }
 
@@ -2541,17 +2596,17 @@ class SubscriptionsModule {
             $lastTs = (int) get_post_meta($postId, self::SUB_META_LAST_ORDER_DATE, true);
             if ($lastId > 0) {
                 $link = admin_url('post.php?post=' . $lastId . '&action=edit');
-                $label = $lastTs > 0 ? date_i18n('Y-m-d', $lastTs) : ('#' . $lastId);
+                $label = $lastTs > 0 ? $this->format_wp_date($lastTs) : ('#' . $lastId);
                 echo '<a href="' . esc_url($link) . '">' . esc_html($label) . '</a>';
             } else {
-                echo esc_html($lastTs > 0 ? date_i18n('Y-m-d', $lastTs) : '—');
+                echo esc_html($lastTs > 0 ? $this->format_wp_date($lastTs) : '—');
             }
             return;
         }
 
         if ($column === 'hb_ucs_end_date') {
             $ts = (int) get_post_meta($postId, self::SUB_META_END_DATE, true);
-            echo esc_html($ts > 0 ? date_i18n('Y-m-d', $ts) : '—');
+            echo esc_html($ts > 0 ? $this->format_wp_date($ts) : '—');
             return;
         }
 
@@ -2815,12 +2870,37 @@ class SubscriptionsModule {
         return $emails;
     }
 
+    private function trigger_renewal_customer_email(string $emailId, int $orderId, int $subscriptionId = 0): void {
+        if ($emailId === '' || $orderId <= 0 || !function_exists('WC')) {
+            return;
+        }
+
+        $mailer = WC()->mailer();
+        if (!$mailer || !is_object($mailer) || !method_exists($mailer, 'get_emails')) {
+            return;
+        }
+
+        foreach ((array) $mailer->get_emails() as $email) {
+            if (!$email || !is_object($email) || !method_exists($email, 'trigger')) {
+                continue;
+            }
+
+            if (!isset($email->id) || (string) $email->id !== $emailId) {
+                continue;
+            }
+
+            $email->trigger($orderId, $subscriptionId);
+            return;
+        }
+    }
+
     public function maybe_trigger_on_hold_renewal_email(int $orderId): void {
         $order = wc_get_order($orderId);
         if (!$this->is_renewal_order($order)) {
             return;
         }
-        do_action('hb_ucs_customer_on_hold_renewal_order_notification', $orderId, (int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true));
+
+        $this->trigger_renewal_customer_email('customer_on_hold_renewal_order', $orderId, (int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true));
     }
 
     public function maybe_trigger_processing_renewal_email(int $orderId): void {
@@ -2828,7 +2908,8 @@ class SubscriptionsModule {
         if (!$this->is_renewal_order($order)) {
             return;
         }
-        do_action('hb_ucs_customer_processing_renewal_order_notification', $orderId, (int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true));
+
+        $this->trigger_renewal_customer_email('customer_processing_renewal_order', $orderId, (int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true));
     }
 
     public function maybe_trigger_completed_renewal_email(int $orderId): void {
@@ -2836,7 +2917,8 @@ class SubscriptionsModule {
         if (!$this->is_renewal_order($order)) {
             return;
         }
-        do_action('hb_ucs_customer_completed_renewal_order_notification', $orderId, (int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true));
+
+        $this->trigger_renewal_customer_email('customer_completed_renewal_order', $orderId, (int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true));
     }
 
     public function handle_run_renewals_now(): void {
@@ -4183,6 +4265,8 @@ class SubscriptionsModule {
             $order->add_order_note(__('HB UCS: deze renewal gebruikt een handmatige/offline betaalmethode, vereist geen Mollie mandaat en staat direct op verwerken.', 'hb-ucs'));
         }
         $order->save();
+
+        $this->trigger_renewal_customer_email('customer_renewal_invoice', (int) $order->get_id(), $subId);
 
         if (!$requiresMandate) {
             $nextPayment = $this->calculate_next_payment_timestamp($subId);
