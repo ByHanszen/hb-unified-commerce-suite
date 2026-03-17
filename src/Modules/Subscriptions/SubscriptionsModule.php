@@ -1882,6 +1882,7 @@ class SubscriptionsModule {
         $baseVariationId = (int) ($item['base_variation_id'] ?? 0);
         $qty = (int) ($item['qty'] ?? 1);
         $unitPrice = isset($item['unit_price']) ? (float) wc_format_decimal((string) $item['unit_price']) : 0.0;
+        $priceIncludesTax = !empty($item['price_includes_tax']);
         $selectedAttributes = isset($item['selected_attributes']) && is_array($item['selected_attributes']) ? $item['selected_attributes'] : [];
 
         if ($baseProductId <= 0) {
@@ -1906,6 +1907,7 @@ class SubscriptionsModule {
             'base_variation_id' => max(0, $baseVariationId),
             'qty' => $qty,
             'unit_price' => $unitPrice,
+            'price_includes_tax' => $priceIncludesTax ? 1 : 0,
             'selected_attributes' => $normalizedAttributes,
         ];
     }
@@ -2018,7 +2020,7 @@ class SubscriptionsModule {
             if ($includeTax) {
                 $amount += $this->get_subscription_item_display_amount($item, (int) ($item['qty'] ?? 1), true);
             } else {
-                $amount += ((float) ($item['unit_price'] ?? 0.0) * (int) ($item['qty'] ?? 1));
+                $amount += ($this->get_subscription_item_storage_unit_price($item) * (int) ($item['qty'] ?? 1));
             }
         }
         return (float) wc_format_decimal((string) $amount);
@@ -2029,6 +2031,10 @@ class SubscriptionsModule {
         $unitPrice = (float) ($item['unit_price'] ?? 0.0);
         if ($unitPrice <= 0) {
             return 0.0;
+        }
+
+        if ($includeTax && !empty($item['price_includes_tax'])) {
+            return (float) wc_format_decimal((string) ($unitPrice * $qty));
         }
 
         $productId = (int) ($item['base_variation_id'] ?? 0);
@@ -2074,6 +2080,26 @@ class SubscriptionsModule {
             'qty' => $qty,
             'price' => $displayPrice,
         ]));
+    }
+
+    private function get_subscription_item_storage_unit_price(array $item): float {
+        $unitPrice = (float) ($item['unit_price'] ?? 0.0);
+        if ($unitPrice <= 0) {
+            return 0.0;
+        }
+
+        if (empty($item['price_includes_tax'])) {
+            return (float) wc_format_decimal((string) $unitPrice);
+        }
+
+        $productId = (int) ($item['base_variation_id'] ?? 0);
+        if ($productId <= 0) {
+            $productId = (int) ($item['base_product_id'] ?? 0);
+        }
+
+        $product = $productId > 0 ? wc_get_product($productId) : false;
+
+        return $this->get_product_price_storage_amount($product, $unitPrice, 1);
     }
 
     private function get_subscription_related_orders(int $subId): array {
@@ -2552,6 +2578,7 @@ class SubscriptionsModule {
             }
             $product = $selectedId > 0 && function_exists('wc_get_product') ? wc_get_product($selectedId) : false;
             $firstItem['unit_price'] = $this->get_product_price_storage_amount($product, $displayPrice, 1);
+            $firstItem['price_includes_tax'] = 0;
         }
 
         $items[0] = $firstItem;
@@ -3205,6 +3232,7 @@ class SubscriptionsModule {
         }
 
         $imported = isset($_GET['hb_ucs_wcs_imported']) ? (int) $_GET['hb_ucs_wcs_imported'] : 0;
+        $refreshed = isset($_GET['hb_ucs_wcs_refreshed']) ? (int) $_GET['hb_ucs_wcs_refreshed'] : 0;
         $skippedExisting = isset($_GET['hb_ucs_wcs_skipped_existing']) ? (int) $_GET['hb_ucs_wcs_skipped_existing'] : 0;
         $skippedUnsupported = isset($_GET['hb_ucs_wcs_skipped_unsupported']) ? (int) $_GET['hb_ucs_wcs_skipped_unsupported'] : 0;
         $errors = isset($_GET['hb_ucs_wcs_errors']) ? (int) $_GET['hb_ucs_wcs_errors'] : 0;
@@ -3212,8 +3240,9 @@ class SubscriptionsModule {
         if (isset($_GET['hb_ucs_wcs_migrated'])) {
             echo '<div class="notice notice-success is-dismissible"><p>';
             echo esc_html(sprintf(
-                __('WCS migratie voltooid: %1$d geïmporteerd, %2$d al aanwezig, %3$d overgeslagen (niet ondersteund), %4$d fouten.', 'hb-ucs'),
+                __('WCS migratie voltooid: %1$d geïmporteerd, %2$d bijgewerkt, %3$d al aanwezig, %4$d overgeslagen (niet ondersteund), %5$d fouten.', 'hb-ucs'),
                 $imported,
+                $refreshed,
                 $skippedExisting,
                 $skippedUnsupported,
                 $errors
@@ -3253,6 +3282,7 @@ class SubscriptionsModule {
         $redirect = add_query_arg([
             'hb_ucs_wcs_migrated' => '1',
             'hb_ucs_wcs_imported' => (int) ($result['imported'] ?? 0),
+            'hb_ucs_wcs_refreshed' => (int) ($result['refreshed'] ?? 0),
             'hb_ucs_wcs_skipped_existing' => (int) ($result['skipped_existing'] ?? 0),
             'hb_ucs_wcs_skipped_unsupported' => (int) ($result['skipped_unsupported'] ?? 0),
             'hb_ucs_wcs_errors' => (int) ($result['errors'] ?? 0),
@@ -3265,6 +3295,7 @@ class SubscriptionsModule {
     private function migrate_wcs_subscriptions(): array {
         $result = [
             'imported' => 0,
+            'refreshed' => 0,
             'skipped_existing' => 0,
             'skipped_unsupported' => 0,
             'errors' => 0,
@@ -3304,9 +3335,7 @@ class SubscriptionsModule {
             return 'errors';
         }
 
-        if ($this->get_internal_subscription_id_by_wcs_source($sourceId) > 0) {
-            return 'skipped_existing';
-        }
+        $existingSubId = $this->get_internal_subscription_id_by_wcs_source($sourceId);
 
         $scheme = $this->map_wcs_subscription_to_scheme($subscription);
         if ($scheme === '') {
@@ -3356,6 +3385,10 @@ class SubscriptionsModule {
             $startTs = time();
         }
 
+        if ($existingSubId > 0) {
+            return $this->store_migrated_wcs_subscription($existingSubId, $subscription, $items, $scheme, $sourceId, $userId, $parentOrderId, $interval, $period, $status, $nextPaymentTs, $trialEndTs, $endDateTs, $startTs, $paymentMethod, $paymentMethodTitle, $mollie, $requiresMandate, 'refreshed');
+        }
+
         $subPostId = wp_insert_post([
             'post_type' => self::SUB_CPT,
             'post_status' => 'publish',
@@ -3366,7 +3399,14 @@ class SubscriptionsModule {
             return 'errors';
         }
 
-        $subId = (int) $subPostId;
+        return $this->store_migrated_wcs_subscription((int) $subPostId, $subscription, $items, $scheme, $sourceId, $userId, $parentOrderId, $interval, $period, $status, $nextPaymentTs, $trialEndTs, $endDateTs, $startTs, $paymentMethod, $paymentMethodTitle, $mollie, $requiresMandate, 'imported');
+    }
+
+    private function store_migrated_wcs_subscription(int $subId, $subscription, array $items, string $scheme, int $sourceId, int $userId, int $parentOrderId, int $interval, string $period, string $status, int $nextPaymentTs, int $trialEndTs, int $endDateTs, int $startTs, string $paymentMethod, string $paymentMethodTitle, array $mollie, bool $requiresMandate, string $successResult): string {
+        if ($subId <= 0 || empty($items)) {
+            return 'errors';
+        }
+
         $first = $items[0];
 
         update_post_meta($subId, self::SUB_META_WCS_SOURCE_ID, (string) $sourceId);
@@ -3404,7 +3444,7 @@ class SubscriptionsModule {
 
         $this->persist_subscription_items($subId, $items);
 
-        return 'imported';
+        return $successResult;
     }
 
     private function get_internal_subscription_id_by_wcs_source(int $sourceId): int {
@@ -3510,7 +3550,9 @@ class SubscriptionsModule {
             }
 
             $lineTotal = method_exists($item, 'get_total') ? (float) $item->get_total() : 0.0;
-            $unitPrice = $qty > 0 ? ($lineTotal / $qty) : $lineTotal;
+            $lineTax = method_exists($item, 'get_total_tax') ? (float) $item->get_total_tax() : 0.0;
+            $lineGross = $lineTotal + $lineTax;
+            $unitPrice = $qty > 0 ? ($lineGross / $qty) : $lineGross;
 
             $selectedAttributes = [];
             $product = $baseVariationId > 0 ? wc_get_product($baseVariationId) : wc_get_product($baseProductId);
@@ -3523,6 +3565,7 @@ class SubscriptionsModule {
                 'base_variation_id' => $baseVariationId,
                 'qty' => $qty,
                 'unit_price' => $unitPrice,
+                'price_includes_tax' => 1,
                 'selected_attributes' => $selectedAttributes,
             ]);
 
@@ -4815,7 +4858,7 @@ class SubscriptionsModule {
             $baseProductId = (int) ($subscriptionItem['base_product_id'] ?? 0);
             $baseVariationId = (int) ($subscriptionItem['base_variation_id'] ?? 0);
             $qty = (int) ($subscriptionItem['qty'] ?? 1);
-            $unit = (float) wc_format_decimal((string) ($subscriptionItem['unit_price'] ?? 0.0));
+            $unit = $this->get_subscription_item_storage_unit_price($subscriptionItem);
             if ($qty <= 0) {
                 $qty = 1;
             }
