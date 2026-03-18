@@ -28,8 +28,6 @@ class SubscriptionsModule {
 
     private const CART_KEY = 'hb_ucs_subs';
 
-    private const SUB_CPT = 'hb_ucs_subscription';
-
     private const SUB_META_STATUS = '_hb_ucs_sub_status';
     private const SUB_META_USER_ID = '_hb_ucs_sub_user_id';
     private const SUB_META_PARENT_ORDER_ID = '_hb_ucs_sub_parent_order_id';
@@ -47,6 +45,8 @@ class SubscriptionsModule {
     private const SUB_META_MOLLIE_MANDATE_ID = '_hb_ucs_sub_mollie_mandate_id';
     private const SUB_META_LAST_PAYMENT_ID = '_hb_ucs_sub_last_payment_id';
     private const SUB_META_ITEMS = '_hb_ucs_sub_items';
+    private const SUB_META_FEE_LINES = '_hb_ucs_sub_fee_lines';
+    private const SUB_META_MANUAL_TAX_RATES = '_hb_ucs_sub_manual_tax_rates';
     private const SUB_META_BILLING = '_hb_ucs_sub_billing';
     private const SUB_META_SHIPPING = '_hb_ucs_sub_shipping';
     private const SUB_META_SHIPPING_LINES = '_hb_ucs_sub_shipping_lines';
@@ -56,6 +56,12 @@ class SubscriptionsModule {
     private const SUB_META_LAST_ORDER_ID = '_hb_ucs_sub_last_order_id';
     private const SUB_META_LAST_ORDER_DATE = '_hb_ucs_sub_last_order_date'; // unix timestamp
     private const SUB_META_WCS_SOURCE_ID = '_hb_ucs_sub_wcs_source_id';
+
+    private const WCS_MIGRATION_LOCK_KEY = 'hb_ucs_wcs_migration_lock';
+    private const WCS_MIGRATION_PROGRESS_KEY_PREFIX = 'hb_ucs_wcs_migration_progress_';
+    private const WCS_MIGRATION_LOCK_TTL = 900;
+    private const WCS_MIGRATION_DEFAULT_BATCH_SIZE = 25;
+    private const WCS_MIGRATION_MAX_BATCH_SIZE = 100;
 
     private const ORDER_META_RECURRING_CREATED = '_hb_ucs_subs_recurring_created';
     private const ORDER_META_SUBSCRIPTION_ID = '_hb_ucs_subscription_id';
@@ -67,87 +73,81 @@ class SubscriptionsModule {
     /** @var array{base_product_id:int,base_variation_id:int,child_product_id:int,scheme:string}|null */
     private static $pendingAddToCart = null;
 
+    /** @var \HB\UCS\Modules\Subscriptions\Domain\SubscriptionRepository|null */
+    private $subscriptionRepository = null;
+
+    /** @var \HB\UCS\Modules\Subscriptions\Domain\SubscriptionService|null */
+    private $subscriptionService = null;
+
+    /** @var \HB\UCS\Modules\Subscriptions\OrderTypes\SubscriptionOrderType|null */
+    private $subscriptionOrderType = null;
+
+    /** @var \HB\UCS\Modules\Subscriptions\Admin\SubscriptionAdmin|null */
+    private $subscriptionAdmin = null;
+
+    /** @var array<string,mixed>|null */
+    private $settingsCache = null;
+
+    /** @var array<int,array{is_subscription_order:bool,subscription_id:int,type:string}> */
+    private $shopOrderSubscriptionContextCache = [];
+
     public function init(): void {
         if (!class_exists('WooCommerce')) {
             return;
         }
 
-        // Storage for subscriptions.
-        add_action('init', [$this, 'register_subscription_post_type']);
-        add_action('init', [$this, 'register_account_endpoint']);
+        $this->bootstrap_phase1_architecture();
 
-        // Admin: product fields.
+        add_action('init', [$this, 'register_account_endpoint']);
         add_action('woocommerce_product_options_general_product_data', [$this, 'render_product_fields']);
         add_action('woocommerce_admin_process_product_object', [$this, 'save_product_fields']);
-
-        // Admin: variation fields.
         add_action('woocommerce_product_after_variable_attributes', [$this, 'render_variation_fields'], 10, 3);
         add_action('woocommerce_save_product_variation', [$this, 'save_variation_fields'], 10, 2);
 
-        // Admin notice if module is enabled but WCS missing.
         if (is_admin()) {
             add_action('admin_notices', [$this, 'maybe_notice_missing_wcs']);
             add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
             add_action('wp_ajax_hb_ucs_subscription_product_data', [$this, 'handle_subscription_product_data_ajax']);
             add_action('wp_ajax_hb_ucs_subscription_customer_details', [$this, 'handle_subscription_customer_details_ajax']);
+            add_action('wp_ajax_hb_ucs_subscription_add_tax_rate', [$this, 'handle_subscription_add_tax_rate_ajax']);
+            add_action('wp_ajax_hb_ucs_subscription_remove_tax_rate', [$this, 'handle_subscription_remove_tax_rate_ajax']);
 
-            // Admin UX for internal subscription records.
-            add_action('add_meta_boxes_' . self::SUB_CPT, [$this, 'add_subscription_metaboxes']);
-            add_action('save_post_' . self::SUB_CPT, [$this, 'save_subscription_post'], 10, 3);
-            add_filter('manage_edit-' . self::SUB_CPT . '_columns', [$this, 'filter_subscription_columns']);
-            add_action('manage_' . self::SUB_CPT . '_posts_custom_column', [$this, 'render_subscription_column'], 10, 2);
-            add_filter('the_title', [$this, 'filter_subscription_admin_title'], 10, 2);
-            add_filter('manage_edit-' . self::SUB_CPT . '_sortable_columns', [$this, 'sortable_subscription_columns']);
-            add_filter('views_edit-' . self::SUB_CPT, [$this, 'subscription_status_views']);
-            add_action('pre_get_posts', [$this, 'filter_subscription_admin_query']);
-            add_action('restrict_manage_posts', [$this, 'subscription_admin_filters']);
-            add_action('edit_form_after_title', [$this, 'render_subscription_admin_header']);
             add_filter('manage_edit-shop_order_columns', [$this, 'filter_shop_order_subscription_columns'], 20);
             add_action('manage_shop_order_posts_custom_column', [$this, 'render_shop_order_subscription_column_legacy'], 20, 2);
             add_filter('manage_woocommerce_page_wc-orders_columns', [$this, 'filter_shop_order_subscription_columns'], 20);
             add_action('manage_woocommerce_page_wc-orders_custom_column', [$this, 'render_shop_order_subscription_column_hpos'], 20, 2);
 
-            // Manual test trigger for cron renewals.
             add_action('admin_post_hb_ucs_subs_run_now', [$this, 'handle_run_renewals_now']);
-
-            // Demo data helper: create a subscription record from latest subscription order.
             add_action('admin_post_hb_ucs_subs_create_demo', [$this, 'handle_create_demo_subscription']);
             add_action('admin_post_hb_ucs_subs_migrate_wcs', [$this, 'handle_migrate_wcs_subscriptions']);
             add_action('admin_notices', [$this, 'maybe_render_wcs_migration_notice']);
         }
 
-        // Frontend assets (late so WooCommerce has registered variation scripts).
         add_action('wp_enqueue_scripts', [$this, 'enqueue_frontend_assets'], 20);
-
-        // Frontend: render subscription choices.
         add_action('woocommerce_before_add_to_cart_button', [$this, 'render_purchase_options'], 15);
-
-        // Variable product: expose scheme prices in variation data for JS.
         add_filter('woocommerce_available_variation', [$this, 'add_variation_subscription_data'], 10, 3);
-
-        // Add-to-cart: validate and swap product.
         add_filter('woocommerce_add_to_cart_validation', [$this, 'validate_add_to_cart'], 10, 4);
         add_filter('woocommerce_add_to_cart_product_id', [$this, 'maybe_swap_product_id'], 10, 1);
         add_filter('woocommerce_add_to_cart_variation_id', [$this, 'maybe_swap_variation_id'], 10, 1);
         add_filter('woocommerce_add_cart_item_data', [$this, 'add_cart_item_data'], 10, 3);
-
-        // Manual engine: apply subscription price in cart (no WCS dependency).
         add_action('woocommerce_before_calculate_totals', [$this, 'maybe_apply_manual_subscription_pricing'], 20, 1);
 
-        // Recurring engine (manual): validate first payment method at checkout.
         add_filter('woocommerce_available_payment_gateways', [$this, 'filter_first_subscription_payment_gateways'], 20);
         add_action('woocommerce_after_checkout_validation', [$this, 'validate_first_payment_method'], 10, 2);
 
-        // Make initial Mollie payment a "first" payment so Mollie creates a mandate.
         add_filter('woocommerce_mollie_wc_gateway_ideal_args', [$this, 'maybe_mark_mollie_first_payment'], 10, 2);
         add_filter('woocommerce_mollie_wc_gateway_idealpayment_args', [$this, 'maybe_mark_mollie_first_payment'], 10, 2);
         add_filter('woocommerce_mollie_wc_gateway_creditcard_args', [$this, 'maybe_mark_mollie_first_payment'], 10, 2);
         add_filter('woocommerce_mollie_wc_gateway_creditcardpayment_args', [$this, 'maybe_mark_mollie_first_payment'], 10, 2);
 
-        // Create subscription records after the first successful payment.
         add_action('woocommerce_payment_complete', [$this, 'maybe_create_subscriptions_from_order'], 20, 1);
         add_action('woocommerce_checkout_order_processed', [$this, 'maybe_create_subscriptions_from_manual_order'], 20, 3);
+        add_action('woocommerce_store_api_checkout_order_processed', [$this, 'maybe_handle_store_api_checkout_order_processed'], 20, 1);
+        add_action('woocommerce_thankyou', [$this, 'maybe_create_subscriptions_from_manual_order'], 20, 1);
+        add_action('woocommerce_order_status_on-hold', [$this, 'maybe_create_subscriptions_from_manual_order'], 20, 1);
+        add_action('woocommerce_order_status_processing', [$this, 'maybe_create_subscriptions_from_manual_order'], 20, 1);
         add_action('woocommerce_payment_complete', [$this, 'maybe_mark_manual_renewal_paid'], 30, 1);
+        add_action('woocommerce_order_status_on-hold', [$this, 'maybe_promote_manual_subscription_order_to_processing'], 30, 1);
         add_action('woocommerce_order_status_processing', [$this, 'maybe_mark_manual_renewal_paid'], 30, 1);
         add_action('woocommerce_order_status_completed', [$this, 'maybe_mark_manual_renewal_paid'], 30, 1);
         add_filter('woocommerce_email_classes', [$this, 'register_renewal_email_classes']);
@@ -159,12 +159,10 @@ class SubscriptionsModule {
         add_filter('woocommerce_email_enabled_customer_on_hold_order', [$this, 'maybe_disable_default_customer_order_email_for_renewals'], 10, 2);
         add_filter('woocommerce_email_enabled_customer_invoice', [$this, 'maybe_disable_default_customer_order_email_for_renewals'], 10, 2);
 
-        // Cron renewals.
         add_filter('cron_schedules', [$this, 'register_cron_schedules']);
         add_action('init', [$this, 'ensure_cron_scheduled']);
         add_action('hb_ucs_subs_process_renewals', [$this, 'process_due_renewals']);
 
-        // Mollie webhook endpoint.
         add_filter('query_vars', [$this, 'register_query_vars']);
         add_action('admin_post_nopriv_hb_ucs_run_renewals', [$this, 'handle_renewals_admin_post']);
         add_action('admin_post_hb_ucs_run_renewals', [$this, 'handle_renewals_admin_post']);
@@ -172,7 +170,6 @@ class SubscriptionsModule {
         add_action('template_redirect', [$this, 'maybe_handle_renewals_cron_request']);
         add_action('template_redirect', [$this, 'maybe_handle_account_subscription_action']);
 
-        // Customer self-service in My Account.
         add_filter('woocommerce_account_menu_items', [$this, 'add_account_menu_item']);
         add_action('woocommerce_account_' . self::ACCOUNT_ENDPOINT . '_endpoint', [$this, 'render_account_endpoint']);
         add_shortcode('hb_ucs_subscriptions_account', [$this, 'render_account_shortcode']);
@@ -183,16 +180,56 @@ class SubscriptionsModule {
             add_action('elementor/element/woocommerce-my-account/section_menu_icon_content/before_section_end', [$this, 'extend_elementor_my_account_widget_tabs'], 10, 2);
         }
 
-        // Cart display.
         add_filter('woocommerce_get_item_data', [$this, 'display_cart_item_data'], 10, 2);
-
-        // Order item meta.
         add_action('woocommerce_checkout_create_order', [$this, 'mark_order_subscription_meta'], 10, 2);
         add_action('woocommerce_checkout_create_order_line_item', [$this, 'add_order_item_meta'], 10, 4);
-
-        // Stock mapping: subscription child products do not manage stock; reduce base stock instead.
         add_action('woocommerce_reduce_order_stock', [$this, 'maybe_reduce_base_stock'], 10, 1);
         add_action('woocommerce_restore_order_stock', [$this, 'maybe_restore_base_stock'], 10, 1);
+    }
+
+    private function bootstrap_phase1_architecture(): void {
+        $this->get_subscription_order_type()->init();
+        $this->get_subscription_admin()->init();
+    }
+
+    private function get_subscription_repository() {
+        if (!$this->subscriptionRepository instanceof \HB\UCS\Modules\Subscriptions\Domain\SubscriptionRepository) {
+            $this->subscriptionRepository = new \HB\UCS\Modules\Subscriptions\Domain\SubscriptionRepository();
+        }
+
+        return $this->subscriptionRepository;
+    }
+
+    private function get_subscription_service() {
+        if (!$this->subscriptionService instanceof \HB\UCS\Modules\Subscriptions\Domain\SubscriptionService) {
+            $this->subscriptionService = new \HB\UCS\Modules\Subscriptions\Domain\SubscriptionService($this->get_subscription_repository());
+        }
+
+        return $this->subscriptionService;
+    }
+
+    private function get_subscription_order_type() {
+        if (!$this->subscriptionOrderType instanceof \HB\UCS\Modules\Subscriptions\OrderTypes\SubscriptionOrderType) {
+            $this->subscriptionOrderType = new \HB\UCS\Modules\Subscriptions\OrderTypes\SubscriptionOrderType($this->get_subscription_repository());
+        }
+
+        return $this->subscriptionOrderType;
+    }
+
+    private function get_subscription_admin() {
+        if (!$this->subscriptionAdmin instanceof \HB\UCS\Modules\Subscriptions\Admin\SubscriptionAdmin) {
+            $this->subscriptionAdmin = new \HB\UCS\Modules\Subscriptions\Admin\SubscriptionAdmin($this->get_subscription_service(), $this->get_subscription_order_type());
+        }
+
+        return $this->subscriptionAdmin;
+    }
+
+    private function sync_subscription_order_type_record(int $subId): void {
+        if ($subId <= 0) {
+            return;
+        }
+
+        $this->get_subscription_repository()->sync_order_type_self($subId);
     }
 
     private function order_contains_subscription($order): bool {
@@ -215,11 +252,13 @@ class SubscriptionsModule {
             if (!is_object($item) || !method_exists($item, 'get_meta')) {
                 continue;
             }
+
             $scheme = (string) $item->get_meta('_hb_ucs_subscription_scheme', true);
             if ($scheme !== '' && $scheme !== '0') {
                 return true;
             }
         }
+
         return false;
     }
 
@@ -266,119 +305,18 @@ class SubscriptionsModule {
         return $data;
     }
 
-    public function register_subscription_post_type(): void {
-        if (post_type_exists(self::SUB_CPT)) {
-            return;
-        }
-
-        register_post_type(self::SUB_CPT, [
-            'labels' => [
-                'name' => __('Abonnementen', 'hb-ucs'),
-                'singular_name' => __('Abonnement', 'hb-ucs'),
-                'menu_name' => __('Abonnementen', 'hb-ucs'),
-                'name_admin_bar' => __('Abonnement', 'hb-ucs'),
-                'add_new' => __('Maak abonnement aan', 'hb-ucs'),
-                'add_new_item' => __('Maak abonnement aan', 'hb-ucs'),
-                'new_item' => __('Nieuw abonnement', 'hb-ucs'),
-                'edit_item' => __('Abonnement bewerken', 'hb-ucs'),
-                'view_item' => __('Abonnement bekijken', 'hb-ucs'),
-                'all_items' => __('Abonnementen', 'hb-ucs'),
-                'search_items' => __('Zoek abonnementen', 'hb-ucs'),
-                'not_found' => __('Geen abonnementen gevonden.', 'hb-ucs'),
-                'not_found_in_trash' => __('Geen abonnementen gevonden in prullenbak.', 'hb-ucs'),
-            ],
-            'public' => false,
-            'show_ui' => true,
-            'show_in_menu' => 'woocommerce',
-            'capability_type' => 'shop_order',
-            'map_meta_cap' => true,
-            'supports' => ['title'],
-        ]);
+    private function get_admin_template_path(string $template): string {
+        return dirname(__DIR__, 3) . '/templates/admin/' . ltrim($template, '/');
     }
 
-    public function add_subscription_metaboxes($post): void {
-        if (!$post || !is_object($post) || (string) ($post->post_type ?? '') !== self::SUB_CPT) {
+    private function render_admin_template(string $template, array $args = []): void {
+        $path = $this->get_admin_template_path($template);
+        if (!file_exists($path)) {
             return;
         }
 
-        add_meta_box(
-            'hb_ucs_subscription_data',
-            __('Abonnement details', 'hb-ucs'),
-            [$this, 'render_subscription_data_metabox'],
-            self::SUB_CPT,
-            'normal',
-            'high'
-        );
-
-        add_meta_box(
-            'hb_ucs_subscription_schedule',
-            __('Inplannen', 'hb-ucs'),
-            [$this, 'render_subscription_schedule_metabox'],
-            self::SUB_CPT,
-            'side',
-            'default'
-        );
-
-        add_meta_box(
-            'hb_ucs_subscription_items',
-            __('Artikelen', 'hb-ucs'),
-            [$this, 'render_subscription_items_metabox'],
-            self::SUB_CPT,
-            'normal',
-            'default'
-        );
-
-        add_meta_box(
-            'hb_ucs_subscription_related_orders',
-            __('Bestellingen', 'hb-ucs'),
-            [$this, 'render_subscription_related_orders_metabox'],
-            self::SUB_CPT,
-            'normal',
-            'default'
-        );
-    }
-
-    public function render_subscription_admin_header($post): void {
-        if (!$post || !is_object($post) || (string) ($post->post_type ?? '') !== self::SUB_CPT) {
-            return;
-        }
-
-        $subId = isset($post->ID) ? (int) $post->ID : 0;
-        if ($subId <= 0) {
-            return;
-        }
-
-        $status = (string) get_post_meta($subId, self::SUB_META_STATUS, true);
-        $scheme = (string) get_post_meta($subId, self::SUB_META_SCHEME, true);
-        $interval = (int) get_post_meta($subId, self::SUB_META_INTERVAL, true);
-        $nextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
-        $lastOrderId = (int) get_post_meta($subId, self::SUB_META_LAST_ORDER_ID, true);
-        $ordersCount = $this->count_orders_for_subscription($subId);
-        $userId = (int) get_post_meta($subId, self::SUB_META_USER_ID, true);
-        $customerName = $this->get_subscription_admin_customer_name($userId);
-        $startTimestamp = $this->get_subscription_start_timestamp($subId);
-        $total = $this->get_subscription_total_amount($subId, true);
-        $scheduleLabel = $this->get_subscription_schedule_label($scheme, $interval);
-        $paymentMethod = $this->get_subscription_payment_method_label($subId);
-
-        echo '<div class="hb-ucs-admin-subscription-header">';
-        echo '<div class="hb-ucs-admin-subscription-header__title">';
-        echo '<h1>' . esc_html($this->get_subscription_admin_title_text($subId)) . '</h1>';
-        echo '<div class="hb-ucs-admin-subscription-header__meta">' . $this->get_subscription_status_badge_html($status) . '<span>' . esc_html($scheduleLabel) . '</span></div>';
-        echo '</div>';
-        echo '<div class="hb-ucs-admin-subscription-summary">';
-        echo '<div class="hb-ucs-admin-subscription-summary__item"><span>' . esc_html__('Totaal', 'hb-ucs') . '</span><strong>' . wp_kses_post(function_exists('wc_price') ? wc_price($total) : number_format($total, 2, '.', '')) . '</strong><small>' . esc_html($scheduleLabel) . '</small></div>';
-        echo '<div class="hb-ucs-admin-subscription-summary__item"><span>' . esc_html__('Klant', 'hb-ucs') . '</span><strong>' . esc_html($customerName !== '' ? $customerName : '—') . '</strong><small>' . esc_html($paymentMethod) . '</small></div>';
-        echo '<div class="hb-ucs-admin-subscription-summary__item"><span>' . esc_html__('Volgende betaling', 'hb-ucs') . '</span><strong>' . esc_html($nextPayment > 0 ? $this->format_wp_date($nextPayment) : '—') . '</strong><small>' . esc_html($nextPayment > 0 ? $this->format_admin_relative_date($nextPayment) : '—') . '</small></div>';
-        echo '<div class="hb-ucs-admin-subscription-summary__item"><span>' . esc_html__('Bestellingen', 'hb-ucs') . '</span><strong>' . esc_html((string) $ordersCount) . '</strong><small>';
-        if ($lastOrderId > 0) {
-            echo '<a href="' . esc_url(admin_url('post.php?post=' . $lastOrderId . '&action=edit')) . '">' . esc_html(sprintf(__('Laatste #%d', 'hb-ucs'), $lastOrderId)) . '</a>';
-        } else {
-            echo esc_html($startTimestamp > 0 ? $this->format_admin_relative_date($startTimestamp) : '—');
-        }
-        echo '</small></div>';
-        echo '</div>';
-        echo '</div>';
+        extract($args, EXTR_SKIP);
+        include $path;
     }
 
     private function format_datetime_local(int $timestamp): string {
@@ -665,14 +603,16 @@ class SubscriptionsModule {
     private function get_subscription_admin_payment_method_options(): array {
         $options = [];
 
-        $subscriptionIds = get_posts([
-            'post_type' => self::SUB_CPT,
-            'post_status' => 'publish',
-            'posts_per_page' => 200,
-            'fields' => 'ids',
-            'orderby' => 'date',
-            'order' => 'DESC',
-        ]);
+        $subscriptionIds = function_exists('wc_get_orders')
+            ? wc_get_orders([
+                'type' => $this->get_subscription_order_type()->get_type(),
+                'limit' => 200,
+                'return' => 'ids',
+                'orderby' => 'date',
+                'order' => 'DESC',
+                'status' => array_keys(wc_get_order_statuses()),
+            ])
+            : [];
 
         foreach ((array) $subscriptionIds as $subId) {
             $method = (string) get_post_meta((int) $subId, self::SUB_META_PAYMENT_METHOD, true);
@@ -828,7 +768,7 @@ class SubscriptionsModule {
         return $this->get_subscription_admin_item_preview_details($selectedId, $scheme, $qty);
     }
 
-    private function get_subscription_admin_item_preview_details(int $selectedId, string $scheme, int $qty, array $selectedAttributes = [], ?float $manualUnitPrice = null, bool $syncCatalogPrice = true): array {
+    private function get_subscription_admin_item_preview_details(int $selectedId, string $scheme, int $qty, array $selectedAttributes = [], ?float $manualUnitPrice = null, bool $syncCatalogPrice = true, int $subId = 0): array {
         $qty = max(1, $qty);
         $product = $selectedId > 0 ? wc_get_product($selectedId) : false;
         $editorProductId = $selectedId;
@@ -871,12 +811,14 @@ class SubscriptionsModule {
             $previewItem['price_includes_tax'] = 0;
         }
 
-        $totals = $previewItem ? $this->get_subscription_admin_item_totals($previewItem) : [
+        $customer = $subId > 0 ? $this->get_subscription_tax_customer($subId) : null;
+        $totals = $previewItem ? $this->get_subscription_admin_item_totals($previewItem, $customer) : [
             'unit_subtotal' => 0.0,
             'unit_total' => 0.0,
             'line_subtotal' => 0.0,
             'line_tax' => 0.0,
             'line_total' => 0.0,
+            'tax_breakdown' => [],
         ];
 
         $resolvedProductId = $previewItem ? (int) (($previewItem['base_variation_id'] ?? 0) ?: ($previewItem['base_product_id'] ?? 0)) : 0;
@@ -903,6 +845,7 @@ class SubscriptionsModule {
             'line_subtotal' => $totals['line_subtotal'],
             'line_tax' => $totals['line_tax'],
             'line_total' => $totals['line_total'],
+            'tax_breakdown' => $totals['tax_breakdown'],
             'unit_price_html' => function_exists('wc_price') ? wc_price($totals['unit_subtotal']) : number_format((float) $totals['unit_subtotal'], 2, '.', ''),
             'line_subtotal_html' => function_exists('wc_price') ? wc_price($totals['line_subtotal']) : number_format((float) $totals['line_subtotal'], 2, '.', ''),
             'line_tax_html' => function_exists('wc_price') ? wc_price($totals['line_tax']) : number_format((float) $totals['line_tax'], 2, '.', ''),
@@ -917,13 +860,431 @@ class SubscriptionsModule {
         ];
     }
 
-    private function get_subscription_admin_item_totals(array $item): array {
+    private function get_subscription_tax_customer(int $subId, $fallbackOrder = null) {
+        if ($subId <= 0 || !class_exists('WC_Customer')) {
+            return null;
+        }
+
+        try {
+            $customer = new \WC_Customer(0, true);
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        $userId = (int) get_post_meta($subId, self::SUB_META_USER_ID, true);
+        $billing = $this->get_subscription_address_snapshot($subId, 'billing', $userId, $fallbackOrder);
+        $shipping = $this->get_subscription_address_snapshot($subId, 'shipping', $userId, $fallbackOrder);
+
+        $billingCountry = (string) ($billing['country'] ?? '');
+        $billingState = (string) ($billing['state'] ?? '');
+        $billingPostcode = (string) ($billing['postcode'] ?? '');
+        $billingCity = (string) ($billing['city'] ?? '');
+        $shippingCountry = (string) ($shipping['country'] ?? '');
+        $shippingState = (string) ($shipping['state'] ?? '');
+        $shippingPostcode = (string) ($shipping['postcode'] ?? '');
+        $shippingCity = (string) ($shipping['city'] ?? '');
+
+        if ($billingCountry === '' && $shippingCountry !== '') {
+            $billingCountry = $shippingCountry;
+            $billingState = $shippingState;
+            $billingPostcode = $shippingPostcode;
+            $billingCity = $shippingCity;
+        }
+
+        if ($shippingCountry === '' && $billingCountry !== '') {
+            $shippingCountry = $billingCountry;
+            $shippingState = $billingState;
+            $shippingPostcode = $billingPostcode;
+            $shippingCity = $billingCity;
+        }
+
+        if (method_exists($customer, 'set_billing_country')) {
+            $customer->set_billing_country($billingCountry);
+        }
+        if (method_exists($customer, 'set_billing_state')) {
+            $customer->set_billing_state($billingState);
+        }
+        if (method_exists($customer, 'set_billing_postcode')) {
+            $customer->set_billing_postcode($billingPostcode);
+        }
+        if (method_exists($customer, 'set_billing_city')) {
+            $customer->set_billing_city($billingCity);
+        }
+        if (method_exists($customer, 'set_shipping_country')) {
+            $customer->set_shipping_country($shippingCountry);
+        }
+        if (method_exists($customer, 'set_shipping_state')) {
+            $customer->set_shipping_state($shippingState);
+        }
+        if (method_exists($customer, 'set_shipping_postcode')) {
+            $customer->set_shipping_postcode($shippingPostcode);
+        }
+        if (method_exists($customer, 'set_shipping_city')) {
+            $customer->set_shipping_city($shippingCity);
+        }
+        if (method_exists($customer, 'set_is_vat_exempt')) {
+            $customer->set_is_vat_exempt(false);
+        }
+
+        return $customer;
+    }
+
+    private function normalize_subscription_item_taxes($taxes): array {
+        $normalized = ['subtotal' => [], 'total' => []];
+        if (!is_array($taxes)) {
+            return $normalized;
+        }
+
+        foreach (['subtotal', 'total'] as $group) {
+            if (!isset($taxes[$group]) || !is_array($taxes[$group])) {
+                continue;
+            }
+
+            foreach ($taxes[$group] as $rateKey => $taxAmount) {
+                $normalizedKey = is_numeric($rateKey) ? (string) absint((string) $rateKey) : sanitize_key((string) $rateKey);
+                if ($normalizedKey === '') {
+                    $normalizedKey = 'manual';
+                }
+
+                $normalized[$group][$normalizedKey] = (float) wc_format_decimal((string) $taxAmount);
+            }
+        }
+
+        if (empty($normalized['subtotal']) && !empty($normalized['total'])) {
+            $normalized['subtotal'] = $normalized['total'];
+        }
+
+        if (empty($normalized['total']) && !empty($normalized['subtotal'])) {
+            $normalized['total'] = $normalized['subtotal'];
+        }
+
+        return $normalized;
+    }
+
+    private function get_subscription_item_taxes(array $item, $customer = null): array {
+        $storedTaxes = $this->normalize_subscription_item_taxes($item['taxes'] ?? []);
+        if (!empty($storedTaxes['total'])) {
+            return $storedTaxes;
+        }
+
+        if (!wc_tax_enabled() || !class_exists('WC_Tax')) {
+            return $storedTaxes;
+        }
+
+        $qty = max(1, (int) ($item['qty'] ?? 1));
+        $lineSubtotal = (float) wc_format_decimal((string) ($this->get_subscription_item_storage_unit_price($item) * $qty));
+        if ($lineSubtotal <= 0) {
+            return $storedTaxes;
+        }
+
+        $taxBreakdown = [];
+        foreach ($this->get_subscription_item_tax_rates($item, $customer) as $rateId => $rateData) {
+            $amounts = \WC_Tax::calc_tax($lineSubtotal, [(string) $rateId => $rateData], false);
+            $rateKey = (string) absint((string) $rateId);
+            if ($rateKey === '0') {
+                continue;
+            }
+
+            $taxBreakdown[$rateKey] = isset($amounts[$rateId]) ? (float) wc_format_decimal((string) $amounts[$rateId]) : 0.0;
+        }
+
+        return [
+            'subtotal' => $taxBreakdown,
+            'total' => $taxBreakdown,
+        ];
+    }
+
+    private function normalize_subscription_tax_amounts(array $taxes): array {
+        $normalized = [];
+        $taxGroups = isset($taxes['total']) && is_array($taxes['total']) ? $taxes['total'] : $taxes;
+
+        foreach ($taxGroups as $rateKey => $taxAmount) {
+            if (is_array($taxAmount)) {
+                continue;
+            }
+
+            $normalizedKey = is_numeric($rateKey) ? (string) absint((string) $rateKey) : sanitize_key((string) $rateKey);
+            if ($normalizedKey === '') {
+                continue;
+            }
+
+            $normalized[$normalizedKey] = (float) wc_format_decimal((string) $taxAmount);
+        }
+
+        return $normalized;
+    }
+
+    private function get_subscription_tax_column_label(string $rateKey): string {
+        if ($rateKey === 'manual') {
+            return __('BTW', 'hb-ucs');
+        }
+
+        $rateId = (int) absint($rateKey);
+        if ($rateId <= 0 || !class_exists('WC_Tax')) {
+            return __('BTW', 'hb-ucs');
+        }
+
+        $label = (string) \WC_Tax::get_rate_label($rateId);
+        $percent = (string) \WC_Tax::get_rate_percent($rateId);
+        $code = (string) \WC_Tax::get_rate_code($rateId);
+
+        if ($label === '') {
+            $label = $code !== '' ? $code : __('BTW', 'hb-ucs');
+        }
+        if ($percent !== '' && stripos($label, $percent) === false) {
+            $label .= ' ' . $percent;
+        }
+
+        return trim($label);
+    }
+
+    private function get_subscription_tax_column_definition(string $rateKey, array $rateData = []): array {
+        return [
+            'key' => $rateKey,
+            'label' => $this->get_subscription_tax_column_label($rateKey),
+            'sort' => isset($rateData['priority']) ? (int) $rateData['priority'] : 999,
+            'source' => isset($rateData['source']) ? (string) $rateData['source'] : 'computed',
+        ];
+    }
+
+    private function get_subscription_manual_tax_rates(int $subId): array {
+        $stored = get_post_meta($subId, self::SUB_META_MANUAL_TAX_RATES, true);
+        $rates = [];
+
+        if (!is_array($stored)) {
+            return $rates;
+        }
+
+        foreach ($stored as $rateId) {
+            $rateId = (int) absint((string) $rateId);
+            if ($rateId <= 0) {
+                continue;
+            }
+            $rates[] = $rateId;
+        }
+
+        return array_values(array_unique($rates));
+    }
+
+    private function persist_subscription_manual_tax_rates(int $subId, array $rateIds): void {
+        $normalized = [];
+        foreach ($rateIds as $rateId) {
+            $rateId = (int) absint((string) $rateId);
+            if ($rateId <= 0) {
+                continue;
+            }
+            $normalized[] = $rateId;
+        }
+
+        update_post_meta($subId, self::SUB_META_MANUAL_TAX_RATES, array_values(array_unique($normalized)));
+    }
+
+    private function add_subscription_manual_tax_rate(int $subId, int $rateId): bool {
+        if ($subId <= 0 || $rateId <= 0) {
+            return false;
+        }
+
+        $rates = $this->get_subscription_manual_tax_rates($subId);
+        if (in_array($rateId, $rates, true)) {
+            return false;
+        }
+
+        $rates[] = $rateId;
+        $this->persist_subscription_manual_tax_rates($subId, $rates);
+
+        return true;
+    }
+
+    private function remove_subscription_manual_tax_rate(int $subId, int $rateId): bool {
+        if ($subId <= 0 || $rateId <= 0) {
+            return false;
+        }
+
+        $rates = array_values(array_filter($this->get_subscription_manual_tax_rates($subId), static function (int $storedRateId) use ($rateId): bool {
+            return $storedRateId !== $rateId;
+        }));
+
+        $this->persist_subscription_manual_tax_rates($subId, $rates);
+
+        return true;
+    }
+
+    private function get_available_subscription_admin_tax_rates(): array {
+        global $wpdb;
+
+        if (!isset($wpdb->prefix) || !class_exists('WC_Tax')) {
+            return [];
+        }
+
+        $classesOptions = function_exists('wc_get_product_tax_class_options') ? wc_get_product_tax_class_options() : [];
+        $rates = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}woocommerce_tax_rates ORDER BY tax_rate_name, tax_rate_class, tax_rate_priority LIMIT 100");
+        if (!is_array($rates)) {
+            return [];
+        }
+
+        $options = [];
+        foreach ($rates as $rate) {
+            $rateId = isset($rate->tax_rate_id) ? (int) $rate->tax_rate_id : 0;
+            if ($rateId <= 0) {
+                continue;
+            }
+
+            $rateClass = isset($rate->tax_rate_class) ? (string) $rate->tax_rate_class : '';
+            $options[] = [
+                'id' => $rateId,
+                'label' => (string) \WC_Tax::get_rate_label($rate),
+                'class' => isset($classesOptions[$rateClass]) ? (string) $classesOptions[$rateClass] : ($rateClass !== '' ? $rateClass : '—'),
+                'code' => (string) \WC_Tax::get_rate_code($rate),
+                'percent' => (string) \WC_Tax::get_rate_percent($rate),
+            ];
+        }
+
+        return $options;
+    }
+
+    private function get_subscription_item_tax_rates(array $item, $customer = null): array {
+        if (!wc_tax_enabled() || !class_exists('WC_Tax')) {
+            return [];
+        }
+
+        $productId = (int) (($item['base_variation_id'] ?? 0) ?: ($item['base_product_id'] ?? 0));
+        $product = $productId > 0 ? wc_get_product($productId) : false;
+        if (!$product || !is_object($product) || !method_exists($product, 'get_tax_status') || $product->get_tax_status() !== 'taxable') {
+            return [];
+        }
+
+        $taxClass = method_exists($product, 'get_tax_class') ? (string) $product->get_tax_class() : '';
+
+        try {
+            return (array) \WC_Tax::get_rates($taxClass, $customer);
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    private function get_subscription_shipping_tax_rates(array $items, $customer = null): array {
+        if (!wc_tax_enabled() || !class_exists('WC_Tax')) {
+            return [];
+        }
+
+        $shippingTaxClass = get_option('woocommerce_shipping_tax_class');
+        if ($shippingTaxClass === false) {
+            $shippingTaxClass = 'inherit';
+        }
+
+        $taxClass = $shippingTaxClass !== 'inherit' ? (string) $shippingTaxClass : null;
+        if ($taxClass === null) {
+            $itemClasses = [];
+            foreach ($items as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+
+                $productId = (int) (($item['base_variation_id'] ?? 0) ?: ($item['base_product_id'] ?? 0));
+                $product = $productId > 0 ? wc_get_product($productId) : false;
+                if (!$product || !is_object($product) || !method_exists($product, 'get_tax_status') || $product->get_tax_status() !== 'taxable') {
+                    continue;
+                }
+
+                $itemClasses[] = method_exists($product, 'get_tax_class') ? (string) $product->get_tax_class() : '';
+            }
+
+            $itemClasses = array_values(array_unique($itemClasses));
+            if (empty($itemClasses)) {
+                return [];
+            }
+
+            $taxClass = in_array('', $itemClasses, true) ? '' : (string) reset($itemClasses);
+        }
+
+        try {
+            return (array) \WC_Tax::get_shipping_tax_rates($taxClass, $customer);
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    private function get_subscription_admin_tax_columns(int $subId, array $items, array $shippingLines = [], array $feeLines = [], $fallbackOrder = null): array {
+        $columns = [];
+        $customer = $this->get_subscription_tax_customer($subId, $fallbackOrder);
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            foreach ($this->get_subscription_item_tax_rates($item, $customer) as $rateId => $rateData) {
+                $rateKey = (string) absint((string) $rateId);
+                if ($rateKey === '0' || isset($columns[$rateKey])) {
+                    continue;
+                }
+                $rateData = is_array($rateData) ? $rateData : [];
+                $rateData['source'] = 'computed';
+                $columns[$rateKey] = $this->get_subscription_tax_column_definition($rateKey, $rateData);
+            }
+        }
+
+        foreach ($feeLines as $feeLine) {
+            if (!is_array($feeLine)) {
+                continue;
+            }
+            foreach (array_keys($this->normalize_subscription_tax_amounts(isset($feeLine['taxes']) && is_array($feeLine['taxes']) ? $feeLine['taxes'] : [])) as $rateKey) {
+                $rateKey = (string) $rateKey;
+                if ($rateKey === '' || isset($columns[$rateKey])) {
+                    continue;
+                }
+                $columns[$rateKey] = $this->get_subscription_tax_column_definition($rateKey, ['source' => 'computed']);
+            }
+        }
+
+        foreach ($shippingLines as $shippingLine) {
+            if (!is_array($shippingLine)) {
+                continue;
+            }
+            foreach (array_keys($this->normalize_subscription_tax_amounts(isset($shippingLine['taxes']) && is_array($shippingLine['taxes']) ? $shippingLine['taxes'] : [])) as $rateKey) {
+                $rateKey = (string) $rateKey;
+                if ($rateKey === '' || isset($columns[$rateKey])) {
+                    continue;
+                }
+                $columns[$rateKey] = $this->get_subscription_tax_column_definition($rateKey, ['source' => 'computed']);
+            }
+        }
+
+        foreach ($this->get_subscription_shipping_tax_rates($items, $customer) as $rateId => $rateData) {
+            $rateKey = (string) absint((string) $rateId);
+            if ($rateKey === '0' || isset($columns[$rateKey])) {
+                continue;
+            }
+            $rateData = is_array($rateData) ? $rateData : [];
+            $rateData['source'] = 'computed';
+            $columns[$rateKey] = $this->get_subscription_tax_column_definition($rateKey, $rateData);
+        }
+
+        foreach ($this->get_subscription_manual_tax_rates($subId) as $manualRateId) {
+            $rateKey = (string) $manualRateId;
+            if (isset($columns[$rateKey])) {
+                $columns[$rateKey]['source'] = 'manual';
+                continue;
+            }
+            $columns[$rateKey] = $this->get_subscription_tax_column_definition($rateKey, ['source' => 'manual']);
+        }
+
+        uasort($columns, static function (array $left, array $right): int {
+            return ($left['sort'] ?? 999) <=> ($right['sort'] ?? 999);
+        });
+
+        return $columns;
+    }
+
+    private function get_subscription_admin_item_totals(array $item, $customer = null): array {
         $qty = max(1, (int) ($item['qty'] ?? 1));
         $unitSubtotal = (float) $this->get_subscription_item_storage_unit_price($item);
         $lineSubtotal = (float) wc_format_decimal((string) ($unitSubtotal * $qty));
-        $unitTotal = (float) $this->get_subscription_item_display_amount($item, 1, true);
-        $lineTotal = (float) $this->get_subscription_item_display_amount($item, $qty, true);
-        $lineTax = (float) wc_format_decimal((string) max(0, $lineTotal - $lineSubtotal));
+        $taxBreakdown = $this->normalize_subscription_tax_amounts($this->get_subscription_item_taxes($item, $customer)['total']);
+
+        $lineTax = (float) wc_format_decimal((string) array_sum($taxBreakdown));
+        $lineTotal = (float) wc_format_decimal((string) ($lineSubtotal + $lineTax));
+        $unitTotal = (float) wc_format_decimal((string) ($qty > 0 ? ($lineTotal / $qty) : $lineTotal));
 
         return [
             'unit_subtotal' => $unitSubtotal,
@@ -931,71 +1292,191 @@ class SubscriptionsModule {
             'line_subtotal' => $lineSubtotal,
             'line_tax' => $lineTax,
             'line_total' => $lineTotal,
+            'tax_breakdown' => $taxBreakdown,
         ];
     }
 
-    private function get_subscription_admin_totals(array $items): array {
-        $subtotal = 0.0;
-        $tax = 0.0;
-        $total = 0.0;
+    private function get_subscription_fee_line_totals(array $feeLine): array {
+        $subtotal = (float) wc_format_decimal((string) ($feeLine['total'] ?? 0.0));
+        $taxBreakdown = $this->normalize_subscription_tax_amounts(isset($feeLine['taxes']) && is_array($feeLine['taxes']) ? $feeLine['taxes'] : []);
+        $tax = (float) wc_format_decimal((string) array_sum($taxBreakdown));
+
+        return [
+            'line_subtotal' => $subtotal,
+            'line_tax' => $tax,
+            'line_total' => (float) wc_format_decimal((string) ($subtotal + $tax)),
+            'tax_breakdown' => $taxBreakdown,
+        ];
+    }
+
+    private function get_subscription_shipping_line_tax_total(array $shippingLine): float {
+        $taxes = isset($shippingLine['taxes']) && is_array($shippingLine['taxes']) ? $shippingLine['taxes'] : [];
+        $sum = 0.0;
+
+        if (isset($taxes['total']) && is_array($taxes['total'])) {
+            foreach ($taxes['total'] as $taxAmount) {
+                $sum += (float) wc_format_decimal((string) $taxAmount);
+            }
+
+            return (float) wc_format_decimal((string) $sum);
+        }
+
+        foreach ($taxes as $taxGroup) {
+            if (!is_array($taxGroup)) {
+                continue;
+            }
+
+            foreach ($taxGroup as $taxAmount) {
+                $sum += (float) wc_format_decimal((string) $taxAmount);
+            }
+        }
+
+        return (float) wc_format_decimal((string) $sum);
+    }
+
+    private function get_subscription_shipping_line_totals(array $shippingLine): array {
+        $subtotal = (float) wc_format_decimal((string) ($shippingLine['total'] ?? 0.0));
+        $taxBreakdown = $this->normalize_subscription_tax_amounts(isset($shippingLine['taxes']) && is_array($shippingLine['taxes']) ? $shippingLine['taxes'] : []);
+        $tax = (float) wc_format_decimal((string) array_sum($taxBreakdown));
+        $total = (float) wc_format_decimal((string) ($subtotal + $tax));
+
+        return [
+            'line_subtotal' => $subtotal,
+            'line_tax' => $tax,
+            'line_total' => $total,
+            'tax_breakdown' => $taxBreakdown,
+        ];
+    }
+
+    private function get_subscription_admin_totals(array $items, array $shippingLines = [], array $feeLines = [], int $subId = 0, $fallbackOrder = null): array {
+        $itemSubtotal = 0.0;
+        $itemTax = 0.0;
+        $itemTotal = 0.0;
+        $feeSubtotal = 0.0;
+        $feeTax = 0.0;
+        $feeTotal = 0.0;
+        $shippingSubtotal = 0.0;
+        $shippingTax = 0.0;
+        $shippingTotal = 0.0;
+        $taxBreakdown = [];
+        $customer = $subId > 0 ? $this->get_subscription_tax_customer($subId, $fallbackOrder) : null;
 
         foreach ($items as $item) {
             if (!is_array($item)) {
                 continue;
             }
 
-            $rowTotals = $this->get_subscription_admin_item_totals($item);
-            $subtotal += (float) ($rowTotals['line_subtotal'] ?? 0.0);
-            $tax += (float) ($rowTotals['line_tax'] ?? 0.0);
-            $total += (float) ($rowTotals['line_total'] ?? 0.0);
+            $rowTotals = $this->get_subscription_admin_item_totals($item, $customer);
+            $itemSubtotal += (float) ($rowTotals['line_subtotal'] ?? 0.0);
+            $itemTax += (float) ($rowTotals['line_tax'] ?? 0.0);
+            $itemTotal += (float) ($rowTotals['line_total'] ?? 0.0);
+            foreach ((array) ($rowTotals['tax_breakdown'] ?? []) as $rateKey => $rateAmount) {
+                $taxBreakdown[(string) $rateKey] = (float) ($taxBreakdown[(string) $rateKey] ?? 0.0) + (float) $rateAmount;
+            }
         }
 
-        return [
-            'subtotal' => (float) wc_format_decimal((string) $subtotal),
-            'tax' => (float) wc_format_decimal((string) $tax),
-            'total' => (float) wc_format_decimal((string) $total),
-        ];
-    }
-
-    private function render_admin_subscription_item_attribute_fields(int $rowIndex, int $selectedProductId, array $selectedAttributes): void {
-        $product = $selectedProductId > 0 ? wc_get_product($selectedProductId) : false;
-        if ($product && is_object($product) && method_exists($product, 'is_type') && $product->is_type('variation')) {
-            $parentId = method_exists($product, 'get_parent_id') ? (int) $product->get_parent_id() : 0;
-            $product = $parentId > 0 ? wc_get_product($parentId) : $product;
-        }
-
-        $config = $this->get_variable_product_attribute_config($product);
-        if (empty($config)) {
-            echo '<div class="hb-ucs-item-variation-fields"></div>';
-            return;
-        }
-
-        echo '<div class="hb-ucs-item-variation-fields">';
-        foreach ($config as $attribute) {
-            $key = (string) ($attribute['key'] ?? '');
-            $label = (string) ($attribute['label'] ?? $key);
-            $options = isset($attribute['options']) && is_array($attribute['options']) ? $attribute['options'] : [];
-            if ($key === '' || empty($options)) {
+        foreach ($feeLines as $feeLine) {
+            if (!is_array($feeLine)) {
                 continue;
             }
 
-            $selectedValue = isset($selectedAttributes[$key]) ? (string) $selectedAttributes[$key] : '';
-            echo '<p class="form-field form-field-wide hb-ucs-item-attribute-field">';
-            echo '<label for="hb_ucs_sub_items_' . esc_attr((string) $rowIndex) . '_' . esc_attr($key) . '">' . esc_html($label) . '</label>';
-            echo '<select id="hb_ucs_sub_items_' . esc_attr((string) $rowIndex) . '_' . esc_attr($key) . '" class="hb-ucs-item-attr-select" name="hb_ucs_items[' . esc_attr((string) $rowIndex) . '][selected_attributes][' . esc_attr($key) . ']">';
-            echo '<option value="">' . esc_html__('Kies een optie…', 'hb-ucs') . '</option>';
-            foreach ($options as $option) {
-                $value = (string) ($option['value'] ?? '');
-                $optionLabel = (string) ($option['label'] ?? $value);
-                echo '<option value="' . esc_attr($value) . '" ' . selected($selectedValue, $value, false) . '>' . esc_html($optionLabel) . '</option>';
+            $rowTotals = $this->get_subscription_fee_line_totals($feeLine);
+            $feeSubtotal += (float) ($rowTotals['line_subtotal'] ?? 0.0);
+            $feeTax += (float) ($rowTotals['line_tax'] ?? 0.0);
+            $feeTotal += (float) ($rowTotals['line_total'] ?? 0.0);
+            foreach ((array) ($rowTotals['tax_breakdown'] ?? []) as $rateKey => $rateAmount) {
+                $taxBreakdown[(string) $rateKey] = (float) ($taxBreakdown[(string) $rateKey] ?? 0.0) + (float) $rateAmount;
             }
-            echo '</select>';
-            echo '</p>';
         }
-        echo '</div>';
+
+        foreach ($shippingLines as $shippingLine) {
+            if (!is_array($shippingLine)) {
+                continue;
+            }
+
+            $rowTotals = $this->get_subscription_shipping_line_totals($shippingLine);
+            $shippingSubtotal += (float) ($rowTotals['line_subtotal'] ?? 0.0);
+            $shippingTax += (float) ($rowTotals['line_tax'] ?? 0.0);
+            $shippingTotal += (float) ($rowTotals['line_total'] ?? 0.0);
+            foreach ((array) ($rowTotals['tax_breakdown'] ?? []) as $rateKey => $rateAmount) {
+                $taxBreakdown[(string) $rateKey] = (float) ($taxBreakdown[(string) $rateKey] ?? 0.0) + (float) $rateAmount;
+            }
+        }
+
+        $subtotal = $itemSubtotal + $feeSubtotal + $shippingSubtotal;
+        $tax = $itemTax + $feeTax + $shippingTax;
+        $total = $itemTotal + $feeTotal + $shippingTotal;
+
+        return [
+            'item_subtotal' => (float) wc_format_decimal((string) $itemSubtotal),
+            'item_tax' => (float) wc_format_decimal((string) $itemTax),
+            'item_total' => (float) wc_format_decimal((string) $itemTotal),
+            'fee_subtotal' => (float) wc_format_decimal((string) $feeSubtotal),
+            'fee_tax' => (float) wc_format_decimal((string) $feeTax),
+            'fee_total' => (float) wc_format_decimal((string) $feeTotal),
+            'shipping_subtotal' => (float) wc_format_decimal((string) $shippingSubtotal),
+            'shipping_tax' => (float) wc_format_decimal((string) $shippingTax),
+            'shipping_total' => (float) wc_format_decimal((string) $shippingTotal),
+            'subtotal' => (float) wc_format_decimal((string) $subtotal),
+            'tax' => (float) wc_format_decimal((string) $tax),
+            'total' => (float) wc_format_decimal((string) $total),
+            'tax_breakdown' => array_map(static function ($amount) {
+                return (float) wc_format_decimal((string) $amount);
+            }, $taxBreakdown),
+        ];
     }
 
-    private function render_admin_subscription_item_row(int $rowIndex, array $item, string $scheme, bool $editing = false): void {
+    private function render_subscription_admin_tax_cells(array $taxColumns, array $taxBreakdown, bool $editing, string $viewClassPrefix, string $inputClassPrefix = '', string $inputNamePrefix = '', bool $readOnlyInput = true): void {
+        foreach ($taxColumns as $column) {
+            $rateKey = (string) ($column['key'] ?? '');
+            $safeKey = sanitize_html_class($rateKey !== '' ? $rateKey : 'tax');
+            $amount = (float) ($taxBreakdown[$rateKey] ?? 0.0);
+            echo '<td class="line_tax hb-ucs-tax-cell hb-ucs-tax-cell-' . esc_attr($safeKey) . '" width="1%" data-tax-rate="' . esc_attr($rateKey) . '" data-tax-amount="' . esc_attr((string) wc_format_decimal((string) $amount, wc_get_price_decimals())) . '">';
+            echo '<div class="view ' . esc_attr($viewClassPrefix) . '-tax-view">' . wp_kses_post(function_exists('wc_price') ? wc_price($amount) : number_format($amount, 2, '.', '')) . '</div>';
+            echo '<div class="edit">';
+            if ($inputNamePrefix !== '') {
+                echo '<input type="text" class="line_tax wc_input_price hb-ucs-tax-input ' . esc_attr($inputClassPrefix) . '" name="' . esc_attr($inputNamePrefix . '[' . $rateKey . ']') . '" value="' . esc_attr((string) wc_format_decimal((string) $amount, wc_get_price_decimals())) . '"' . ($readOnlyInput ? ' readonly="readonly"' : '') . ' />';
+            } else {
+                echo '<input type="text" class="line_tax wc_input_price hb-ucs-tax-input ' . esc_attr($inputClassPrefix) . '" value="' . esc_attr((string) wc_format_decimal((string) $amount, wc_get_price_decimals())) . '" readonly="readonly" />';
+            }
+            echo '</div>';
+            echo '</td>';
+        }
+    }
+
+    private function render_admin_subscription_fee_row(int $rowIndex, array $feeLine, array $taxColumns = [], bool $editing = false): void {
+        $name = (string) ($feeLine['name'] ?? __('Kosten', 'hb-ucs'));
+        $totals = $this->get_subscription_fee_line_totals($feeLine);
+
+        $this->render_admin_template('subscription-order-fee.php', [
+            'editing' => $editing,
+            'name' => $name,
+            'rowIndex' => $rowIndex,
+            'taxColumns' => $taxColumns,
+            'totals' => $totals,
+        ]);
+    }
+
+    private function render_admin_subscription_shipping_row(int $rowIndex, array $shippingLine, array $taxColumns = [], bool $editing = false, array $items = []): void {
+        unset($items);
+
+        $methodTitle = (string) ($shippingLine['method_title'] ?? '');
+        $methodId = (string) ($shippingLine['method_id'] ?? '');
+        $totals = $this->get_subscription_shipping_line_totals($shippingLine);
+        $displayMetaRows = [];
+
+        $this->render_admin_template('subscription-order-shipping.php', [
+            'displayMetaRows' => $displayMetaRows,
+            'editing' => $editing,
+            'methodId' => $methodId,
+            'methodTitle' => $methodTitle,
+            'rowIndex' => $rowIndex,
+            'taxColumns' => $taxColumns,
+            'totals' => $totals,
+        ]);
+    }
+
+    private function render_admin_subscription_item_row(int $rowIndex, array $item, string $scheme, array $taxColumns = [], $customer = null, bool $editing = false): void {
         $currentBaseProductId = (int) ($item['base_product_id'] ?? 0);
         $currentVariationId = (int) ($item['base_variation_id'] ?? 0);
         $currentSelectedId = $currentVariationId > 0 ? $currentVariationId : $currentBaseProductId;
@@ -1003,61 +1484,45 @@ class SubscriptionsModule {
         $currentQty = max(1, (int) ($item['qty'] ?? 1));
         $currentLabel = $this->get_subscription_item_label($item);
         $currentEditProductLabel = $this->get_admin_product_label($currentEditProductId);
-        $totals = $this->get_subscription_admin_item_totals($item);
+        $totals = $this->get_subscription_admin_item_totals($item, $customer);
         $product = $currentSelectedId > 0 ? wc_get_product($currentSelectedId) : false;
         $sku = $product && is_object($product) && method_exists($product, 'get_sku') ? (string) $product->get_sku() : '';
         $productLink = $currentEditProductId > 0 ? admin_url('post.php?post=' . $currentEditProductId . '&action=edit') : '';
         $thumbnailHtml = '';
+
         if ($product && is_object($product) && method_exists($product, 'get_image')) {
             $thumbnailHtml = (string) $product->get_image('thumbnail', ['title' => ''], false);
         }
-        if ($thumbnailHtml === '' && function_exists('wc_placeholder_img')) {
-            $thumbnailHtml = (string) wc_placeholder_img('thumbnail');
+        if ($priceIncludesTax && $unitPrice > 0) {
+            $priceIncludesTax = $this->should_subscription_item_price_be_treated_as_including_tax(
+                $baseVariationId > 0 ? $baseVariationId : $baseProductId,
+                $unitPrice,
+                $qty,
+                $taxes
+            );
         }
-        $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
-        $variationSummary = '';
-        if ($currentVariationId > 0) {
-            $variation = wc_get_product($currentVariationId);
-            $variationSummary = $this->get_variation_option_label($variation, $currentVariationId);
-        }
-        $rowClass = $editing ? 'item editing hb-ucs-sub-item-row' : 'item hb-ucs-sub-item-row';
 
-        echo '<tr class="' . esc_attr($rowClass) . '" data-row-index="' . esc_attr((string) $rowIndex) . '" data-line-subtotal="' . esc_attr((string) $totals['line_subtotal']) . '" data-line-tax="' . esc_attr((string) $totals['line_tax']) . '" data-line-total="' . esc_attr((string) $totals['line_total']) . '">';
-        echo '<td class="thumb"><div class="wc-order-item-thumbnail">' . wp_kses_post($thumbnailHtml !== '' ? $thumbnailHtml : '&nbsp;') . '</div></td>';
-        echo '<td class="name">';
-        echo '<div class="view">';
-        if ($productLink !== '' && $currentLabel !== '') {
-            echo '<a href="' . esc_url($productLink) . '" class="wc-order-item-name hb-ucs-item-label-view">' . esc_html($currentLabel) . '</a>';
-        } else {
-            echo '<div class="wc-order-item-name hb-ucs-item-label-view">' . esc_html($currentLabel !== '' ? $currentLabel : '—') . '</div>';
-        }
-        echo '<div class="wc-order-item-sku hb-ucs-item-sku-wrap' . ($sku === '' ? ' is-empty' : '') . '"><strong>' . esc_html__('SKU:', 'hb-ucs') . '</strong> <span class="hb-ucs-item-sku">' . esc_html($sku !== '' ? $sku : '') . '</span></div>';
-        echo '<div class="wc-order-item-variation hb-ucs-item-variation-summary-wrap' . ($variationSummary === '' ? ' is-empty' : '') . '"' . ($variationSummary === '' ? ' style="display:none;"' : '') . '><strong>' . esc_html__('Variatie:', 'hb-ucs') . '</strong> <span class="hb-ucs-item-variation-summary">' . esc_html($variationSummary) . '</span></div>';
-        echo '</div>';
-        echo '<div class="edit" style="display:' . ($editing ? 'block' : 'none') . ';">';
-        echo '<label class="screen-reader-text" for="hb_ucs_sub_items_' . esc_attr((string) $rowIndex) . '_product_id">' . esc_html__('Product', 'hb-ucs') . '</label>';
-        echo '<select id="hb_ucs_sub_items_' . esc_attr((string) $rowIndex) . '_product_id" name="hb_ucs_items[' . esc_attr((string) $rowIndex) . '][product_id]" class="wc-product-search hb-ucs-sub-product-search hb-ucs-item-product" style="width:100%;" data-placeholder="' . esc_attr__('Zoek een product…', 'hb-ucs') . '" data-action="woocommerce_json_search_products_and_variations" data-allow_clear="true">';
-        if ($currentEditProductId > 0 && $currentEditProductLabel !== '') {
-            echo '<option value="' . esc_attr((string) $currentEditProductId) . '" selected="selected">' . esc_html($currentEditProductLabel) . '</option>';
-        }
-        echo '</select>';
-        $this->render_admin_subscription_item_attribute_fields($rowIndex, $currentEditProductId, $selectedAttributes);
-        echo '<input type="hidden" class="hb-ucs-item-remove" name="hb_ucs_items[' . esc_attr((string) $rowIndex) . '][remove]" value="0" />';
-        echo '</div>';
-        echo '</td>';
-        echo '<td class="item_cost" width="1%" data-sort-value="' . esc_attr((string) $totals['unit_subtotal']) . '">';
-        echo '<div class="view hb-ucs-item-unit-view">' . wp_kses_post(function_exists('wc_price') ? wc_price($totals['unit_subtotal']) : number_format($totals['unit_subtotal'], 2, '.', '')) . '</div>';
-        echo '<div class="edit" style="display:' . ($editing ? 'block' : 'none') . ';"><div class="split-input"><div class="input"><label>' . esc_html__('Prijs per stuk', 'hb-ucs') . '</label><input type="text" name="hb_ucs_items[' . esc_attr((string) $rowIndex) . '][unit_price]" value="' . esc_attr((string) wc_format_decimal((string) $totals['unit_subtotal'], wc_get_price_decimals())) . '" class="line_total wc_input_price hb-ucs-item-price" /></div></div></div>';
-        echo '</td>';
-        echo '<td class="quantity" width="1%">';
-        echo '<div class="view"><small class="times">&times;</small> <span class="hb-ucs-item-qty-view">' . esc_html((string) $currentQty) . '</span></div>';
-        echo '<div class="edit" style="display:' . ($editing ? 'block' : 'none') . ';"><input type="number" min="1" step="1" name="hb_ucs_items[' . esc_attr((string) $rowIndex) . '][qty]" value="' . esc_attr((string) $currentQty) . '" class="quantity hb-ucs-item-qty" /></div>';
-        echo '</td>';
-        echo '<td class="line_cost" width="1%" data-sort-value="' . esc_attr((string) $totals['line_subtotal']) . '"><div class="view hb-ucs-item-line-subtotal">' . wp_kses_post(function_exists('wc_price') ? wc_price($totals['line_subtotal']) : number_format($totals['line_subtotal'], 2, '.', '')) . '</div><div class="edit" style="display:' . ($editing ? 'block' : 'none') . ';"><div class="split-input"><div class="input"><label>' . esc_html__('Subtotaal', 'hb-ucs') . '</label><input type="text" value="' . esc_attr((string) wc_format_decimal((string) $totals['line_subtotal'], wc_get_price_decimals())) . '" class="wc_input_price hb-ucs-item-line-subtotal-input" readonly="readonly" /></div></div></div></td>';
-        echo '<td class="line_tax" width="1%" data-sort-value="' . esc_attr((string) $totals['line_tax']) . '"><div class="view hb-ucs-item-line-tax">' . wp_kses_post(function_exists('wc_price') ? wc_price($totals['line_tax']) : number_format($totals['line_tax'], 2, '.', '')) . '</div><div class="edit" style="display:' . ($editing ? 'block' : 'none') . ';"><div class="split-input"><div class="input"><label>' . esc_html__('BTW', 'hb-ucs') . '</label><input type="text" value="' . esc_attr((string) wc_format_decimal((string) $totals['line_tax'], wc_get_price_decimals())) . '" class="wc_input_price hb-ucs-item-line-tax-input" readonly="readonly" /></div></div></div></td>';
-        echo '<td class="line_total" width="1%" data-sort-value="' . esc_attr((string) $totals['line_total']) . '"><div class="view hb-ucs-item-line-total">' . wp_kses_post(function_exists('wc_price') ? wc_price($totals['line_total']) : number_format($totals['line_total'], 2, '.', '')) . '</div><div class="edit" style="display:' . ($editing ? 'block' : 'none') . ';"><div class="split-input"><div class="input"><label>' . esc_html__('Totaal', 'hb-ucs') . '</label><input type="text" value="' . esc_attr((string) wc_format_decimal((string) $totals['line_total'], wc_get_price_decimals())) . '" class="wc_input_price hb-ucs-item-line-total-input" readonly="readonly" /></div></div></div></td>';
-        echo '<td class="wc-order-edit-line-item" width="1%"><div class="wc-order-edit-line-item-actions"><a class="edit-order-item tips" href="#" data-tip="' . esc_attr__('Item bewerken', 'hb-ucs') . '" aria-label="' . esc_attr__('Item bewerken', 'hb-ucs') . '"></a><a class="delete-order-item tips" href="#" data-tip="' . esc_attr__('Item verwijderen', 'hb-ucs') . '" aria-label="' . esc_attr__('Item verwijderen', 'hb-ucs') . '"></a></div></td>';
-        echo '</tr>';
+        $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
+        $displayMetaRows = [];
+
+        $this->render_admin_template('subscription-order-item.php', [
+            'currentBaseProductId' => $currentBaseProductId,
+            'currentEditProductId' => $currentEditProductId,
+            'currentEditProductLabel' => $currentEditProductLabel,
+            'currentLabel' => $currentLabel,
+            'currentQty' => $currentQty,
+            'currentVariationId' => $currentVariationId,
+            'displayMetaRows' => $displayMetaRows,
+            'editing' => $editing,
+            'productLink' => $productLink,
+            'rowIndex' => $rowIndex,
+            'scheme' => $scheme,
+            'selectedAttributes' => $selectedAttributes,
+            'sku' => $sku,
+            'taxColumns' => $taxColumns,
+            'thumbnailHtml' => $thumbnailHtml,
+            'totals' => $totals,
+        ]);
     }
 
     private function get_subscription_contact_snapshot(int $userId, $order, int $subId = 0): array {
@@ -1182,6 +1647,165 @@ class SubscriptionsModule {
         ];
     }
 
+    private function get_available_subscription_admin_actions(int $subId): array {
+        $status = (string) get_post_meta($subId, self::SUB_META_STATUS, true);
+        $actions = [
+            'create_renewal_order' => __('Maak renewal order aan', 'hb-ucs'),
+            'sync_customer_addresses' => __('Synchroniseer klantadressen', 'hb-ucs'),
+        ];
+
+        if ($status === 'paused' || $status === 'on-hold') {
+            $actions['resume_subscription'] = __('Hervat abonnement', 'hb-ucs');
+        } elseif (!in_array($status, ['cancelled', 'expired'], true)) {
+            $actions['pause_subscription'] = __('Pauzeer abonnement', 'hb-ucs');
+        }
+
+        if ($status !== 'cancelled') {
+            $actions['cancel_subscription'] = __('Annuleer abonnement', 'hb-ucs');
+        }
+
+        return $actions;
+    }
+
+    private function get_subscription_admin_notes(int $subId): array {
+        if ($subId <= 0) {
+            return [];
+        }
+
+        $comments = get_comments([
+            'post_id' => $subId,
+            'type' => 'order_note',
+            'status' => 'approve',
+            'orderby' => 'comment_ID',
+            'order' => 'DESC',
+        ]);
+
+        if (!is_array($comments)) {
+            return [];
+        }
+
+        $notes = [];
+        foreach ($comments as $comment) {
+            if (!$comment instanceof \WP_Comment) {
+                continue;
+            }
+
+            $dateCreated = null;
+            if (!empty($comment->comment_date_gmt)) {
+                try {
+                    $dateCreated = new \WC_DateTime($comment->comment_date_gmt, new \DateTimeZone('GMT'));
+                    $dateCreated->setTimezone(wp_timezone());
+                } catch (\Throwable $e) {
+                    $dateCreated = null;
+                }
+            }
+
+            $addedBy = trim((string) $comment->comment_author);
+            if ($addedBy === '') {
+                $addedBy = __('Systeem', 'hb-ucs');
+            }
+
+            $notes[] = (object) [
+                'id' => (int) $comment->comment_ID,
+                'content' => (string) $comment->comment_content,
+                'date_created' => $dateCreated,
+                'added_by' => $addedBy,
+                'customer_note' => get_comment_meta((int) $comment->comment_ID, 'is_customer_note', true) === '1',
+            ];
+        }
+
+        return $notes;
+    }
+
+    private function add_subscription_admin_note(int $subId, string $content, bool $customerNote = false): int {
+        $content = trim($content);
+        if ($subId <= 0 || $content === '') {
+            return 0;
+        }
+
+        $user = wp_get_current_user();
+        $author = $user instanceof \WP_User && $user->exists() ? $user->display_name : __('Systeem', 'hb-ucs');
+
+        $commentId = wp_insert_comment([
+            'comment_post_ID' => $subId,
+            'comment_author' => $author,
+            'comment_author_email' => $user instanceof \WP_User && $user->exists() ? (string) $user->user_email : '',
+            'comment_content' => $content,
+            'comment_type' => 'order_note',
+            'comment_agent' => 'WooCommerce',
+            'user_id' => $user instanceof \WP_User && $user->exists() ? (int) $user->ID : 0,
+            'comment_approved' => 1,
+        ]);
+
+        if ($commentId > 0 && $customerNote) {
+            update_comment_meta($commentId, 'is_customer_note', '1');
+        }
+
+        return (int) $commentId;
+    }
+
+    private function process_subscription_admin_action(int $subId, string $action): void {
+        if ($subId <= 0 || $action === '') {
+            return;
+        }
+
+        switch ($action) {
+            case 'create_renewal_order':
+                $result = $this->create_renewal_order_and_payment($subId, true);
+                if (is_wp_error($result)) {
+                    $this->add_subscription_admin_note($subId, sprintf(__('Actie mislukt: %s', 'hb-ucs'), $result->get_error_message()));
+                    break;
+                }
+
+                $renewalOrderId = (int) $result;
+                $message = $renewalOrderId > 0
+                    ? sprintf(__('Renewal order #%d is handmatig aangemaakt vanuit de abonnement editor.', 'hb-ucs'), $renewalOrderId)
+                    : __('Renewal order is handmatig aangemaakt vanuit de abonnement editor.', 'hb-ucs');
+                $this->add_subscription_admin_note($subId, $message);
+                break;
+
+            case 'sync_customer_addresses':
+                $userId = (int) get_post_meta($subId, self::SUB_META_USER_ID, true);
+                if ($userId > 0) {
+                    update_post_meta($subId, self::SUB_META_BILLING, $this->build_user_contact_snapshot($userId, 'billing'));
+                    update_post_meta($subId, self::SUB_META_SHIPPING, $this->build_user_contact_snapshot($userId, 'shipping'));
+                    $this->add_subscription_admin_note($subId, __('Factuur- en verzendadres opnieuw geladen vanaf het klantprofiel.', 'hb-ucs'));
+                }
+                break;
+
+            case 'pause_subscription':
+                update_post_meta($subId, self::SUB_META_STATUS, 'paused');
+                $this->add_subscription_admin_note($subId, __('Abonnement is gepauzeerd vanuit de backend.', 'hb-ucs'));
+                break;
+
+            case 'resume_subscription':
+                update_post_meta($subId, self::SUB_META_STATUS, 'active');
+                $this->add_subscription_admin_note($subId, __('Abonnement is hervat vanuit de backend.', 'hb-ucs'));
+                break;
+
+            case 'cancel_subscription':
+                update_post_meta($subId, self::SUB_META_STATUS, 'cancelled');
+                $this->add_subscription_admin_note($subId, __('Abonnement is geannuleerd vanuit de backend.', 'hb-ucs'));
+                break;
+        }
+
+        $this->sync_subscription_order_type_record($subId);
+    }
+
+    public function execute_subscription_admin_action($result, string $action, int $subId, $order = null) {
+        if ($subId <= 0 || $action === '') {
+            return $result;
+        }
+
+        $this->process_subscription_admin_action($subId, $action);
+
+        if ($order && is_object($order) && method_exists($order, 'get_id')) {
+            $this->get_subscription_repository()->sync_order_type_self((int) $order->get_id());
+        }
+
+        return true;
+    }
+
     public function add_account_menu_item(array $items): array {
         $newItems = [];
         $inserted = false;
@@ -1231,7 +1855,8 @@ class SubscriptionsModule {
         }
 
         if ($subscription) {
-            $this->render_account_subscription_detail((int) $subscription->ID, $userId);
+            $subscriptionId = method_exists($subscription, 'get_id') ? (int) $subscription->get_id() : 0;
+            $this->render_account_subscription_detail($subscriptionId, $userId);
             echo '</div>';
             echo '</div>';
             return;
@@ -1298,6 +1923,7 @@ class SubscriptionsModule {
 
     private function render_account_subscription_list(int $userId): void {
         $subscriptionIds = $this->get_user_subscription_ids($userId);
+        $displayIncludingTax = $this->should_display_subscription_prices_including_tax();
 
         echo '<div class="woocommerce-account-hb-ucs-subscriptions hb-ucs-account-shell hb-ucs-account-shell--list">';
         echo '<div class="hb-ucs-account-hero">';
@@ -1344,7 +1970,8 @@ class SubscriptionsModule {
             echo '<div class="hb-ucs-subscription-card__meta">';
             echo '<div class="hb-ucs-subscription-card__meta-item"><span>' . esc_html__('Volgende orderdatum', 'hb-ucs') . '</span><strong>' . esc_html($nextPayment > 0 ? $this->format_wp_datetime($nextPayment) : '—') . '</strong></div>';
             echo '<div class="hb-ucs-subscription-card__meta-item"><span>' . esc_html__('Frequentie', 'hb-ucs') . '</span><strong>' . esc_html($this->get_subscription_scheme_label((string) get_post_meta($subId, self::SUB_META_SCHEME, true))) . '</strong></div>';
-            echo '<div class="hb-ucs-subscription-card__meta-item"><span>' . esc_html__('Totaal', 'hb-ucs') . '</span><strong>' . wp_kses_post(function_exists('wc_price') ? wc_price($this->get_subscription_total_amount($subId, true)) : number_format($this->get_subscription_total_amount($subId, true), 2, '.', '')) . '</strong></div>';
+            $subscriptionTotal = $this->get_subscription_total_amount($subId, $displayIncludingTax);
+            echo '<div class="hb-ucs-subscription-card__meta-item"><span>' . esc_html__('Totaal', 'hb-ucs') . '</span><strong>' . wp_kses_post(function_exists('wc_price') ? wc_price($subscriptionTotal) : number_format($subscriptionTotal, 2, '.', '')) . '</strong></div>';
             echo '</div>';
             if (!empty($itemSummary)) {
                 echo '<div class="hb-ucs-subscription-card__items">';
@@ -1381,12 +2008,12 @@ class SubscriptionsModule {
         $contact = $this->get_subscription_contact_snapshot($userId, null, $subId);
         $relatedOrders = $this->get_subscription_related_orders($subId);
         $manageDisabled = in_array($status, ['cancelled', 'expired'], true);
-        $totalAmount = $this->get_subscription_total_amount($subId, true);
+        $totalAmount = $this->get_subscription_total_amount($subId, $this->should_display_subscription_prices_including_tax());
         $scheduleModalId = 'hb-ucs-schedule-modal-' . $subId;
         $contactPanelId = 'hb-ucs-panel-contact-' . $subId;
         $ordersPanelId = 'hb-ucs-panel-orders-' . $subId;
         $summaryDate = $nextPayment > 0 ? $this->format_wp_date($nextPayment) : '—';
-
+        $priceBreakdown = $this->get_account_subscription_price_breakdown($subId);
         echo '<div class="woocommerce-account-hb-ucs-subscription hb-ucs-account-shell hb-ucs-account-shell--detail">';
         echo '<p class="hb-ucs-account-backlink"><a href="' . esc_url($this->get_account_subscription_url()) . '">← ' . esc_html__('Terug naar abonnementen', 'hb-ucs') . '</a></p>';
         echo '<section class="hb-ucs-account-hero hb-ucs-account-hero--detail hb-ucs-account-hero--stacked">';
@@ -1417,6 +2044,25 @@ class SubscriptionsModule {
             echo '<div class="woocommerce-info hb-ucs-inline-notice" role="status">' . esc_html__('Er staat al een gekoppelde bestelling op on-hold of processing. Wijzigingen aan dit abonnement passen die open bestelling niet meer aan en annuleren die ook niet.', 'hb-ucs') . '</div>';
         }
 
+        echo '<section class="hb-ucs-panel hb-ucs-panel--secondary woocommerce-MyAccount-content-wrapper">';
+        echo '<div class="hb-ucs-panel__header hb-ucs-panel__header--compact">';
+        echo '<h3>' . esc_html__('Prijsopbouw per levering', 'hb-ucs') . '</h3>';
+        echo '<p>' . esc_html((string) ($priceBreakdown['tax_note'] ?? '')) . '</p>';
+        echo '</div>';
+        echo '<div class="hb-ucs-info-list hb-ucs-info-list--price-breakdown">';
+        foreach ((array) ($priceBreakdown['rows'] ?? []) as $row) {
+            echo '<div class="hb-ucs-info-list__row">';
+            echo '<span>' . esc_html((string) ($row['label'] ?? '')) . '</span>';
+            echo '<strong>' . wp_kses_post($this->format_subscription_frontend_price((float) ($row['amount'] ?? 0.0))) . '</strong>';
+            echo '</div>';
+        }
+        echo '<div class="hb-ucs-info-list__row hb-ucs-info-list__row--total">';
+        echo '<span>' . esc_html__('Abonnementswaarde totaal', 'hb-ucs') . '</span>';
+        echo '<strong>' . wp_kses_post($this->format_subscription_frontend_price((float) ($priceBreakdown['total'] ?? 0.0))) . '</strong>';
+        echo '</div>';
+        echo '</div>';
+        echo '</section>';
+
         echo '<section class="hb-ucs-panel hb-ucs-panel-actions hb-ucs-panel-actions--overview woocommerce-MyAccount-content-wrapper">';
         echo '<div class="hb-ucs-quick-actions-grid">';
 
@@ -1431,7 +2077,7 @@ class SubscriptionsModule {
         echo '</form>';
 
         echo '<div class="hb-ucs-quick-action-card hb-ucs-quick-action-card--schedule">';
-    echo '<button type="button" class="button hb-ucs-quick-action-card__button" data-hb-ucs-open-modal="' . esc_attr($scheduleModalId) . '" aria-haspopup="dialog" aria-controls="' . esc_attr($scheduleModalId) . '">';
+        echo '<button type="button" class="button hb-ucs-quick-action-card__button" data-hb-ucs-open-modal="' . esc_attr($scheduleModalId) . '" aria-haspopup="dialog" aria-controls="' . esc_attr($scheduleModalId) . '">';
         echo '<span class="hb-ucs-quick-action-card__icon hb-ucs-quick-action-card__icon--schedule" aria-hidden="true">&#128197;</span>';
         echo '<span class="hb-ucs-quick-action-card__copy"><strong>' . esc_html__('Wijzig Orderdatum', 'hb-ucs') . '</strong><small>' . esc_html($summaryDate) . '</small></span>';
         echo '</button>';
@@ -1751,17 +2397,20 @@ class SubscriptionsModule {
             return null;
         }
 
-        $post = get_post($subId);
-        if (!$post || (string) $post->post_type !== self::SUB_CPT) {
+        if (!function_exists('wc_get_order')) {
             return null;
         }
 
-        $ownerId = (int) get_post_meta($subId, self::SUB_META_USER_ID, true);
-        if ($ownerId !== $userId) {
+        $order = wc_get_order($subId);
+        if (!$order || !is_object($order) || !method_exists($order, 'get_type') || (string) $order->get_type() !== $this->get_subscription_order_type()->get_type()) {
             return null;
         }
 
-        return $post;
+        if (!in_array($subId, $this->get_user_subscription_ids($userId), true)) {
+            return null;
+        }
+
+        return $order;
     }
 
     private function get_user_subscription_ids(int $userId): array {
@@ -1769,23 +2418,94 @@ class SubscriptionsModule {
             return [];
         }
 
-        $query = new \WP_Query([
-            'post_type' => self::SUB_CPT,
-            'post_status' => 'publish',
-            'posts_per_page' => 100,
-            'fields' => 'ids',
-            'orderby' => 'date',
-            'order' => 'DESC',
-            'meta_query' => [
-                [
-                    'key' => self::SUB_META_USER_ID,
-                    'value' => (string) $userId,
-                    'compare' => '=',
+        $subscriptionIds = function_exists('wc_get_orders')
+            ? wc_get_orders([
+                'type' => $this->get_subscription_order_type()->get_type(),
+                'limit' => 100,
+                'return' => 'ids',
+                'orderby' => 'date',
+                'order' => 'DESC',
+                'status' => array_keys(wc_get_order_statuses()),
+                'meta_query' => [
+                    [
+                        'key' => self::SUB_META_USER_ID,
+                        'value' => (string) $userId,
+                        'compare' => '=',
+                    ],
                 ],
-            ],
-        ]);
+            ])
+            : [];
 
-        return $query->have_posts() ? array_map('intval', $query->posts) : [];
+        $subscriptionIds = array_map('intval', is_array($subscriptionIds) ? $subscriptionIds : []);
+
+        $claimableIds = $this->find_claimable_subscription_ids_for_user($userId);
+        if (!empty($claimableIds)) {
+            $subscriptionIds = array_values(array_unique(array_merge($subscriptionIds, $claimableIds)));
+            usort($subscriptionIds, static function (int $left, int $right): int {
+                $leftDate = (string) get_post_field('post_date', $left);
+                $rightDate = (string) get_post_field('post_date', $right);
+                if ($leftDate === $rightDate) {
+                    return $right <=> $left;
+                }
+
+                return strcmp($rightDate, $leftDate);
+            });
+        }
+
+        return $subscriptionIds;
+    }
+
+    private function find_claimable_subscription_ids_for_user(int $userId): array {
+        if ($userId <= 0) {
+            return [];
+        }
+
+        $user = get_user_by('id', $userId);
+        $email = $user && is_object($user) ? strtolower(trim((string) $user->user_email)) : '';
+        if ($email === '') {
+            return [];
+        }
+
+        $posts = function_exists('wc_get_orders')
+            ? wc_get_orders([
+                'type' => $this->get_subscription_order_type()->get_type(),
+                'limit' => 200,
+                'return' => 'ids',
+                'orderby' => 'date',
+                'order' => 'DESC',
+                'status' => array_keys(wc_get_order_statuses()),
+            ])
+            : [];
+
+        $matches = [];
+        foreach ((array) $posts as $subId) {
+            $subId = (int) $subId;
+            if ($subId <= 0) {
+                continue;
+            }
+
+            $ownerId = (int) get_post_meta($subId, self::SUB_META_USER_ID, true);
+            if ($ownerId === $userId) {
+                $matches[] = $subId;
+                continue;
+            }
+
+            if ($ownerId > 0) {
+                continue;
+            }
+
+            $billing = get_post_meta($subId, self::SUB_META_BILLING, true);
+            $billing = is_array($billing) ? $billing : [];
+            $billingEmail = strtolower(trim((string) ($billing['email'] ?? '')));
+            if ($billingEmail === '' || $billingEmail !== $email) {
+                continue;
+            }
+
+            update_post_meta($subId, self::SUB_META_USER_ID, (string) $userId);
+            $matches[] = $subId;
+        }
+
+        return array_values(array_unique(array_map('intval', $matches)));
     }
 
     private function get_subscription_scheme_label(string $scheme): string {
@@ -1807,13 +2527,6 @@ class SubscriptionsModule {
             ];
         }
 
-        $options = [
-            'items' => [],
-            'lookup' => [],
-            'categories' => [],
-            'variable_configs' => [],
-            'variation_lookup' => [],
-        ];
         $products = wc_get_products([
             'status' => 'publish',
             'limit' => -1,
@@ -1824,6 +2537,14 @@ class SubscriptionsModule {
         if (!is_array($products)) {
             $products = [];
         }
+
+        $options = [
+            'items' => [],
+            'lookup' => [],
+            'categories' => [],
+            'variable_configs' => [],
+            'variation_lookup' => [],
+        ];
 
         foreach ($products as $product) {
             if (!$product || !is_object($product) || !method_exists($product, 'get_id')) {
@@ -1949,7 +2670,7 @@ class SubscriptionsModule {
         $selectedId = (int) ($item['base_product_id'] ?? 0);
         $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
         $variationSummary = (string) ($item['variation_summary'] ?? '');
-        $unitPrice = $this->get_subscription_item_display_amount($item, 1, true);
+        $unitPrice = $this->get_subscription_item_display_amount($item, 1, $this->should_display_subscription_prices_including_tax());
         $unitPriceHtml = $unitPrice > 0 ? (function_exists('wc_price') ? wc_price($unitPrice) : number_format($unitPrice, 2, '.', '')) : '';
         $itemLabel = isset($item['display_label']) && (string) $item['display_label'] !== '' ? (string) $item['display_label'] : ($selectedId > 0 ? $this->get_subscription_item_label($item) : __('Nieuw product', 'hb-ucs'));
 
@@ -2410,6 +3131,7 @@ class SubscriptionsModule {
         $unitPrice = isset($item['unit_price']) ? (float) wc_format_decimal((string) $item['unit_price']) : 0.0;
         $priceIncludesTax = !empty($item['price_includes_tax']);
         $selectedAttributes = isset($item['selected_attributes']) && is_array($item['selected_attributes']) ? $item['selected_attributes'] : [];
+        $taxes = $this->normalize_subscription_item_taxes($item['taxes'] ?? []);
 
         if ($baseProductId <= 0) {
             return null;
@@ -2428,12 +3150,22 @@ class SubscriptionsModule {
             $normalizedAttributes[$key] = $value;
         }
 
+        if ($priceIncludesTax && $unitPrice > 0) {
+            $priceIncludesTax = $this->should_subscription_item_price_be_treated_as_including_tax(
+                $baseVariationId > 0 ? $baseVariationId : $baseProductId,
+                $unitPrice,
+                $qty,
+                $taxes
+            );
+        }
+
         return [
             'base_product_id' => $baseProductId,
             'base_variation_id' => max(0, $baseVariationId),
             'qty' => $qty,
             'unit_price' => $unitPrice,
             'price_includes_tax' => $priceIncludesTax ? 1 : 0,
+            'taxes' => $taxes,
             'selected_attributes' => $normalizedAttributes,
         ];
     }
@@ -2469,6 +3201,7 @@ class SubscriptionsModule {
     }
 
     private function persist_subscription_items(int $subId, array $items): void {
+        $customer = $subId > 0 ? $this->get_subscription_tax_customer($subId) : null;
         $normalized = [];
         foreach ($items as $item) {
             if (!is_array($item)) {
@@ -2476,6 +3209,9 @@ class SubscriptionsModule {
             }
             $row = $this->normalize_subscription_item($item);
             if ($row) {
+                if (empty($row['taxes']['total'])) {
+                    $row['taxes'] = $this->get_subscription_item_taxes($row, $customer);
+                }
                 $normalized[] = $row;
             }
         }
@@ -2503,10 +3239,19 @@ class SubscriptionsModule {
         $methodTitle = sanitize_text_field((string) ($line['method_title'] ?? ''));
         $instanceId = (int) ($line['instance_id'] ?? 0);
         $total = isset($line['total']) ? (float) wc_format_decimal((string) $line['total']) : 0.0;
+        $tax = isset($line['tax']) ? (float) wc_format_decimal((string) $line['tax']) : 0.0;
         $taxes = isset($line['taxes']) && is_array($line['taxes']) ? $line['taxes'] : [];
 
         if ($methodId === '' && $methodTitle === '') {
             return null;
+        }
+
+        if ($tax > 0 && empty($taxes)) {
+            $taxes = [
+                'total' => [
+                    'manual' => wc_format_decimal((string) $tax, wc_get_price_decimals()),
+                ],
+            ];
         }
 
         $normalizedTaxes = [];
@@ -2522,7 +3267,10 @@ class SubscriptionsModule {
 
             $normalizedTaxes[$groupKey] = [];
             foreach ($taxGroupValues as $taxRateId => $taxAmount) {
-                $rateKey = (string) absint((string) $taxRateId);
+                $rateKey = is_numeric($taxRateId) ? (string) absint((string) $taxRateId) : sanitize_key((string) $taxRateId);
+                if ($rateKey === '') {
+                    continue;
+                }
                 $normalizedTaxes[$groupKey][$rateKey] = wc_format_decimal((string) $taxAmount, wc_get_price_decimals());
             }
         }
@@ -2558,6 +3306,133 @@ class SubscriptionsModule {
         return $lines;
     }
 
+    private function normalize_subscription_fee_line(array $line): ?array {
+        $name = sanitize_text_field((string) ($line['name'] ?? ''));
+        $total = isset($line['total']) ? (float) wc_format_decimal((string) $line['total']) : 0.0;
+        $tax = isset($line['tax']) ? (float) wc_format_decimal((string) $line['tax']) : 0.0;
+        $taxes = isset($line['taxes']) && is_array($line['taxes']) ? $line['taxes'] : [];
+
+        if ($name === '' && $total === 0.0 && $tax === 0.0 && empty($taxes)) {
+            return null;
+        }
+
+        if ($tax > 0 && empty($taxes)) {
+            $taxes = [
+                'total' => [
+                    'manual' => wc_format_decimal((string) $tax, wc_get_price_decimals()),
+                ],
+            ];
+        }
+
+        $normalizedTaxes = ['total' => []];
+        if (isset($taxes['total']) && is_array($taxes['total'])) {
+            foreach ($taxes['total'] as $taxKey => $taxAmount) {
+                $normalizedKey = is_numeric($taxKey) ? (string) absint((string) $taxKey) : sanitize_key((string) $taxKey);
+                if ($normalizedKey === '') {
+                    $normalizedKey = 'manual';
+                }
+                $normalizedTaxes['total'][$normalizedKey] = wc_format_decimal((string) $taxAmount, wc_get_price_decimals());
+            }
+        }
+
+        return [
+            'name' => $name !== '' ? $name : __('Kosten', 'hb-ucs'),
+            'total' => $total,
+            'taxes' => $normalizedTaxes,
+        ];
+    }
+
+    private function get_subscription_fee_lines(int $subId): array {
+        $stored = get_post_meta($subId, self::SUB_META_FEE_LINES, true);
+        $lines = [];
+
+        if (!is_array($stored)) {
+            return $lines;
+        }
+
+        foreach ($stored as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $line = $this->normalize_subscription_fee_line($row);
+            if ($line) {
+                $lines[] = $line;
+            }
+        }
+
+        return $lines;
+    }
+
+    private function persist_subscription_fee_lines(int $subId, array $lines): void {
+        $normalized = [];
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+
+            $row = $this->normalize_subscription_fee_line($line);
+            if ($row) {
+                $normalized[] = $row;
+            }
+        }
+
+        update_post_meta($subId, self::SUB_META_FEE_LINES, $normalized);
+    }
+
+    private function extract_subscription_fee_lines($order): array {
+        $lines = [];
+        if (!$order || !is_object($order) || !method_exists($order, 'get_items')) {
+            return $lines;
+        }
+
+        foreach ($order->get_items('fee') as $feeItem) {
+            if (!$feeItem || !is_object($feeItem)) {
+                continue;
+            }
+
+            $line = $this->normalize_subscription_fee_line([
+                'name' => method_exists($feeItem, 'get_name') ? (string) $feeItem->get_name() : '',
+                'total' => method_exists($feeItem, 'get_total') ? (float) $feeItem->get_total() : 0.0,
+                'taxes' => method_exists($feeItem, 'get_taxes') ? (array) $feeItem->get_taxes() : [],
+            ]);
+
+            if ($line) {
+                $lines[] = $line;
+            }
+        }
+
+        return $lines;
+    }
+
+    private function get_effective_subscription_shipping_lines(int $subId, $fallbackOrder = null): array {
+        $lines = $this->get_subscription_shipping_lines($subId);
+        if (!empty($lines) || metadata_exists('post', $subId, self::SUB_META_SHIPPING_LINES)) {
+            return $lines;
+        }
+
+        if (!$fallbackOrder) {
+            $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
+            $fallbackOrder = $parentOrderId > 0 ? wc_get_order($parentOrderId) : null;
+        }
+
+        return $fallbackOrder ? $this->extract_subscription_shipping_lines($fallbackOrder) : [];
+    }
+
+    private function get_effective_subscription_fee_lines(int $subId, $fallbackOrder = null): array {
+        $lines = $this->get_subscription_fee_lines($subId);
+        if (!empty($lines) || metadata_exists('post', $subId, self::SUB_META_FEE_LINES)) {
+            return $lines;
+        }
+
+        if (!$fallbackOrder) {
+            $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
+            $fallbackOrder = $parentOrderId > 0 ? wc_get_order($parentOrderId) : null;
+        }
+
+        return $fallbackOrder ? $this->extract_subscription_fee_lines($fallbackOrder) : [];
+    }
+
     private function persist_subscription_shipping_lines(int $subId, array $lines): void {
         $normalized = [];
         foreach ($lines as $line) {
@@ -2569,11 +3444,6 @@ class SubscriptionsModule {
             if ($row) {
                 $normalized[] = $row;
             }
-        }
-
-        if (empty($normalized)) {
-            delete_post_meta($subId, self::SUB_META_SHIPPING_LINES);
-            return;
         }
 
         update_post_meta($subId, self::SUB_META_SHIPPING_LINES, $normalized);
@@ -2654,25 +3524,142 @@ class SubscriptionsModule {
     }
 
     private function get_subscription_total_amount(int $subId, bool $includeTax = false): float {
+        if ($includeTax) {
+            $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
+            $parentOrder = $parentOrderId > 0 ? wc_get_order($parentOrderId) : null;
+            $totals = $this->get_subscription_admin_totals(
+                $this->get_subscription_items($subId),
+                $this->get_effective_subscription_shipping_lines($subId, $parentOrder),
+                $this->get_effective_subscription_fee_lines($subId, $parentOrder),
+                $subId,
+                $parentOrder
+            );
+
+            return (float) ($totals['total'] ?? 0.0);
+        }
+
         $amount = 0.0;
         foreach ($this->get_subscription_items($subId) as $item) {
-            if ($includeTax) {
-                $amount += $this->get_subscription_item_display_amount($item, (int) ($item['qty'] ?? 1), true);
-            } else {
-                $amount += ($this->get_subscription_item_storage_unit_price($item) * (int) ($item['qty'] ?? 1));
-            }
+            $amount += ($this->get_subscription_item_storage_unit_price($item) * (int) ($item['qty'] ?? 1));
         }
+
+        foreach ($this->get_effective_subscription_fee_lines($subId) as $feeLine) {
+            if (!is_array($feeLine)) {
+                continue;
+            }
+
+            $lineTotals = $this->get_subscription_fee_line_totals($feeLine);
+            $amount += $includeTax ? (float) ($lineTotals['line_total'] ?? 0.0) : (float) ($lineTotals['line_subtotal'] ?? 0.0);
+        }
+
+        foreach ($this->get_effective_subscription_shipping_lines($subId) as $shippingLine) {
+            if (!is_array($shippingLine)) {
+                continue;
+            }
+
+            $lineTotals = $this->get_subscription_shipping_line_totals($shippingLine);
+            $amount += $includeTax ? (float) ($lineTotals['line_total'] ?? 0.0) : (float) ($lineTotals['line_subtotal'] ?? 0.0);
+        }
+
         return (float) wc_format_decimal((string) $amount);
+    }
+
+    private function get_account_subscription_price_breakdown(int $subId): array {
+        $includeTax = $this->should_display_subscription_prices_including_tax();
+        $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
+        $parentOrder = $parentOrderId > 0 ? wc_get_order($parentOrderId) : null;
+        $rows = [];
+
+        foreach ($this->get_subscription_items($subId) as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $qty = max(1, (int) ($item['qty'] ?? 1));
+            $label = $this->get_subscription_item_label($item);
+            if ($qty > 1) {
+                $label = sprintf(__('%1$s × %2$d', 'hb-ucs'), $label, $qty);
+            }
+
+            $rows[] = [
+                'label' => $label,
+                'amount' => $this->get_subscription_item_display_amount($item, $qty, $includeTax),
+            ];
+        }
+
+        foreach ($this->get_effective_subscription_shipping_lines($subId, $parentOrder) as $shippingLine) {
+            if (!is_array($shippingLine)) {
+                continue;
+            }
+
+            $lineTotals = $this->get_subscription_shipping_line_totals($shippingLine);
+            $methodTitle = trim((string) ($shippingLine['method_title'] ?? ''));
+
+            $rows[] = [
+                'label' => $methodTitle !== ''
+                    ? sprintf(__('Verzendkosten — %s', 'hb-ucs'), $methodTitle)
+                    : __('Verzendkosten', 'hb-ucs'),
+                'amount' => (float) ($includeTax ? ($lineTotals['line_total'] ?? 0.0) : ($lineTotals['line_subtotal'] ?? 0.0)),
+            ];
+        }
+
+        foreach ($this->get_effective_subscription_fee_lines($subId, $parentOrder) as $feeLine) {
+            if (!is_array($feeLine)) {
+                continue;
+            }
+
+            $lineTotals = $this->get_subscription_fee_line_totals($feeLine);
+            $feeName = trim((string) ($feeLine['name'] ?? ''));
+
+            $rows[] = [
+                'label' => $feeName !== ''
+                    ? sprintf(__('Toeslag — %s', 'hb-ucs'), $feeName)
+                    : __('Toeslag', 'hb-ucs'),
+                'amount' => (float) ($includeTax ? ($lineTotals['line_total'] ?? 0.0) : ($lineTotals['line_subtotal'] ?? 0.0)),
+            ];
+        }
+
+        return [
+            'rows' => $rows,
+            'total' => $this->get_subscription_total_amount($subId, $includeTax),
+            'tax_note' => $includeTax
+                ? __('Alle bedragen zijn inclusief btw per levering.', 'hb-ucs')
+                : __('Alle bedragen zijn exclusief btw per levering.', 'hb-ucs'),
+        ];
+    }
+
+    private function format_subscription_frontend_price(float $amount): string {
+        return function_exists('wc_price') ? (string) wc_price($amount) : number_format($amount, 2, '.', '');
+    }
+
+    private function should_display_subscription_prices_including_tax(): bool {
+        if (!function_exists('wc_tax_enabled') || !wc_tax_enabled()) {
+            return false;
+        }
+
+        return get_option('woocommerce_tax_display_shop', 'excl') === 'incl';
     }
 
     private function get_subscription_item_display_amount(array $item, int $qty = 1, bool $includeTax = true): float {
         $qty = max(1, $qty);
-        $unitPrice = (float) ($item['unit_price'] ?? 0.0);
-        if ($unitPrice <= 0) {
+        $unitSubtotal = $this->get_subscription_item_storage_unit_price($item);
+        if ($unitSubtotal <= 0) {
             return 0.0;
         }
 
-        if ($includeTax && !empty($item['price_includes_tax'])) {
+        $lineSubtotal = (float) wc_format_decimal((string) ($unitSubtotal * $qty));
+        if (!$includeTax) {
+            return $lineSubtotal;
+        }
+
+        $taxBreakdown = $this->normalize_subscription_tax_amounts($this->get_subscription_item_taxes($item, null)['total']);
+        $lineTax = (float) wc_format_decimal((string) array_sum($taxBreakdown));
+        if ($lineTax > 0) {
+            return (float) wc_format_decimal((string) ($lineSubtotal + $lineTax));
+        }
+
+        $unitPrice = (float) ($item['unit_price'] ?? 0.0);
+        if (!empty($item['price_includes_tax']) && $unitPrice > 0) {
             return (float) wc_format_decimal((string) ($unitPrice * $qty));
         }
 
@@ -2739,6 +3726,45 @@ class SubscriptionsModule {
         $product = $productId > 0 ? wc_get_product($productId) : false;
 
         return $this->get_product_price_storage_amount($product, $unitPrice, 1);
+    }
+
+    private function should_subscription_item_price_be_treated_as_including_tax(int $productId, float $unitPrice, int $qty, array $taxes): bool {
+        if ($productId <= 0 || $unitPrice <= 0 || $qty <= 0) {
+            return true;
+        }
+
+        if (!function_exists('wc_tax_enabled') || !wc_tax_enabled()) {
+            return false;
+        }
+
+        $storedTaxTotal = (float) array_sum($this->normalize_subscription_tax_amounts($taxes['total'] ?? $taxes));
+        if ($storedTaxTotal <= 0) {
+            return true;
+        }
+
+        $combinedRate = 0.0;
+        foreach (array_keys((array) ($taxes['total'] ?? $taxes)) as $rateId) {
+            $rateId = absint((string) $rateId);
+            if ($rateId <= 0 || !class_exists('WC_Tax') || !method_exists('WC_Tax', 'get_rate_percent')) {
+                continue;
+            }
+
+            $percent = (string) \WC_Tax::get_rate_percent($rateId);
+            $percent = (float) str_replace(',', '.', rtrim($percent, "% \t\n\r\0\x0B"));
+            if ($percent > 0) {
+                $combinedRate += ($percent / 100);
+            }
+        }
+
+        if ($combinedRate <= 0) {
+            return true;
+        }
+
+        $lineAmount = $unitPrice * $qty;
+        $expectedTaxWhenExcluding = (float) wc_format_decimal((string) ($lineAmount * $combinedRate));
+        $expectedTaxWhenIncluding = (float) wc_format_decimal((string) ($lineAmount - ($lineAmount / (1 + $combinedRate))));
+
+        return abs($storedTaxTotal - $expectedTaxWhenIncluding) <= abs($storedTaxTotal - $expectedTaxWhenExcluding);
     }
 
     private function get_subscription_related_orders(int $subId): array {
@@ -2877,15 +3903,53 @@ class SubscriptionsModule {
         }
     }
 
+    private function hydrate_subscription_order_customer_data(int $subId, int $userId = 0, $fallbackOrder = null): void {
+        if ($subId <= 0 || !function_exists('wc_get_order')) {
+            return;
+        }
+
+        $order = wc_get_order($subId);
+        if (!$order || !is_object($order)) {
+            return;
+        }
+
+        if ($userId > 0 && method_exists($order, 'set_customer_id')) {
+            $order->set_customer_id($userId);
+        }
+
+        $this->apply_subscription_snapshot_to_order($order, $subId, $userId, $fallbackOrder);
+
+        if (method_exists($order, 'save')) {
+            $order->save();
+        }
+    }
+
+    private function apply_subscription_fee_lines_to_order($order, int $subId, $fallbackOrder = null): void {
+        if (!$order || !is_object($order) || !method_exists($order, 'add_item')) {
+            return;
+        }
+
+        foreach ($this->get_effective_subscription_fee_lines($subId, $fallbackOrder) as $feeLine) {
+            if (!is_array($feeLine)) {
+                continue;
+            }
+
+            $newFee = new \WC_Order_Item_Fee();
+            $newFee->set_name((string) ($feeLine['name'] ?? __('Kosten', 'hb-ucs')));
+            $newFee->set_total((float) ($feeLine['total'] ?? 0.0));
+            if (!empty($feeLine['taxes']) && is_array($feeLine['taxes'])) {
+                $newFee->set_taxes((array) $feeLine['taxes']);
+            }
+            $order->add_item($newFee);
+        }
+    }
+
     private function apply_subscription_shipping_lines_to_order($order, int $subId, $fallbackOrder = null): void {
         if (!$order || !is_object($order) || !method_exists($order, 'add_item')) {
             return;
         }
 
-        $shippingLines = $this->get_subscription_shipping_lines($subId);
-        if (empty($shippingLines) && $fallbackOrder) {
-            $shippingLines = $this->extract_subscription_shipping_lines($fallbackOrder);
-        }
+        $shippingLines = $this->get_effective_subscription_shipping_lines($subId, $fallbackOrder);
 
         foreach ($shippingLines as $shippingLine) {
             if (!is_array($shippingLine)) {
@@ -2902,118 +3966,6 @@ class SubscriptionsModule {
             }
             $order->add_item($newShip);
         }
-    }
-
-    public function render_subscription_data_metabox($post): void {
-        $subId = is_object($post) && isset($post->ID) ? (int) $post->ID : 0;
-        if ($subId <= 0) {
-            echo '<p>' . esc_html__('Onbekend abonnement.', 'hb-ucs') . '</p>';
-            return;
-        }
-
-        wp_nonce_field('hb_ucs_save_subscription', 'hb_ucs_save_subscription_nonce');
-
-        $status = (string) get_post_meta($subId, self::SUB_META_STATUS, true);
-        $userId = (int) get_post_meta($subId, self::SUB_META_USER_ID, true);
-        $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
-        $customerId = (string) get_post_meta($subId, self::SUB_META_MOLLIE_CUSTOMER_ID, true);
-        $mandateId = (string) get_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID, true);
-        $lastPaymentId = (string) get_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, true);
-        $paymentMethodTitle = (string) get_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, true);
-        $paymentMethod = (string) get_post_meta($subId, self::SUB_META_PAYMENT_METHOD, true);
-        $customerLabel = $this->get_admin_customer_label($userId);
-        $parentOrder = $parentOrderId > 0 ? wc_get_order($parentOrderId) : null;
-        $contact = $this->get_subscription_contact_snapshot($userId, $parentOrder, $subId);
-        $billingAddress = $this->get_editable_subscription_address_snapshot($subId, 'billing', $userId, $parentOrder);
-        $shippingAddress = $this->get_editable_subscription_address_snapshot($subId, 'shipping', $userId, $parentOrder);
-        $gatewayChoices = $this->get_available_payment_gateway_choices_for_user($userId);
-        if ($paymentMethod !== '' && !isset($gatewayChoices[$paymentMethod])) {
-            $gatewayChoices = [$paymentMethod => ($paymentMethodTitle !== '' ? $paymentMethodTitle : $paymentMethod)] + $gatewayChoices;
-        }
-
-        $orderLink = $parentOrderId > 0 ? admin_url('post.php?post=' . $parentOrderId . '&action=edit') : '';
-        $userLink = $userId > 0 ? admin_url('user-edit.php?user_id=' . $userId) : '';
-
-        $otherSubscriptionsUrl = $userId > 0 ? admin_url('edit.php?post_type=' . self::SUB_CPT . '&hb_ucs_customer=' . $userId) : '';
-
-        echo '<div id="order_data" class="order_data_column_container hb-ucs-admin-order-data-columns">';
-        echo '<div class="order_data_column hb-ucs-admin-order-data-columns__general">';
-
-        echo '<h3>' . esc_html__('Algemeen', 'hb-ucs') . '</h3>';
-
-        echo '<p class="form-field form-field-wide"><label for="hb_ucs_sub_status"><strong>' . esc_html__('Status', 'hb-ucs') . '</strong></label>';
-        echo '<select name="hb_ucs_sub_status" id="hb_ucs_sub_status" style="width:100%;">';
-        foreach ($this->get_subscription_statuses() as $key => $label) {
-            echo '<option value="' . esc_attr($key) . '" ' . selected($status, $key, false) . '>' . esc_html($label) . '</option>';
-        }
-        echo '</select></p>';
-
-        echo '<p class="form-field form-field-wide"><label for="hb_ucs_sub_user_id"><strong>' . esc_html__('Klant', 'hb-ucs') . '</strong></label>';
-        echo '<select id="hb_ucs_sub_user_id" name="hb_ucs_sub_user_id" class="wc-customer-search" data-placeholder="' . esc_attr__('Zoek klant…', 'hb-ucs') . '" data-allow_clear="true" style="width:100%;">';
-        if ($userId > 0 && $customerLabel !== '') {
-            echo '<option value="' . esc_attr((string) $userId) . '" selected="selected">' . esc_html($customerLabel) . '</option>';
-        }
-        echo '</select>';
-        if ($userLink !== '' || $otherSubscriptionsUrl !== '') {
-            echo '<span class="description hb-ucs-admin-inline-links">';
-            if ($userLink !== '') {
-                echo '<a href="' . esc_url($userLink) . '">' . esc_html__('Profiel', 'hb-ucs') . '</a>';
-            }
-            if ($userLink !== '' && $otherSubscriptionsUrl !== '') {
-                echo ' — ';
-            }
-            if ($otherSubscriptionsUrl !== '') {
-                echo '<a href="' . esc_url($otherSubscriptionsUrl) . '">' . esc_html__('Andere abonnementen weergeven', 'hb-ucs') . '</a>';
-            }
-            echo '</span>';
-        }
-        echo '</p>';
-
-        echo '<p class="form-field form-field-wide"><strong>' . esc_html__('Bovenliggende bestelling', 'hb-ucs') . '</strong><br/>';
-        if ($orderLink !== '') {
-            echo '<a href="' . esc_url($orderLink) . '">#' . esc_html((string) $parentOrderId) . '</a>';
-        } else {
-            echo '—';
-        }
-        echo '</p>';
-
-        echo '</div>';
-        echo '<div class="hb-ucs-admin-order-address-columns">';
-        echo '<div class="order_data_column hb-ucs-admin-order-address-column">';
-
-        echo '<h3>' . esc_html__('Facturering', 'hb-ucs') . ' <a href="#" class="edit_address">' . esc_html__('Bewerken', 'hb-ucs') . '</a><span><a href="#" class="load_customer_billing" style="display:none;">' . esc_html__('Laad factuuradres', 'hb-ucs') . '</a></span></h3>';
-        echo '<div class="address">';
-        $this->render_subscription_address_display('billing', $billingAddress);
-        echo '</div>';
-        echo '<div class="edit_address" style="display:none;">';
-        $this->render_subscription_address_fields('billing', $billingAddress);
-        echo '<p class="form-field form-field-wide"><label for="hb_ucs_sub_payment_method"><strong>' . esc_html__('Betaalmethode', 'hb-ucs') . '</strong></label>';
-        echo '<select name="hb_ucs_sub_payment_method" id="hb_ucs_sub_payment_method" class="first" style="width:100%;">';
-        echo '<option value="">' . esc_html__('Kies een betaalmethode…', 'hb-ucs') . '</option>';
-        foreach ($gatewayChoices as $gatewayId => $gatewayTitle) {
-            echo '<option value="' . esc_attr((string) $gatewayId) . '" ' . selected($paymentMethod, (string) $gatewayId, false) . '>' . esc_html((string) $gatewayTitle) . '</option>';
-        }
-        echo '</select></p>';
-        echo '</div>';
-
-        echo '</div>';
-        echo '<div class="order_data_column hb-ucs-admin-order-address-column">';
-
-        echo '<h3>' . esc_html__('Verzending', 'hb-ucs') . ' <a href="#" class="edit_address">' . esc_html__('Bewerken', 'hb-ucs') . '</a><span><a href="#" class="load_customer_shipping" style="display:none;">' . esc_html__('Laad verzendadres', 'hb-ucs') . '</a><a href="#" class="billing-same-as-shipping" style="display:none;">' . esc_html__('Factuuradres kopiëren', 'hb-ucs') . '</a></span></h3>';
-        echo '<div class="address">';
-        $this->render_subscription_address_display('shipping', $shippingAddress);
-        echo '<p><strong>' . esc_html__('Betaalmethode', 'hb-ucs') . ':</strong> ' . esc_html($this->get_subscription_payment_method_label($subId)) . '</p>';
-        echo '<p><strong>Mollie customerId:</strong> ' . esc_html($customerId !== '' ? $customerId : '—') . '</p>';
-        echo '<p><strong>mandateId:</strong> ' . esc_html($mandateId !== '' ? $mandateId : '—') . '</p>';
-        echo '<p><strong>lastPaymentId:</strong> ' . esc_html($lastPaymentId !== '' ? $lastPaymentId : '—') . '</p>';
-        echo '</div>';
-        echo '<div class="edit_address" style="display:none;">';
-        $this->render_subscription_address_fields('shipping', $shippingAddress);
-        echo '</div>';
-
-        echo '</div>';
-        echo '</div>';
-        echo '</div>';
     }
 
     public function render_subscription_items_metabox($post): void {
@@ -3035,36 +3987,15 @@ class SubscriptionsModule {
         }
 
         $scheme = (string) get_post_meta($subId, self::SUB_META_SCHEME, true);
-        $totals = $this->get_subscription_admin_totals($items);
+        $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
+        $parentOrder = $parentOrderId > 0 ? wc_get_order($parentOrderId) : null;
+        $feeLines = $this->get_effective_subscription_fee_lines($subId, $parentOrder);
+        $shippingLines = $this->get_effective_subscription_shipping_lines($subId, $parentOrder);
+        $taxColumns = $this->get_subscription_admin_tax_columns($subId, $items, $shippingLines, $feeLines, $parentOrder);
+        $customer = $this->get_subscription_tax_customer($subId, $parentOrder);
+        $totals = $this->get_subscription_admin_totals($items, $shippingLines, $feeLines, $subId, $parentOrder);
+        $availableTaxRates = $this->get_available_subscription_admin_tax_rates();
 
-        echo '<div id="woocommerce-order-items" class="hb-ucs-order-items-metabox">';
-        echo '<div class="woocommerce_order_items_wrapper wc-order-items-editable">';
-        echo '<table cellpadding="0" cellspacing="0" class="woocommerce_order_items">';
-        echo '<thead><tr>';
-        echo '<th class="item sortable" colspan="2" data-sort="string-ins">' . esc_html__('Item', 'hb-ucs') . '</th>';
-        echo '<th class="item_cost sortable" data-sort="float">' . esc_html__('Prijs', 'hb-ucs') . '</th>';
-        echo '<th class="quantity sortable" data-sort="int">' . esc_html__('Aantal', 'hb-ucs') . '</th>';
-        echo '<th class="line_cost sortable" data-sort="float">' . esc_html__('Subtotaal', 'hb-ucs') . '</th>';
-        echo '<th class="line_tax">' . esc_html__('BTW', 'hb-ucs') . '</th>';
-        echo '<th class="line_total sortable" data-sort="float">' . esc_html__('Totaal', 'hb-ucs') . '</th>';
-        echo '<th class="wc-order-edit-line-item" width="1%">&nbsp;</th>';
-        echo '</tr></thead>';
-        echo '<tbody id="order_line_items">';
-        foreach (array_values($items) as $index => $item) {
-            $this->render_admin_subscription_item_row($index, $item, $scheme, $index === 0);
-        }
-        echo '</tbody>';
-        echo '</table>';
-        echo '</div>';
-        echo '<input type="hidden" name="hb_ucs_items_present" value="1" />';
-        echo '<div class="wc-order-data-row wc-order-totals-items wc-order-items-editable">';
-        echo '<table class="wc-order-totals">';
-        echo '<tr><td class="label">' . esc_html__('Artikelen subtotaal:', 'hb-ucs') . '</td><td width="1%"></td><td class="total" id="hb-ucs-sub-items-subtotal">' . wp_kses_post(function_exists('wc_price') ? wc_price($totals['subtotal']) : number_format($totals['subtotal'], 2, '.', '')) . '</td></tr>';
-        echo '<tr><td class="label">' . esc_html__('BTW:', 'hb-ucs') . '</td><td width="1%"></td><td class="total" id="hb-ucs-sub-items-tax">' . wp_kses_post(function_exists('wc_price') ? wc_price($totals['tax']) : number_format($totals['tax'], 2, '.', '')) . '</td></tr>';
-        echo '<tr><td class="label">' . esc_html__('Abonnement totaal:', 'hb-ucs') . '</td><td width="1%"></td><td class="total" id="hb-ucs-sub-order-total">' . wp_kses_post(function_exists('wc_price') ? wc_price($totals['total']) : number_format($totals['total'], 2, '.', '')) . '</td></tr>';
-        echo '</table>';
-        echo '<div class="clear"></div>';
-        echo '<div class="wc-order-bulk-actions"><button type="button" class="button add-order-item" id="hb-ucs-add-order-item">' . esc_html__('Item(s) toevoegen', 'hb-ucs') . '</button><button type="button" class="button">' . esc_html__('Waardebon toepassen', 'hb-ucs') . '</button><button type="button" class="button button-primary" id="hb-ucs-recalc-order-items">' . esc_html__('Herberekenen', 'hb-ucs') . '</button></div>';
         ob_start();
         $this->render_admin_subscription_item_row(999999, [
             'base_product_id' => 0,
@@ -3072,327 +4003,85 @@ class SubscriptionsModule {
             'qty' => 1,
             'unit_price' => 0.0,
             'selected_attributes' => [],
-        ], $scheme, true);
+        ], $scheme, $taxColumns, $customer, true);
         $rowTemplate = ob_get_clean();
         echo '<script type="text/template" id="tmpl-hb-ucs-subscription-item-row">' . str_replace(['999999', '&lt;\/script&gt;'], ['{{index}}', '<\/script>'], $rowTemplate) . '</script>';
-        echo '<input type="hidden" id="hb_ucs_sub_scheme_current" value="' . esc_attr($scheme) . '" />';
-        echo '</div>';
-        echo '</div>';
+        ob_start();
+        $this->render_admin_subscription_fee_row(999999, ['name' => __('Kosten', 'hb-ucs'), 'total' => 0.0, 'taxes' => []], $taxColumns, true);
+        $feeTemplate = ob_get_clean();
+        echo '<script type="text/template" id="tmpl-hb-ucs-subscription-fee-row">' . str_replace(['999999', '&lt;\/script&gt;'], ['{{index}}', '<\/script>'], $feeTemplate) . '</script>';
+        ob_start();
+        $this->render_admin_subscription_shipping_row(999999, ['method_title' => __('Verzending', 'hb-ucs'), 'method_id' => '', 'instance_id' => 0, 'total' => 0.0, 'taxes' => []], $taxColumns, true, []);
+        $shippingTemplate = ob_get_clean();
+
+        $this->render_admin_template('subscription-order-items.php', [
+            'availableTaxRates' => $availableTaxRates,
+            'customer' => $customer,
+            'feeLines' => $feeLines,
+            'feeTemplate' => str_replace(['999999', '&lt;\/script&gt;'], ['{{index}}', '<\/script>'], $feeTemplate),
+            'items' => $items,
+            'rowTemplate' => str_replace(['999999', '&lt;\/script&gt;'], ['{{index}}', '<\/script>'], $rowTemplate),
+            'scheme' => $scheme,
+            'shippingLines' => $shippingLines,
+            'shippingTemplate' => str_replace(['999999', '&lt;\/script&gt;'], ['{{index}}', '<\/script>'], $shippingTemplate),
+            'subId' => $subId,
+            'taxColumns' => $taxColumns,
+            'totals' => $totals,
+        ]);
     }
 
-    public function render_subscription_schedule_metabox($post): void {
-        $subId = is_object($post) && isset($post->ID) ? (int) $post->ID : 0;
-        if ($subId <= 0) {
-            echo '<p>' . esc_html__('Onbekend abonnement.', 'hb-ucs') . '</p>';
-            return;
+    private function render_subscription_items_metabox_html(int $subId): string {
+        $post = get_post($subId);
+        if (!$post || !is_object($post) || (string) ($post->post_type ?? '') !== $this->get_subscription_order_type()->get_type()) {
+            return '';
         }
 
-        $scheme = (string) get_post_meta($subId, self::SUB_META_SCHEME, true);
-        $trialEnd = (int) get_post_meta($subId, self::SUB_META_TRIAL_END, true);
-        $nextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
-        $endDate = (int) get_post_meta($subId, self::SUB_META_END_DATE, true);
-        $settings = $this->get_settings();
-        $freqs = isset($settings['frequencies']) && is_array($settings['frequencies']) ? $settings['frequencies'] : [];
+        ob_start();
+        $this->render_subscription_items_metabox($post);
 
-        $startTimestamp = $this->get_subscription_start_timestamp($subId);
-
-        echo '<p><label for="hb_ucs_sub_scheme"><strong>' . esc_html__('Betaling', 'hb-ucs') . '</strong></label><br/>';
-        echo '<select name="hb_ucs_sub_scheme" id="hb_ucs_sub_scheme" style="width:100%;">';
-        foreach (['1w' => 1, '2w' => 2, '3w' => 3, '4w' => 4] as $key => $interval) {
-            $row = isset($freqs[$key]) && is_array($freqs[$key]) ? $freqs[$key] : [];
-            $label = (string) ($row['label'] ?? $key);
-            $enabled = !empty($row['enabled']);
-            $suffix = $enabled ? '' : ' — ' . __('globaal uitgeschakeld', 'hb-ucs');
-            echo '<option value="' . esc_attr($key) . '" ' . selected($scheme, $key, false) . '>' . esc_html($label . $suffix) . '</option>';
-        }
-        echo '</select></p>';
-
-        echo '<p><strong>' . esc_html__('Startdatum', 'hb-ucs') . '</strong><br/>' . esc_html($startTimestamp > 0 ? $this->format_admin_relative_date($startTimestamp) : '—') . '</p>';
-
-        echo '<p><label for="hb_ucs_sub_next_payment"><strong>' . esc_html__('Volgende betaling', 'hb-ucs') . '</strong></label><br/>';
-        echo '<input type="datetime-local" name="hb_ucs_sub_next_payment" id="hb_ucs_sub_next_payment" value="' . esc_attr($this->format_datetime_local($nextPayment)) . '" style="width:100%;" />';
-        echo '</p>';
-
-        echo '<p><label for="hb_ucs_sub_trial_end"><strong>' . esc_html__('Einde proefabonnement', 'hb-ucs') . '</strong></label><br/>';
-        echo '<input type="datetime-local" name="hb_ucs_sub_trial_end" id="hb_ucs_sub_trial_end" value="' . esc_attr($this->format_datetime_local($trialEnd)) . '" style="width:100%;" />';
-        echo '</p>';
-
-        echo '<p><label for="hb_ucs_sub_end_date"><strong>' . esc_html__('Einddatum', 'hb-ucs') . '</strong></label><br/>';
-        echo '<input type="datetime-local" name="hb_ucs_sub_end_date" id="hb_ucs_sub_end_date" value="' . esc_attr($this->format_datetime_local($endDate)) . '" style="width:100%;" />';
-        echo '</p>';
-        echo '<p><small>' . esc_html(sprintf(__('Datums en tijden gebruiken de WordPress tijdzone: %s.', 'hb-ucs'), $this->get_wp_timezone_label())) . '</small></p>';
+        return (string) ob_get_clean();
     }
 
-    public function render_subscription_related_orders_metabox($post): void {
-        $subId = is_object($post) && isset($post->ID) ? (int) $post->ID : 0;
-        if ($subId <= 0) {
-            echo '<p>' . esc_html__('Onbekend abonnement.', 'hb-ucs') . '</p>';
-            return;
-        }
-
-        $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
-        $orders = [];
-        if (function_exists('wc_get_orders')) {
-            $orders = wc_get_orders([
-                'limit' => 50,
-                'orderby' => 'date',
-                'order' => 'DESC',
-                'meta_key' => self::ORDER_META_SUBSCRIPTION_ID,
-                'meta_value' => (string) $subId,
-            ]);
-        }
-
-        echo '<table class="widefat striped wc-order-list-table">';
-        echo '<thead><tr>';
-        echo '<th>' . esc_html__('#', 'hb-ucs') . '</th>';
-        echo '<th>' . esc_html__('Type', 'hb-ucs') . '</th>';
-        echo '<th>' . esc_html__('Status', 'hb-ucs') . '</th>';
-        echo '<th>' . esc_html__('Datum', 'hb-ucs') . '</th>';
-        echo '<th>' . esc_html__('Totaal', 'hb-ucs') . '</th>';
-        echo '</tr></thead>';
-        echo '<tbody>';
-
-        // Parent order.
-        if ($parentOrderId > 0 && function_exists('wc_get_order')) {
-            $po = wc_get_order($parentOrderId);
-            if ($po && is_object($po)) {
-                $link = admin_url('post.php?post=' . $parentOrderId . '&action=edit');
-                $date = $this->format_wc_datetime_for_site_settings(method_exists($po, 'get_date_created') ? $po->get_date_created() : null);
-                $total = method_exists($po, 'get_formatted_order_total') ? $po->get_formatted_order_total() : (string) $po->get_total();
-                echo '<tr>';
-                echo '<td><a href="' . esc_url($link) . '">#' . esc_html((string) $parentOrderId) . '</a></td>';
-                echo '<td>' . esc_html__('Start', 'hb-ucs') . '</td>';
-                echo '<td>' . esc_html(wc_get_order_status_name(method_exists($po, 'get_status') ? (string) $po->get_status() : '')) . '</td>';
-                echo '<td>' . esc_html($date) . '</td>';
-                echo '<td>' . wp_kses_post($total) . '</td>';
-                echo '</tr>';
-            }
-        }
-
-        // Renewal orders.
-        if (is_array($orders)) {
-            foreach ($orders as $o) {
-                if (!$o || !is_object($o) || !method_exists($o, 'get_id')) {
-                    continue;
-                }
-                $id = (int) $o->get_id();
-                $link = admin_url('post.php?post=' . $id . '&action=edit');
-                $date = $this->format_wc_datetime_for_site_settings(method_exists($o, 'get_date_created') ? $o->get_date_created() : null);
-                $total = method_exists($o, 'get_formatted_order_total') ? $o->get_formatted_order_total() : (string) $o->get_total();
-                echo '<tr>';
-                echo '<td><a href="' . esc_url($link) . '">#' . esc_html((string) $id) . '</a></td>';
-                echo '<td>' . esc_html__('Renewal', 'hb-ucs') . '</td>';
-                echo '<td>' . esc_html(wc_get_order_status_name(method_exists($o, 'get_status') ? (string) $o->get_status() : '')) . '</td>';
-                echo '<td>' . esc_html($date) . '</td>';
-                echo '<td>' . wp_kses_post($total) . '</td>';
-                echo '</tr>';
-            }
-        }
-
-        echo '</tbody>';
-        echo '</table>';
-    }
-
-    public function save_subscription_post(int $postId, $post, bool $update): void {
-        if (!is_admin()) {
-            return;
-        }
-        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
-            return;
-        }
-        if (!$post || !is_object($post) || (string) ($post->post_type ?? '') !== self::SUB_CPT) {
-            return;
-        }
-        if (!isset($_POST['hb_ucs_save_subscription_nonce']) || !wp_verify_nonce((string) $_POST['hb_ucs_save_subscription_nonce'], 'hb_ucs_save_subscription')) {
-            return;
-        }
-        if (!current_user_can('edit_post', $postId)) {
-            return;
-        }
-
-        // Status.
-        if (isset($_POST['hb_ucs_sub_status'])) {
-            $st = sanitize_key((string) wp_unslash($_POST['hb_ucs_sub_status']));
-            $allowed = array_keys($this->get_subscription_statuses());
-            if (!in_array($st, $allowed, true)) {
-                $st = (string) get_post_meta($postId, self::SUB_META_STATUS, true);
-            }
-            if ($st !== '') {
-                update_post_meta($postId, self::SUB_META_STATUS, $st);
-            }
-        }
-
-        // User.
-        if (isset($_POST['hb_ucs_sub_user_id'])) {
-            $uid = (int) absint((string) wp_unslash($_POST['hb_ucs_sub_user_id']));
-            update_post_meta($postId, self::SUB_META_USER_ID, (string) $uid);
-        }
-
-        if (isset($_POST['hb_ucs_sub_payment_method'])) {
-            $paymentMethod = sanitize_text_field((string) wp_unslash($_POST['hb_ucs_sub_payment_method']));
-            $userId = isset($_POST['hb_ucs_sub_user_id']) ? (int) absint((string) wp_unslash($_POST['hb_ucs_sub_user_id'])) : (int) get_post_meta($postId, self::SUB_META_USER_ID, true);
-            $gatewayChoices = $this->get_available_payment_gateway_choices_for_user($userId);
-
-            if ($paymentMethod === '') {
-                delete_post_meta($postId, self::SUB_META_PAYMENT_METHOD);
-                delete_post_meta($postId, self::SUB_META_PAYMENT_METHOD_TITLE);
-            } elseif (isset($gatewayChoices[$paymentMethod])) {
-                update_post_meta($postId, self::SUB_META_PAYMENT_METHOD, $paymentMethod);
-                update_post_meta($postId, self::SUB_META_PAYMENT_METHOD_TITLE, (string) $gatewayChoices[$paymentMethod]);
-            }
-        }
-
-        if (isset($_POST['hb_ucs_sub_billing']) && is_array($_POST['hb_ucs_sub_billing'])) {
-            $billingInput = wp_unslash($_POST['hb_ucs_sub_billing']);
-            update_post_meta($postId, self::SUB_META_BILLING, $this->sanitize_subscription_address_input((array) $billingInput, 'billing'));
-        }
-
-        if (isset($_POST['hb_ucs_sub_shipping']) && is_array($_POST['hb_ucs_sub_shipping'])) {
-            $shippingInput = wp_unslash($_POST['hb_ucs_sub_shipping']);
-            update_post_meta($postId, self::SUB_META_SHIPPING, $this->sanitize_subscription_address_input((array) $shippingInput, 'shipping'));
-        }
-
-        $postedScheme = isset($_POST['hb_ucs_sub_scheme']) ? sanitize_key((string) wp_unslash($_POST['hb_ucs_sub_scheme'])) : (string) get_post_meta($postId, self::SUB_META_SCHEME, true);
-        if (!in_array($postedScheme, ['1w', '2w', '3w', '4w'], true)) {
-            $postedScheme = (string) get_post_meta($postId, self::SUB_META_SCHEME, true);
-        }
-
-        $items = [];
-        $itemsMetaBoxPresent = isset($_POST['hb_ucs_items_present']);
-        if (isset($_POST['hb_ucs_items']) && is_array($_POST['hb_ucs_items'])) {
-            foreach ((array) wp_unslash($_POST['hb_ucs_items']) as $row) {
-                if (!is_array($row) || !empty($row['remove'])) {
-                    continue;
-                }
-
-                $chosenId = isset($row['product_id']) ? (int) absint((string) $row['product_id']) : 0;
-                if ($chosenId <= 0) {
-                    continue;
-                }
-
-                $qty = isset($row['qty']) ? (int) absint((string) $row['qty']) : 1;
-                $qty = $qty > 0 ? $qty : 1;
-                $selectedAttributes = isset($row['selected_attributes']) && is_array($row['selected_attributes']) ? (array) $row['selected_attributes'] : [];
-                $updated = $this->build_subscription_item_from_selection($chosenId, $postedScheme, $qty, null, $selectedAttributes);
-                if (!$updated) {
-                    continue;
-                }
-
-                if (isset($row['unit_price']) && function_exists('wc_format_decimal')) {
-                    $displayPrice = (float) wc_format_decimal((string) $row['unit_price'], wc_get_price_decimals());
-                    $updated['unit_price'] = $displayPrice;
-                    $updated['price_includes_tax'] = 0;
-                }
-
-                $items[] = $updated;
-            }
-        }
-
-        if ($itemsMetaBoxPresent) {
-            $this->persist_subscription_items($postId, $items);
-        }
-
-        // Schedule.
-        if (isset($_POST['hb_ucs_sub_scheme'])) {
-            $scheme = sanitize_key((string) wp_unslash($_POST['hb_ucs_sub_scheme']));
-            if (!in_array($scheme, ['1w', '2w', '3w', '4w'], true)) {
-                $scheme = (string) get_post_meta($postId, self::SUB_META_SCHEME, true);
-            }
-            if ($scheme !== '') {
-                update_post_meta($postId, self::SUB_META_SCHEME, $scheme);
-                $settings = $this->get_settings();
-                $row = isset($settings['frequencies'][$scheme]) && is_array($settings['frequencies'][$scheme]) ? $settings['frequencies'][$scheme] : [];
-                $interval = (int) ($row['interval'] ?? 0);
-                if ($interval <= 0 && preg_match('/^(\d)w$/', $scheme, $m)) {
-                    $interval = (int) $m[1];
-                }
-                if ($interval <= 0) {
-                    $interval = 1;
-                }
-                update_post_meta($postId, self::SUB_META_INTERVAL, (string) $interval);
-                update_post_meta($postId, self::SUB_META_PERIOD, 'week');
-            }
-        }
-        if (isset($_POST['hb_ucs_sub_next_payment'])) {
-            $raw = sanitize_text_field((string) wp_unslash($_POST['hb_ucs_sub_next_payment']));
-            $ts = $this->parse_datetime_local($raw);
-            if ($ts > 0) {
-                update_post_meta($postId, self::SUB_META_NEXT_PAYMENT, (string) $ts);
-            }
-        }
-
-        if (isset($_POST['hb_ucs_sub_trial_end'])) {
-            $raw = sanitize_text_field((string) wp_unslash($_POST['hb_ucs_sub_trial_end']));
-            $ts = $this->parse_datetime_local($raw);
-            if ($ts > 0) {
-                update_post_meta($postId, self::SUB_META_TRIAL_END, (string) $ts);
-            } else {
-                delete_post_meta($postId, self::SUB_META_TRIAL_END);
-            }
-        }
-
-        if (isset($_POST['hb_ucs_sub_end_date'])) {
-            $raw = sanitize_text_field((string) wp_unslash($_POST['hb_ucs_sub_end_date']));
-            $ts = $this->parse_datetime_local($raw);
-            if ($ts > 0) {
-                update_post_meta($postId, self::SUB_META_END_DATE, (string) $ts);
-            } else {
-                delete_post_meta($postId, self::SUB_META_END_DATE);
-            }
-        }
-    }
-
-    public function handle_subscription_product_data_ajax(): void {
+    private function handle_subscription_tax_rate_ajax_request(string $action): void {
         if (!current_user_can('edit_shop_orders')) {
             wp_send_json_error(['message' => __('Onvoldoende rechten.', 'hb-ucs')], 403);
         }
 
         check_ajax_referer('hb_ucs_subscription_admin', 'nonce');
 
-        $selectedId = isset($_POST['product_id']) ? (int) absint((string) wp_unslash($_POST['product_id'])) : 0;
-        $scheme = isset($_POST['scheme']) ? sanitize_key((string) wp_unslash($_POST['scheme'])) : '';
-        $qty = isset($_POST['qty']) ? (int) absint((string) wp_unslash($_POST['qty'])) : 1;
-        $manualUnitPrice = isset($_POST['unit_price']) && function_exists('wc_format_decimal') ? (float) wc_format_decimal((string) wp_unslash($_POST['unit_price']), wc_get_price_decimals()) : null;
-        $syncCatalogPrice = isset($_POST['sync_price']) ? sanitize_text_field((string) wp_unslash($_POST['sync_price'])) !== '0' : true;
-        $selectedAttributes = [];
-        if (isset($_POST['selected_attributes']) && is_array($_POST['selected_attributes'])) {
-            foreach ((array) wp_unslash($_POST['selected_attributes']) as $attributeKey => $attributeValue) {
-                $attributeKey = sanitize_key((string) $attributeKey);
-                $attributeValue = sanitize_title((string) $attributeValue);
-                if ($attributeKey === '') {
-                    continue;
-                }
-                $selectedAttributes[$attributeKey] = $attributeValue;
+        $subId = isset($_POST['sub_id']) ? (int) absint((string) wp_unslash($_POST['sub_id'])) : 0;
+        $rateId = isset($_POST['rate_id']) ? (int) absint((string) wp_unslash($_POST['rate_id'])) : 0;
+        $postType = $subId > 0 ? (string) get_post_type($subId) : '';
+
+        if ($subId <= 0 || $rateId <= 0 || $postType !== $this->get_subscription_order_type()->get_type()) {
+            wp_send_json_error(['message' => __('Ongeldige belastingregel.', 'hb-ucs')], 400);
+        }
+
+        $updated = false;
+        if ($action === 'add') {
+            $updated = $this->add_subscription_manual_tax_rate($subId, $rateId);
+            if (!$updated && in_array($rateId, $this->get_subscription_manual_tax_rates($subId), true)) {
+                wp_send_json_error(['message' => __('Deze belastingregel is al toegevoegd.', 'hb-ucs')], 400);
             }
+        } elseif ($action === 'remove') {
+            $updated = $this->remove_subscription_manual_tax_rate($subId, $rateId);
         }
 
-        if ($selectedId <= 0 || $scheme === '') {
-            wp_send_json_error(['message' => __('Ongeldige productdata.', 'hb-ucs')], 400);
-        }
-
-        $preview = $this->get_subscription_admin_item_preview_details($selectedId, $scheme, max(1, $qty), $selectedAttributes, $manualUnitPrice, $syncCatalogPrice);
-        if ($preview['label'] === '') {
-            wp_send_json_error(['message' => __('Kon productgegevens niet laden.', 'hb-ucs')], 404);
+        if (!$updated && $action === 'add') {
+            wp_send_json_error(['message' => __('Belastingregel kon niet worden toegevoegd.', 'hb-ucs')], 400);
         }
 
         wp_send_json_success([
-            'label' => $preview['label'],
-            'sku' => $preview['sku'],
-            'unit_price' => wc_format_decimal((string) $preview['unit_price'], wc_get_price_decimals()),
-            'unit_price_html' => function_exists('wc_price') ? wc_price($preview['unit_price']) : number_format((float) $preview['unit_price'], 2, '.', ''),
-            'line_subtotal' => wc_format_decimal((string) $preview['line_subtotal'], wc_get_price_decimals()),
-            'line_subtotal_html' => $preview['line_subtotal_html'],
-            'line_tax' => wc_format_decimal((string) $preview['line_tax'], wc_get_price_decimals()),
-            'line_tax_html' => $preview['line_tax_html'],
-            'line_total_html' => function_exists('wc_price') ? wc_price($preview['line_total']) : number_format((float) $preview['line_total'], 2, '.', ''),
-            'line_total' => wc_format_decimal((string) $preview['line_total'], wc_get_price_decimals()),
-            'variation_summary' => $preview['variation_summary'],
-            'requires_selection' => !empty($preview['requires_selection']),
-            'attribute_config' => $preview['attribute_config'],
-            'selected_attributes' => $preview['selected_attributes'],
-            'editor_product_id' => (int) ($preview['editor_product_id'] ?? 0),
-            'editor_product_label' => (string) ($preview['editor_product_label'] ?? ''),
+            'html' => $this->render_subscription_items_metabox_html($subId),
         ]);
+    }
+
+    public function handle_subscription_add_tax_rate_ajax(): void {
+        $this->handle_subscription_tax_rate_ajax_request('add');
+    }
+
+    public function handle_subscription_remove_tax_rate_ajax(): void {
+        $this->handle_subscription_tax_rate_ajax_request('remove');
     }
 
     public function handle_subscription_customer_details_ajax(): void {
@@ -3527,197 +4216,6 @@ class SubscriptionsModule {
             echo esc_html($count > 0 ? (string) $count : '0');
             return;
         }
-    }
-
-    public function filter_subscription_admin_title(string $title, int $postId): string {
-        if (!is_admin()) {
-            return $title;
-        }
-        if ($postId <= 0 || get_post_type($postId) !== self::SUB_CPT) {
-            return $title;
-        }
-        if (!function_exists('get_current_screen')) {
-            return $title;
-        }
-        $screen = get_current_screen();
-        if (!$screen || (string) $screen->post_type !== self::SUB_CPT || (string) $screen->base !== 'edit') {
-            return $title;
-        }
-
-        return $this->get_subscription_admin_title_text($postId);
-    }
-
-    public function sortable_subscription_columns(array $columns): array {
-        $columns['hb_ucs_next_payment'] = 'hb_ucs_next_payment';
-        $columns['hb_ucs_trial_end'] = 'hb_ucs_trial_end';
-        $columns['hb_ucs_end_date'] = 'hb_ucs_end_date';
-        $columns['hb_ucs_last_order_date'] = 'hb_ucs_last_order_date';
-        return $columns;
-    }
-
-    public function subscription_status_views(array $views): array {
-        if (!is_admin() || !function_exists('get_current_screen')) {
-            return $views;
-        }
-        $screen = get_current_screen();
-        if (!$screen || (string) $screen->post_type !== self::SUB_CPT || (string) $screen->base !== 'edit') {
-            return $views;
-        }
-
-        $current = isset($_GET['hb_ucs_sub_status']) ? sanitize_key((string) wp_unslash($_GET['hb_ucs_sub_status'])) : '';
-        $baseUrl = remove_query_arg(['hb_ucs_sub_status', 'paged']);
-
-        $allCount = $this->count_subscriptions_by_status('');
-        $viewsOut = [];
-        $viewsOut['all'] = '<a href="' . esc_url($baseUrl) . '"' . ($current === '' ? ' class="current"' : '') . '>' . esc_html__('Alle', 'hb-ucs') . ' <span class="count">(' . (int) $allCount . ')</span></a>';
-
-        foreach ($this->get_subscription_statuses() as $statusKey => $label) {
-            $cnt = $this->count_subscriptions_by_status($statusKey);
-            if ($cnt <= 0) {
-                continue;
-            }
-            $url = add_query_arg('hb_ucs_sub_status', $statusKey, $baseUrl);
-            $viewsOut[$statusKey] = '<a href="' . esc_url($url) . '"' . ($current === $statusKey ? ' class="current"' : '') . '>' . esc_html((string) $label) . ' <span class="count">(' . (int) $cnt . ')</span></a>';
-        }
-
-        return $viewsOut;
-    }
-
-    public function subscription_admin_filters(): void {
-        if (!is_admin() || !function_exists('get_current_screen')) {
-            return;
-        }
-        $screen = get_current_screen();
-        if (!$screen || (string) $screen->post_type !== self::SUB_CPT || (string) $screen->base !== 'edit') {
-            return;
-        }
-
-        $customer = isset($_GET['hb_ucs_customer']) ? (int) absint((string) wp_unslash($_GET['hb_ucs_customer'])) : 0;
-        $scheme = isset($_GET['hb_ucs_scheme']) ? sanitize_key((string) wp_unslash($_GET['hb_ucs_scheme'])) : '';
-        $paymentMethod = isset($_GET['hb_ucs_payment_method']) ? sanitize_text_field((string) wp_unslash($_GET['hb_ucs_payment_method'])) : '';
-
-        // Customer search (WooCommerce enhanced select).
-        echo '<select class="wc-customer-search" name="hb_ucs_customer" data-placeholder="' . esc_attr__('Filter op klant…', 'hb-ucs') . '" data-allow_clear="true" style="width: 240px;">';
-        if ($customer > 0) {
-            $u = get_user_by('id', $customer);
-            if ($u && is_object($u)) {
-                $label = $u->display_name;
-                if (!empty($u->user_email)) {
-                    $label .= ' (' . $u->user_email . ')';
-                }
-                echo '<option value="' . esc_attr((string) $customer) . '" selected="selected">' . esc_html($label) . '</option>';
-            }
-        }
-        echo '</select>';
-
-        // Scheme filter.
-        $settings = $this->get_settings();
-        $freqs = isset($settings['frequencies']) && is_array($settings['frequencies']) ? $settings['frequencies'] : [];
-        echo '<select name="hb_ucs_scheme">';
-        echo '<option value="">' . esc_html__('Alle frequenties', 'hb-ucs') . '</option>';
-        foreach (['1w', '2w', '3w', '4w'] as $key) {
-            $row = isset($freqs[$key]) && is_array($freqs[$key]) ? $freqs[$key] : [];
-            $label = (string) ($row['label'] ?? $key);
-            echo '<option value="' . esc_attr($key) . '" ' . selected($scheme, $key, false) . '>' . esc_html($label) . '</option>';
-        }
-        echo '</select>';
-
-        $paymentMethods = $this->get_subscription_admin_payment_method_options();
-        echo '<select name="hb_ucs_payment_method">';
-        echo '<option value="">' . esc_html__('Alle betaalmethodes', 'hb-ucs') . '</option>';
-        foreach ($paymentMethods as $methodKey => $methodLabel) {
-            echo '<option value="' . esc_attr($methodKey) . '" ' . selected($paymentMethod, $methodKey, false) . '>' . esc_html($methodLabel) . '</option>';
-        }
-        echo '</select>';
-    }
-
-    public function filter_subscription_admin_query($query): void {
-        if (!is_admin() || !($query instanceof \WP_Query) || !$query->is_main_query()) {
-            return;
-        }
-        $postType = $query->get('post_type');
-        if ((is_array($postType) && !in_array(self::SUB_CPT, $postType, true)) || (!is_array($postType) && (string) $postType !== self::SUB_CPT)) {
-            return;
-        }
-
-        $metaQuery = (array) $query->get('meta_query');
-
-        $status = isset($_GET['hb_ucs_sub_status']) ? sanitize_key((string) wp_unslash($_GET['hb_ucs_sub_status'])) : '';
-        if ($status !== '') {
-            $metaQuery[] = [
-                'key' => self::SUB_META_STATUS,
-                'value' => $status,
-                'compare' => '=',
-            ];
-        }
-
-        $customer = isset($_GET['hb_ucs_customer']) ? (int) absint((string) wp_unslash($_GET['hb_ucs_customer'])) : 0;
-        if ($customer > 0) {
-            $metaQuery[] = [
-                'key' => self::SUB_META_USER_ID,
-                'value' => (string) $customer,
-                'compare' => '=',
-            ];
-        }
-
-        $scheme = isset($_GET['hb_ucs_scheme']) ? sanitize_key((string) wp_unslash($_GET['hb_ucs_scheme'])) : '';
-        if ($scheme !== '') {
-            $metaQuery[] = [
-                'key' => self::SUB_META_SCHEME,
-                'value' => $scheme,
-                'compare' => '=',
-            ];
-        }
-
-        $paymentMethod = isset($_GET['hb_ucs_payment_method']) ? sanitize_text_field((string) wp_unslash($_GET['hb_ucs_payment_method'])) : '';
-        if ($paymentMethod !== '') {
-            $metaQuery[] = [
-                'key' => self::SUB_META_PAYMENT_METHOD,
-                'value' => $paymentMethod,
-                'compare' => '=',
-            ];
-        }
-
-        if (!empty($metaQuery)) {
-            $query->set('meta_query', $metaQuery);
-        }
-
-        // Sorting by our meta fields.
-        $orderby = (string) $query->get('orderby');
-        if ($orderby === 'hb_ucs_next_payment') {
-            $query->set('meta_key', self::SUB_META_NEXT_PAYMENT);
-            $query->set('orderby', 'meta_value_num');
-        } elseif ($orderby === 'hb_ucs_trial_end') {
-            $query->set('meta_key', self::SUB_META_TRIAL_END);
-            $query->set('orderby', 'meta_value_num');
-        } elseif ($orderby === 'hb_ucs_end_date') {
-            $query->set('meta_key', self::SUB_META_END_DATE);
-            $query->set('orderby', 'meta_value_num');
-        } elseif ($orderby === 'hb_ucs_last_order_date') {
-            $query->set('meta_key', self::SUB_META_LAST_ORDER_DATE);
-            $query->set('orderby', 'meta_value_num');
-        }
-    }
-
-    private function count_subscriptions_by_status(string $status): int {
-        $args = [
-            'post_type' => self::SUB_CPT,
-            'post_status' => 'publish',
-            'posts_per_page' => 1,
-            'fields' => 'ids',
-            'no_found_rows' => false,
-        ];
-        if ($status !== '') {
-            $args['meta_query'] = [
-                [
-                    'key' => self::SUB_META_STATUS,
-                    'value' => $status,
-                    'compare' => '=',
-                ],
-            ];
-        }
-        $q = new \WP_Query($args);
-        return (int) ($q->found_posts ?? 0);
     }
 
     private function count_orders_for_subscription(int $subId): int {
@@ -3955,8 +4453,8 @@ class SubscriptionsModule {
         }
 
         $subId = wp_insert_post([
-            'post_type' => self::SUB_CPT,
-            'post_status' => 'publish',
+            'post_type' => $this->get_subscription_order_type()->get_type(),
+            'post_status' => 'wc-pending',
             'post_title' => sprintf(__('Abonnement (demo) – order #%d', 'hb-ucs'), $orderId),
         ], true);
 
@@ -3979,12 +4477,17 @@ class SubscriptionsModule {
         update_post_meta($subId, self::SUB_META_UNIT_PRICE, (string) wc_format_decimal($unitPrice, wc_get_price_decimals()));
         update_post_meta($subId, self::SUB_META_NEXT_PAYMENT, (string) (time() + ($interval * WEEK_IN_SECONDS)));
         update_post_meta($subId, self::SUB_META_STATUS, ($mCustomer !== '' && $mMandate !== '') ? 'active' : 'pending_mandate');
+        update_post_meta($subId, self::SUB_META_BILLING, $this->get_subscription_address_snapshot($subId, 'billing', $userId, $sourceOrder));
+        update_post_meta($subId, self::SUB_META_SHIPPING, $this->get_subscription_address_snapshot($subId, 'shipping', $userId, $sourceOrder));
         if ($mCustomer !== '') {
             update_post_meta($subId, self::SUB_META_MOLLIE_CUSTOMER_ID, $mCustomer);
         }
         if ($mMandate !== '') {
             update_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID, $mMandate);
         }
+
+        $this->hydrate_subscription_order_customer_data($subId, $userId, $sourceOrder);
+        $this->sync_subscription_order_type_record($subId);
 
         $redirect = add_query_arg([
             'hb_ucs_subs_demo' => 'created',
@@ -4000,7 +4503,7 @@ class SubscriptionsModule {
         }
 
         $screen = function_exists('get_current_screen') ? get_current_screen() : null;
-        if (!$screen || (string) $screen->id !== 'edit-' . self::SUB_CPT) {
+        if (!$this->is_subscription_admin_overview_screen($screen)) {
             return;
         }
 
@@ -4009,17 +4512,45 @@ class SubscriptionsModule {
         $skippedExisting = isset($_GET['hb_ucs_wcs_skipped_existing']) ? (int) $_GET['hb_ucs_wcs_skipped_existing'] : 0;
         $skippedUnsupported = isset($_GET['hb_ucs_wcs_skipped_unsupported']) ? (int) $_GET['hb_ucs_wcs_skipped_unsupported'] : 0;
         $errors = isset($_GET['hb_ucs_wcs_errors']) ? (int) $_GET['hb_ucs_wcs_errors'] : 0;
+        $processed = isset($_GET['hb_ucs_wcs_processed']) ? (int) $_GET['hb_ucs_wcs_processed'] : 0;
+        $total = isset($_GET['hb_ucs_wcs_total']) ? (int) $_GET['hb_ucs_wcs_total'] : 0;
+        $isDryRun = isset($_GET['hb_ucs_wcs_dry_run']) && (string) $_GET['hb_ucs_wcs_dry_run'] === '1';
+        $didRefresh = isset($_GET['hb_ucs_wcs_force_refresh']) && (string) $_GET['hb_ucs_wcs_force_refresh'] === '1';
+        $locked = isset($_GET['hb_ucs_wcs_locked']) && (string) $_GET['hb_ucs_wcs_locked'] === '1';
+        $batchSize = isset($_GET['hb_ucs_wcs_batch_size']) ? max(1, (int) $_GET['hb_ucs_wcs_batch_size']) : self::WCS_MIGRATION_DEFAULT_BATCH_SIZE;
 
         if (isset($_GET['hb_ucs_wcs_migrated'])) {
-            echo '<div class="notice notice-success is-dismissible"><p>';
+            $noticeClass = $errors > 0 ? 'notice notice-warning is-dismissible' : 'notice notice-success is-dismissible';
+            $actionLabel = $isDryRun ? __('WCS migratie-preview voltooid', 'hb-ucs') : __('WCS migratie voltooid', 'hb-ucs');
+
+            echo '<div class="' . esc_attr($noticeClass) . '"><p>';
             echo esc_html(sprintf(
-                __('WCS migratie voltooid: %1$d geïmporteerd, %2$d bijgewerkt, %3$d al aanwezig, %4$d overgeslagen (niet ondersteund), %5$d fouten.', 'hb-ucs'),
+                __('%1$s: %2$d nieuw, %3$d bijgewerkt, %4$d al aanwezig, %5$d overgeslagen (niet ondersteund), %6$d fouten.', 'hb-ucs'),
+                $actionLabel,
                 $imported,
                 $refreshed,
                 $skippedExisting,
                 $skippedUnsupported,
                 $errors
             ));
+            if ($processed > 0) {
+                echo ' ';
+                echo esc_html(sprintf(
+                    __('Verwerkt: %1$d van %2$d WCS abonnementen.', 'hb-ucs'),
+                    $processed,
+                    max($processed, $total)
+                ));
+            }
+            if ($didRefresh && !$isDryRun) {
+                echo ' ';
+                echo esc_html__('Bestaande eerdere imports mochten hierbij expliciet ververst worden.', 'hb-ucs');
+            }
+            echo '</p></div>';
+        }
+
+        if ($locked) {
+            echo '<div class="notice notice-warning is-dismissible"><p>';
+            echo esc_html__('Er draait al een WCS migratie in een andere aanvraag. Wacht tot die klaar is voordat je opnieuw start.', 'hb-ucs');
             echo '</p></div>';
         }
 
@@ -4027,15 +4558,19 @@ class SubscriptionsModule {
             return;
         }
 
-        $url = wp_nonce_url(
-            admin_url('admin-post.php?action=hb_ucs_subs_migrate_wcs'),
-            'hb_ucs_subs_migrate_wcs',
-            'hb_ucs_subs_migrate_wcs_nonce'
-        );
-
         echo '<div class="notice notice-info"><p>';
-        echo esc_html__('WooCommerce Subscriptions is actief. Je kunt bestaande WCS abonnementen eenmalig importeren naar HB UCS voordat je volledig overschakelt.', 'hb-ucs');
-        echo '</p><p><a class="button button-primary" href="' . esc_url($url) . '">' . esc_html__('Importeer bestaande WCS abonnementen', 'hb-ucs') . '</a></p></div>';
+        echo esc_html__('WooCommerce Subscriptions is actief. Gebruik eerst een preview en migreer daarna in beheersbare batches. Standaard worden eerder gemigreerde HB UCS abonnementen niet overschreven.', 'hb-ucs');
+        echo '</p><form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        wp_nonce_field('hb_ucs_subs_migrate_wcs', 'hb_ucs_subs_migrate_wcs_nonce');
+        echo '<input type="hidden" name="action" value="hb_ucs_subs_migrate_wcs" />';
+        echo '<p><label for="hb-ucs-wcs-batch-size"><strong>' . esc_html__('Batchgrootte', 'hb-ucs') . '</strong></label> ';
+        echo '<input id="hb-ucs-wcs-batch-size" type="number" min="1" max="' . esc_attr((string) self::WCS_MIGRATION_MAX_BATCH_SIZE) . '" step="1" name="batch_size" value="' . esc_attr((string) $batchSize) . '" class="small-text" /> ';
+        echo '<span class="description">' . esc_html__('Aanbevolen: 25-50 per batch.', 'hb-ucs') . '</span></p>';
+        echo '<p><label><input type="checkbox" name="force_refresh" value="1" /> ' . esc_html__('Werk al eerder gemigreerde HB UCS abonnementen bij op basis van de WCS brondata.', 'hb-ucs') . '</label></p>';
+        echo '<p>';
+        echo '<button type="submit" name="mode" value="preview" class="button button-secondary">' . esc_html__('Preview migratie', 'hb-ucs') . '</button> ';
+        echo '<button type="submit" name="mode" value="migrate" class="button button-primary">' . esc_html__('Start veilige WCS migratie', 'hb-ucs') . '</button>';
+        echo '</p></form></div>';
     }
 
     public function handle_migrate_wcs_subscriptions(): void {
@@ -4045,38 +4580,120 @@ class SubscriptionsModule {
 
         check_admin_referer('hb_ucs_subs_migrate_wcs', 'hb_ucs_subs_migrate_wcs_nonce');
 
-        $result = $this->migrate_wcs_subscriptions();
+        $mode = isset($_REQUEST['mode']) ? sanitize_key((string) $_REQUEST['mode']) : 'migrate';
+        $dryRun = $mode === 'preview';
+        $forceRefresh = !empty($_REQUEST['force_refresh']);
+        $batchSize = $this->get_wcs_migration_batch_size_from_request();
+        $offset = isset($_REQUEST['offset']) ? max(0, (int) $_REQUEST['offset']) : 0;
+        $token = isset($_REQUEST['migration_token']) ? sanitize_key((string) $_REQUEST['migration_token']) : '';
+        $returnUrl = $this->get_wcs_migration_return_url_from_request();
 
-        $redirect = wp_get_referer();
-        if (!$redirect) {
-            $redirect = admin_url('edit.php?post_type=' . self::SUB_CPT);
+        if ($token === '') {
+            $token = strtolower(wp_generate_password(12, false, false));
+        }
+
+        if (!$dryRun && !$this->acquire_wcs_migration_lock($token)) {
+            $redirect = add_query_arg([
+                'hb_ucs_wcs_locked' => '1',
+                'hb_ucs_wcs_batch_size' => $batchSize,
+            ], $returnUrl);
+
+            wp_safe_redirect($redirect);
+            exit;
+        }
+
+        $progress = $this->get_empty_wcs_migration_result();
+        if ($offset > 0) {
+            $progress = $this->get_wcs_migration_progress($token);
+        }
+
+        try {
+            $result = $this->migrate_wcs_subscriptions([
+                'batch_size' => $batchSize,
+                'offset' => $offset,
+                'dry_run' => $dryRun,
+                'force_refresh' => $forceRefresh,
+            ]);
+        } catch (\Throwable $e) {
+            $result = $this->get_empty_wcs_migration_result();
+            $result['errors'] = 1;
+            $result['batch_size'] = $batchSize;
+            $result['offset'] = $offset;
+            if (!$dryRun) {
+                $this->release_wcs_migration_lock($token);
+            }
+        }
+
+        $progress = $this->merge_wcs_migration_results($progress, $result);
+
+        if (!empty($result['has_more'])) {
+            $this->set_wcs_migration_progress($token, $progress);
+
+            $continueUrl = $this->get_wcs_migration_action_url([
+                'mode' => $dryRun ? 'preview' : 'migrate',
+                'batch_size' => $batchSize,
+                'offset' => (int) ($result['next_offset'] ?? 0),
+                'migration_token' => $token,
+                'force_refresh' => $forceRefresh ? '1' : '0',
+                'return_url' => $returnUrl,
+            ]);
+
+            wp_safe_redirect($continueUrl);
+            exit;
+        }
+
+        $this->delete_wcs_migration_progress($token);
+        if (!$dryRun) {
+            $this->release_wcs_migration_lock($token);
         }
 
         $redirect = add_query_arg([
             'hb_ucs_wcs_migrated' => '1',
-            'hb_ucs_wcs_imported' => (int) ($result['imported'] ?? 0),
-            'hb_ucs_wcs_refreshed' => (int) ($result['refreshed'] ?? 0),
-            'hb_ucs_wcs_skipped_existing' => (int) ($result['skipped_existing'] ?? 0),
-            'hb_ucs_wcs_skipped_unsupported' => (int) ($result['skipped_unsupported'] ?? 0),
-            'hb_ucs_wcs_errors' => (int) ($result['errors'] ?? 0),
-        ], $redirect);
+            'hb_ucs_wcs_imported' => (int) ($progress['imported'] ?? 0),
+            'hb_ucs_wcs_refreshed' => (int) ($progress['refreshed'] ?? 0),
+            'hb_ucs_wcs_skipped_existing' => (int) ($progress['skipped_existing'] ?? 0),
+            'hb_ucs_wcs_skipped_unsupported' => (int) ($progress['skipped_unsupported'] ?? 0),
+            'hb_ucs_wcs_errors' => (int) ($progress['errors'] ?? 0),
+            'hb_ucs_wcs_processed' => (int) ($progress['processed'] ?? 0),
+            'hb_ucs_wcs_total' => (int) ($progress['total'] ?? 0),
+            'hb_ucs_wcs_dry_run' => $dryRun ? '1' : '0',
+            'hb_ucs_wcs_force_refresh' => $forceRefresh ? '1' : '0',
+            'hb_ucs_wcs_batch_size' => $batchSize,
+        ], $returnUrl);
 
         wp_safe_redirect($redirect);
         exit;
     }
 
-    private function migrate_wcs_subscriptions(): array {
-        $result = [
-            'imported' => 0,
-            'refreshed' => 0,
-            'skipped_existing' => 0,
-            'skipped_unsupported' => 0,
-            'errors' => 0,
-        ];
+    private function is_subscription_admin_overview_screen($screen = null): bool {
+        $screen = $screen ?: (function_exists('get_current_screen') ? get_current_screen() : null);
+        if (!$screen instanceof \WP_Screen) {
+            return false;
+        }
+
+        $screenId = (string) $screen->id;
+
+        return in_array($screenId, [
+            'woocommerce_page_wc-orders--shop_subscription_hb',
+            'admin_page_wc-orders--shop_subscription_hb',
+        ], true);
+    }
+
+    private function get_subscription_admin_overview_url(): string {
+        return admin_url('admin.php?page=wc-orders--shop_subscription_hb');
+    }
+
+    private function migrate_wcs_subscriptions(array $args = []): array {
+        $result = $this->get_empty_wcs_migration_result();
 
         if (!$this->wcs_available() || !function_exists('wcs_get_subscriptions')) {
             return $result;
         }
+
+        $batchSize = isset($args['batch_size']) ? max(1, min(self::WCS_MIGRATION_MAX_BATCH_SIZE, (int) $args['batch_size'])) : self::WCS_MIGRATION_DEFAULT_BATCH_SIZE;
+        $offset = isset($args['offset']) ? max(0, (int) $args['offset']) : 0;
+        $dryRun = !empty($args['dry_run']);
+        $forceRefresh = !empty($args['force_refresh']);
 
         $statuses = function_exists('wcs_get_subscription_statuses') ? array_keys((array) wcs_get_subscription_statuses()) : ['active', 'on-hold', 'pending', 'pending-cancel', 'cancelled', 'expired'];
         $subscriptions = wcs_get_subscriptions([
@@ -4086,8 +4703,18 @@ class SubscriptionsModule {
             'order' => 'ASC',
         ]);
 
-        foreach ((array) $subscriptions as $subscription) {
-            $outcome = $this->migrate_single_wcs_subscription($subscription);
+        $subscriptions = array_values((array) $subscriptions);
+        $total = count($subscriptions);
+        $batch = array_slice($subscriptions, $offset, $batchSize);
+
+        $result['total'] = $total;
+        $result['offset'] = $offset;
+        $result['batch_size'] = $batchSize;
+        $result['dry_run'] = $dryRun ? 1 : 0;
+        $result['force_refresh'] = $forceRefresh ? 1 : 0;
+
+        foreach ($batch as $subscription) {
+            $outcome = $this->migrate_single_wcs_subscription($subscription, $forceRefresh, $dryRun);
             if (isset($result[$outcome])) {
                 $result[$outcome]++;
             } else {
@@ -4095,10 +4722,15 @@ class SubscriptionsModule {
             }
         }
 
+        $result['processed'] = count($batch);
+        $result['next_offset'] = $offset + $result['processed'];
+        $result['remaining'] = max(0, $total - $result['next_offset']);
+        $result['has_more'] = $result['remaining'] > 0;
+
         return $result;
     }
 
-    private function migrate_single_wcs_subscription($subscription): string {
+    private function migrate_single_wcs_subscription($subscription, bool $forceRefresh = false, bool $dryRun = false): string {
         if (!$subscription || !is_object($subscription) || !method_exists($subscription, 'get_id')) {
             return 'errors';
         }
@@ -4162,14 +4794,30 @@ class SubscriptionsModule {
         if (empty($shippingLines) && $parentOrder) {
             $shippingLines = $this->extract_subscription_shipping_lines($parentOrder);
         }
+        $feeLines = $this->extract_subscription_fee_lines($subscription);
+        if (empty($feeLines) && $parentOrder) {
+            $feeLines = $this->extract_subscription_fee_lines($parentOrder);
+        }
 
         if ($existingSubId > 0) {
-            return $this->store_migrated_wcs_subscription($existingSubId, $subscription, $items, $shippingLines, $scheme, $sourceId, $userId, $parentOrderId, $interval, $period, $status, $nextPaymentTs, $trialEndTs, $endDateTs, $startTs, $paymentMethod, $paymentMethodTitle, $mollie, $requiresMandate, 'refreshed');
+            if (!$forceRefresh) {
+                return 'skipped_existing';
+            }
+
+            if ($dryRun) {
+                return 'refreshed';
+            }
+
+            return $this->store_migrated_wcs_subscription($existingSubId, $subscription, $items, $feeLines, $shippingLines, $scheme, $sourceId, $userId, $parentOrderId, $interval, $period, $status, $nextPaymentTs, $trialEndTs, $endDateTs, $startTs, $paymentMethod, $paymentMethodTitle, $mollie, $requiresMandate, 'refreshed');
+        }
+
+        if ($dryRun) {
+            return 'imported';
         }
 
         $subPostId = wp_insert_post([
-            'post_type' => self::SUB_CPT,
-            'post_status' => 'publish',
+            'post_type' => $this->get_subscription_order_type()->get_type(),
+            'post_status' => 'wc-pending',
             'post_title' => sprintf(__('Abonnement (WCS #%d)', 'hb-ucs'), $sourceId),
         ], true);
 
@@ -4177,10 +4825,10 @@ class SubscriptionsModule {
             return 'errors';
         }
 
-        return $this->store_migrated_wcs_subscription((int) $subPostId, $subscription, $items, $shippingLines, $scheme, $sourceId, $userId, $parentOrderId, $interval, $period, $status, $nextPaymentTs, $trialEndTs, $endDateTs, $startTs, $paymentMethod, $paymentMethodTitle, $mollie, $requiresMandate, 'imported');
+        return $this->store_migrated_wcs_subscription((int) $subPostId, $subscription, $items, $feeLines, $shippingLines, $scheme, $sourceId, $userId, $parentOrderId, $interval, $period, $status, $nextPaymentTs, $trialEndTs, $endDateTs, $startTs, $paymentMethod, $paymentMethodTitle, $mollie, $requiresMandate, 'imported');
     }
 
-    private function store_migrated_wcs_subscription(int $subId, $subscription, array $items, array $shippingLines, string $scheme, int $sourceId, int $userId, int $parentOrderId, int $interval, string $period, string $status, int $nextPaymentTs, int $trialEndTs, int $endDateTs, int $startTs, string $paymentMethod, string $paymentMethodTitle, array $mollie, bool $requiresMandate, string $successResult): string {
+    private function store_migrated_wcs_subscription(int $subId, $subscription, array $items, array $feeLines, array $shippingLines, string $scheme, int $sourceId, int $userId, int $parentOrderId, int $interval, string $period, string $status, int $nextPaymentTs, int $trialEndTs, int $endDateTs, int $startTs, string $paymentMethod, string $paymentMethodTitle, array $mollie, bool $requiresMandate, string $successResult): string {
         if ($subId <= 0 || empty($items)) {
             return 'errors';
         }
@@ -4221,9 +4869,141 @@ class SubscriptionsModule {
         }
 
         $this->persist_subscription_items($subId, $items);
+        $this->persist_subscription_fee_lines($subId, $feeLines);
         $this->persist_subscription_shipping_lines($subId, $shippingLines);
 
+        $this->sync_subscription_order_type_record($subId);
+
         return $successResult;
+    }
+
+    private function get_empty_wcs_migration_result(): array {
+        return [
+            'imported' => 0,
+            'refreshed' => 0,
+            'skipped_existing' => 0,
+            'skipped_unsupported' => 0,
+            'errors' => 0,
+            'processed' => 0,
+            'total' => 0,
+            'remaining' => 0,
+            'offset' => 0,
+            'next_offset' => 0,
+            'batch_size' => self::WCS_MIGRATION_DEFAULT_BATCH_SIZE,
+            'has_more' => false,
+            'dry_run' => 0,
+            'force_refresh' => 0,
+        ];
+    }
+
+    private function merge_wcs_migration_results(array $totals, array $batch): array {
+        $merged = $this->get_empty_wcs_migration_result();
+
+        foreach (['imported', 'refreshed', 'skipped_existing', 'skipped_unsupported', 'errors', 'processed'] as $key) {
+            $merged[$key] = (int) ($totals[$key] ?? 0) + (int) ($batch[$key] ?? 0);
+        }
+
+        $merged['total'] = max((int) ($totals['total'] ?? 0), (int) ($batch['total'] ?? 0));
+        $merged['remaining'] = max(0, $merged['total'] - $merged['processed']);
+        $merged['offset'] = (int) ($batch['offset'] ?? 0);
+        $merged['next_offset'] = (int) ($batch['next_offset'] ?? $merged['processed']);
+        $merged['batch_size'] = (int) ($batch['batch_size'] ?? $totals['batch_size'] ?? self::WCS_MIGRATION_DEFAULT_BATCH_SIZE);
+        $merged['has_more'] = !empty($batch['has_more']);
+        $merged['dry_run'] = !empty($batch['dry_run']) ? 1 : 0;
+        $merged['force_refresh'] = !empty($batch['force_refresh']) ? 1 : 0;
+
+        return $merged;
+    }
+
+    private function get_wcs_migration_batch_size_from_request(): int {
+        $batchSize = isset($_REQUEST['batch_size']) ? (int) $_REQUEST['batch_size'] : self::WCS_MIGRATION_DEFAULT_BATCH_SIZE;
+        if ($batchSize <= 0) {
+            $batchSize = self::WCS_MIGRATION_DEFAULT_BATCH_SIZE;
+        }
+
+        return min(self::WCS_MIGRATION_MAX_BATCH_SIZE, $batchSize);
+    }
+
+    private function get_wcs_migration_action_url(array $args = []): string {
+        $url = add_query_arg(array_filter($args, static function ($value) {
+            return $value !== null && $value !== '';
+        }), admin_url('admin-post.php?action=hb_ucs_subs_migrate_wcs'));
+
+        return wp_nonce_url($url, 'hb_ucs_subs_migrate_wcs', 'hb_ucs_subs_migrate_wcs_nonce');
+    }
+
+    private function get_wcs_migration_return_url_from_request(): string {
+        $returnUrl = isset($_REQUEST['return_url']) ? esc_url_raw(wp_unslash((string) $_REQUEST['return_url'])) : '';
+        if ($returnUrl === '') {
+            $returnUrl = wp_get_referer();
+        }
+
+        if (!$returnUrl) {
+            $returnUrl = $this->get_subscription_admin_overview_url();
+        }
+
+        return (string) $returnUrl;
+    }
+
+    private function get_wcs_migration_progress_transient_key(string $token): string {
+        return self::WCS_MIGRATION_PROGRESS_KEY_PREFIX . $token;
+    }
+
+    private function get_wcs_migration_progress(string $token): array {
+        if ($token === '') {
+            return $this->get_empty_wcs_migration_result();
+        }
+
+        $stored = get_transient($this->get_wcs_migration_progress_transient_key($token));
+
+        return is_array($stored) ? array_merge($this->get_empty_wcs_migration_result(), $stored) : $this->get_empty_wcs_migration_result();
+    }
+
+    private function set_wcs_migration_progress(string $token, array $progress): void {
+        if ($token === '') {
+            return;
+        }
+
+        set_transient($this->get_wcs_migration_progress_transient_key($token), $progress, self::WCS_MIGRATION_LOCK_TTL);
+    }
+
+    private function delete_wcs_migration_progress(string $token): void {
+        if ($token === '') {
+            return;
+        }
+
+        delete_transient($this->get_wcs_migration_progress_transient_key($token));
+    }
+
+    private function acquire_wcs_migration_lock(string $token): bool {
+        if ($token === '') {
+            return false;
+        }
+
+        $current = get_transient(self::WCS_MIGRATION_LOCK_KEY);
+        if (is_array($current) && isset($current['token']) && (string) $current['token'] !== '' && (string) $current['token'] !== $token) {
+            return false;
+        }
+
+        set_transient(self::WCS_MIGRATION_LOCK_KEY, [
+            'token' => $token,
+            'started_at' => time(),
+        ], self::WCS_MIGRATION_LOCK_TTL);
+
+        return true;
+    }
+
+    private function release_wcs_migration_lock(string $token): void {
+        $current = get_transient(self::WCS_MIGRATION_LOCK_KEY);
+        if (!is_array($current)) {
+            return;
+        }
+
+        if (!isset($current['token']) || (string) $current['token'] !== $token) {
+            return;
+        }
+
+        delete_transient(self::WCS_MIGRATION_LOCK_KEY);
     }
 
     private function get_internal_subscription_id_by_wcs_source(int $sourceId): int {
@@ -4231,14 +5011,16 @@ class SubscriptionsModule {
             return 0;
         }
 
-        $posts = get_posts([
-            'post_type' => self::SUB_CPT,
-            'post_status' => 'publish',
-            'posts_per_page' => 1,
-            'fields' => 'ids',
-            'meta_key' => self::SUB_META_WCS_SOURCE_ID,
-            'meta_value' => (string) $sourceId,
-        ]);
+        $posts = function_exists('wc_get_orders')
+            ? wc_get_orders([
+                'type' => $this->get_subscription_order_type()->get_type(),
+                'limit' => 1,
+                'return' => 'ids',
+                'status' => array_keys(wc_get_order_statuses()),
+                'meta_key' => self::SUB_META_WCS_SOURCE_ID,
+                'meta_value' => (string) $sourceId,
+            ])
+            : [];
 
         return !empty($posts) ? (int) $posts[0] : 0;
     }
@@ -4345,6 +5127,7 @@ class SubscriptionsModule {
                 'qty' => $qty,
                 'unit_price' => $unitPrice,
                 'price_includes_tax' => 1,
+                'taxes' => method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : [],
                 'selected_attributes' => $selectedAttributes,
             ]);
 
@@ -4636,7 +5419,15 @@ class SubscriptionsModule {
     }
 
     private function cart_contains_subscription(): bool {
-        if (!function_exists('WC') || !WC() || !WC()->cart || !method_exists(WC()->cart, 'get_cart')) {
+        if (!function_exists('WC') || !WC()) {
+            return false;
+        }
+
+        if (!did_action('wp_loaded')) {
+            return false;
+        }
+
+        if (!WC()->cart || !method_exists(WC()->cart, 'get_cart')) {
             return false;
         }
 
@@ -4788,6 +5579,28 @@ class SubscriptionsModule {
         return $choices;
     }
 
+    private function build_subscription_title_from_order($order, int $fallbackId = 0): string {
+        $fallbackId = $fallbackId > 0 ? $fallbackId : (is_object($order) && method_exists($order, 'get_id') ? (int) $order->get_id() : 0);
+        $title = sprintf(__('Abonnement #%d', 'hb-ucs'), $fallbackId);
+
+        if (!$order || !is_object($order)) {
+            return $title;
+        }
+
+        $name = '';
+        if (method_exists($order, 'get_formatted_billing_full_name')) {
+            $name = trim(wp_strip_all_tags((string) $order->get_formatted_billing_full_name(), true));
+        }
+
+        if ($name === '') {
+            $firstName = method_exists($order, 'get_billing_first_name') ? (string) $order->get_billing_first_name() : '';
+            $lastName = method_exists($order, 'get_billing_last_name') ? (string) $order->get_billing_last_name() : '';
+            $name = trim($firstName . ' ' . $lastName);
+        }
+
+        return $name !== '' ? $title . ' — ' . $name : $title;
+    }
+
     public function validate_first_payment_method(array $data, $errors): void {
         if (!$this->recurring_enabled() || $this->get_engine() !== 'manual') {
             return;
@@ -4828,6 +5641,10 @@ class SubscriptionsModule {
             return;
         }
 
+        if ($this->is_checkout_draft_order($order)) {
+            return;
+        }
+
         if (!$this->cart_contains_subscription()) {
             return;
         }
@@ -4845,12 +5662,87 @@ class SubscriptionsModule {
             return;
         }
 
+        if ($this->is_checkout_draft_order($order)) {
+            return;
+        }
+
+        if ((string) $order->get_meta(self::ORDER_META_RENEWAL, true) === '1') {
+            return;
+        }
+
         $payment = $this->get_order_payment_method_data($order);
         if ($this->payment_method_requires_mandate((string) ($payment['method'] ?? ''))) {
             return;
         }
 
         $this->maybe_create_subscriptions_from_order($orderId);
+    }
+
+    public function maybe_handle_store_api_checkout_order_processed($order): void {
+        if (!$this->recurring_enabled() || $this->get_engine() !== 'manual') {
+            return;
+        }
+
+        if (!$order || !is_object($order) || !method_exists($order, 'get_id')) {
+            return;
+        }
+
+        if ($this->is_checkout_draft_order($order)) {
+            return;
+        }
+
+        if (!$this->order_contains_subscription($order)) {
+            return;
+        }
+
+        if (method_exists($order, 'get_meta') && method_exists($order, 'update_meta_data')) {
+            if ((string) $order->get_meta(self::ORDER_META_CONTAINS_SUBSCRIPTION, true) !== 'yes') {
+                $order->update_meta_data(self::ORDER_META_CONTAINS_SUBSCRIPTION, 'yes');
+                if (method_exists($order, 'save')) {
+                    $order->save();
+                }
+            }
+        }
+
+        $this->maybe_create_subscriptions_from_manual_order((int) $order->get_id(), null, $order);
+
+        if (method_exists($order, 'get_status') && (string) $order->get_status() === 'on-hold') {
+            $this->maybe_promote_manual_subscription_order_to_processing((int) $order->get_id());
+        }
+    }
+
+    public function maybe_promote_manual_subscription_order_to_processing(int $orderId): void {
+        if (!$this->recurring_enabled() || $this->get_engine() !== 'manual') {
+            return;
+        }
+
+        $order = wc_get_order($orderId);
+        if (!$order || !is_object($order)) {
+            return;
+        }
+
+        if ($this->is_checkout_draft_order($order)) {
+            return;
+        }
+
+        if (!$this->order_contains_subscription($order)) {
+            return;
+        }
+
+        if ((string) $order->get_meta(self::ORDER_META_RENEWAL, true) === '1') {
+            return;
+        }
+
+        if ((string) $order->get_status() !== 'on-hold') {
+            return;
+        }
+
+        $payment = $this->get_order_payment_method_data($order);
+        if ($this->payment_method_requires_mandate((string) ($payment['method'] ?? ''))) {
+            return;
+        }
+
+        $order->update_status('processing', __('HB UCS: abonnement met handmatige/offline betaalmethode direct op verwerken gezet.', 'hb-ucs'));
     }
 
     public function maybe_handle_mollie_webhook(): void {
@@ -4924,6 +5816,7 @@ class SubscriptionsModule {
                 $paidTs = $paid ? (int) $paid->getTimestamp() : time();
                 update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $paidTs);
                 $this->mark_subscription_paid_and_advance($subId);
+                $this->sync_subscription_order_type_record($subId);
             }
         } elseif ($status === 'failed' || $status === 'canceled' || $status === 'expired') {
             if (method_exists($order, 'update_status')) {
@@ -4935,6 +5828,7 @@ class SubscriptionsModule {
                 $createdTs = $created ? (int) $created->getTimestamp() : time();
                 update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $createdTs);
                 update_post_meta($subId, self::SUB_META_STATUS, 'on-hold');
+                $this->sync_subscription_order_type_record($subId);
             }
         }
 
@@ -4980,6 +5874,7 @@ class SubscriptionsModule {
         $next = $this->calculate_next_payment_timestamp($subId);
         update_post_meta($subId, self::SUB_META_NEXT_PAYMENT, (string) $next);
         update_post_meta($subId, self::SUB_META_STATUS, 'active');
+        $this->sync_subscription_order_type_record($subId);
     }
 
     private function get_engine(): string {
@@ -5017,7 +5912,7 @@ class SubscriptionsModule {
         }
 
         // Subscription screens: use WooCommerce admin styles + enhanced selects for filters/product search.
-        if ($screen->post_type === self::SUB_CPT) {
+        if ($screen->id === 'woocommerce_page_wc-orders--' . $this->get_subscription_order_type()->get_type() || $screen->id === 'admin_page_wc-orders--' . $this->get_subscription_order_type()->get_type()) {
             if (wp_style_is('woocommerce_admin_styles', 'registered') || wp_style_is('woocommerce_admin_styles', 'enqueued')) {
                 wp_enqueue_style('woocommerce_admin_styles');
             }
@@ -5030,8 +5925,78 @@ jQuery(function($){
         ajaxUrl: __AJAX_URL__,
         nonce: __NONCE__,
         decimals: __DECIMALS__,
-        currencySymbol: __CURRENCY_SYMBOL__
+        currencySymbol: __CURRENCY_SYMBOL__,
+        selectTaxMessage: __I18N_SELECT_TAX__,
+        duplicateTaxMessage: __I18N_DUPLICATE_TAX__
     };
+
+    function setMetaboxLoading(isLoading) {
+        var box = $('#woocommerce-order-items');
+        if (!box.length || typeof box.block !== 'function' || typeof box.unblock !== 'function') {
+            return;
+        }
+
+        if (isLoading) {
+            box.block({ message: null, overlayCSS: { background: '#fff', opacity: 0.6 } });
+        } else {
+            box.unblock();
+        }
+    }
+
+    function replaceItemsMetabox(html) {
+        var next = $(html);
+        if (!next.length) {
+            return;
+        }
+
+        $('#woocommerce-order-items').replaceWith(next);
+        try { $(document.body).trigger('wc-enhanced-select-init'); } catch(e) {}
+        updateAddressDisplay('billing');
+        updateAddressDisplay('shipping');
+    }
+
+    function closeTaxModal() {
+        $('.hb-ucs-tax-modal-wrapper').remove();
+    }
+
+    function openTaxModal() {
+        var template = $('#tmpl-hb-ucs-subscription-add-tax-modal').html();
+        closeTaxModal();
+        if (!template) {
+            return;
+        }
+        $('body').append('<div class="hb-ucs-tax-modal-wrapper">' + template + '</div>');
+    }
+
+    function updateTaxRate(action, rateId) {
+        var subId = parseInt($('#hb_ucs_sub_id_current').val() || '0', 10),
+            ajaxAction = action === 'remove' ? 'hb_ucs_subscription_remove_tax_rate' : 'hb_ucs_subscription_add_tax_rate';
+
+        if (!subId || !rateId) {
+            return;
+        }
+
+        setMetaboxLoading(true);
+        $.post(cfg.ajaxUrl, {
+            action: ajaxAction,
+            nonce: cfg.nonce,
+            sub_id: subId,
+            rate_id: rateId
+        }).done(function(response) {
+            if (!response || !response.success || !response.data || !response.data.html) {
+                window.alert(response && response.data && response.data.message ? response.data.message : cfg.selectTaxMessage);
+                return;
+            }
+
+            replaceItemsMetabox(response.data.html);
+            closeTaxModal();
+        }).fail(function(xhr) {
+            var message = xhr && xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message ? xhr.responseJSON.data.message : '';
+            window.alert(message || cfg.selectTaxMessage);
+        }).always(function() {
+            setMetaboxLoading(false);
+        });
+    }
 
     function formatMoney(amount) {
         amount = parseFloat(amount || 0) || 0;
@@ -5149,20 +6114,103 @@ jQuery(function($){
     }
 
     function updateTotalsFromRows() {
-        var subtotal = 0,
-            tax = 0,
-            total = 0;
+        var itemSubtotal = 0,
+            itemTax = 0,
+            itemTotal = 0,
+            feeSubtotal = 0,
+            feeTax = 0,
+            feeTotal = 0,
+            shippingSubtotal = 0,
+            shippingTax = 0,
+            shippingTotal = 0,
+            taxBreakdown = {};
+
+        function collectTaxCells(row) {
+            row.find('.hb-ucs-tax-cell').each(function() {
+                var cell = $(this),
+                    rateKey = String(cell.attr('data-tax-rate') || ''),
+                    amount = parseFloat(cell.attr('data-tax-amount') || '0') || 0;
+
+                if (!rateKey) {
+                    return;
+                }
+
+                taxBreakdown[rateKey] = (taxBreakdown[rateKey] || 0) + amount;
+            });
+        }
 
         $('#order_line_items tr.hb-ucs-sub-item-row').each(function() {
             var row = $(this);
-            subtotal += parseFloat(row.attr('data-line-subtotal') || '0') || 0;
-            tax += parseFloat(row.attr('data-line-tax') || '0') || 0;
-            total += parseFloat(row.attr('data-line-total') || '0') || 0;
+            itemSubtotal += parseFloat(row.attr('data-line-subtotal') || '0') || 0;
+            itemTax += parseFloat(row.attr('data-line-tax') || '0') || 0;
+            itemTotal += parseFloat(row.attr('data-line-total') || '0') || 0;
+            collectTaxCells(row);
         });
 
-        $('#hb-ucs-sub-items-subtotal').html(formatMoney(subtotal));
-        $('#hb-ucs-sub-items-tax').html(formatMoney(tax));
-        $('#hb-ucs-sub-order-total').html(formatMoney(total));
+        $('#order_fee_line_items tr.hb-ucs-sub-fee-row').each(function() {
+            var row = $(this);
+            feeSubtotal += parseFloat(row.attr('data-line-subtotal') || '0') || 0;
+            feeTax += parseFloat(row.attr('data-line-tax') || '0') || 0;
+            feeTotal += parseFloat(row.attr('data-line-total') || '0') || 0;
+            collectTaxCells(row);
+        });
+
+        $('#order_shipping_line_items tr.hb-ucs-sub-shipping-row').each(function() {
+            var row = $(this);
+            shippingSubtotal += parseFloat(row.attr('data-line-subtotal') || '0') || 0;
+            shippingTax += parseFloat(row.attr('data-line-tax') || '0') || 0;
+            shippingTotal += parseFloat(row.attr('data-line-total') || '0') || 0;
+            collectTaxCells(row);
+        });
+
+        $('#hb-ucs-sub-items-subtotal').html(formatMoney(itemSubtotal));
+        $('#hb-ucs-sub-fee-total').html(formatMoney(feeSubtotal));
+        $('#hb-ucs-sub-shipping-total').html(formatMoney(shippingSubtotal));
+        $('.hb-ucs-tax-total-row').each(function() {
+            var row = $(this),
+                rateKey = String(row.attr('data-tax-rate') || ''),
+                safeKey = rateKey.replace(/[^A-Za-z0-9_-]/g, '-');
+
+            $('#hb-ucs-sub-tax-rate-' + safeKey).html(formatMoney(taxBreakdown[rateKey] || 0));
+        });
+        $('#hb-ucs-sub-total-tax').html(formatMoney(itemTax + feeTax + shippingTax));
+        $('#hb-ucs-sub-order-total').html(formatMoney(itemTotal + feeTotal + shippingTotal));
+    }
+
+    function syncManualChargeRow(row, prefix) {
+        var subtotalField = row.find('.hb-ucs-' + prefix + '-total'),
+            subtotal = parseFloat(subtotalField.val() || '0') || 0,
+            tax = 0,
+            total = subtotal + tax;
+
+        row.find('.hb-ucs-tax-input').each(function() {
+            var field = $(this),
+                cell = field.closest('.hb-ucs-tax-cell'),
+                amount = parseFloat(field.val() || '0') || 0;
+
+            tax += amount;
+            cell.attr('data-tax-amount', amount.toFixed(cfg.decimals));
+            cell.find('.view').html(formatMoney(amount));
+        });
+
+        total = subtotal + tax;
+
+        row.attr('data-line-subtotal', subtotal.toFixed(cfg.decimals));
+        row.attr('data-line-tax', tax.toFixed(cfg.decimals));
+        row.attr('data-line-total', total.toFixed(cfg.decimals));
+        row.find('.hb-ucs-' + prefix + '-subtotal-view').html(formatMoney(subtotal));
+        row.find('.hb-ucs-' + prefix + '-tax-view').html(formatMoney(tax));
+        row.find('.hb-ucs-' + prefix + '-total-view').html(formatMoney(total));
+        row.find('.hb-ucs-' + prefix + '-line-total').val(total.toFixed(cfg.decimals));
+
+        if (prefix === 'fee') {
+            row.find('.view').first().text(row.find('.hb-ucs-fee-name').val() || 'Kosten');
+        }
+        if (prefix === 'shipping') {
+            row.find('.view').first().text(row.find('.hb-ucs-shipping-title').val() || 'Verzending');
+        }
+
+        updateTotalsFromRows();
     }
 
     function applyPreviewToRow(row, data, syncPriceField) {
@@ -5179,14 +6227,21 @@ jQuery(function($){
         row.attr('data-line-subtotal', data.line_subtotal || '0');
         row.attr('data-line-tax', data.line_tax || '0');
         row.attr('data-line-total', data.line_total || '0');
+        row.find('.hb-ucs-tax-cell').each(function() {
+            var cell = $(this),
+                rateKey = String(cell.attr('data-tax-rate') || ''),
+                amount = data.tax_breakdown && typeof data.tax_breakdown[rateKey] !== 'undefined' ? parseFloat(data.tax_breakdown[rateKey] || '0') || 0 : 0;
+
+            cell.attr('data-tax-amount', amount.toFixed(cfg.decimals));
+            cell.find('.view').html(formatMoney(amount));
+            cell.find('.hb-ucs-tax-input').val(amount.toFixed(cfg.decimals));
+        });
         row.find('.hb-ucs-item-label-view').text(data.label || '—');
         row.find('.hb-ucs-item-sku').text(data.sku || '');
         row.find('.hb-ucs-item-unit-view').html(data.unit_price_html || '');
         row.find('.hb-ucs-item-line-subtotal').html(data.line_subtotal_html || '');
-        row.find('.hb-ucs-item-line-tax').html(data.line_tax_html || '');
         row.find('.hb-ucs-item-line-total').html(data.line_total_html || '');
         row.find('.hb-ucs-item-line-subtotal-input').val(data.line_subtotal || '0');
-        row.find('.hb-ucs-item-line-tax-input').val(data.line_tax || '0');
         row.find('.hb-ucs-item-line-total-input').val(data.line_total || '0');
         row.find('.hb-ucs-item-qty-view').text(row.find('.hb-ucs-item-qty').val() || '1');
 
@@ -5212,6 +6267,7 @@ jQuery(function($){
     function requestRowPreview(row, syncPriceField) {
         var productId = parseInt(row.find('.hb-ucs-item-product').val() || '0', 10),
             scheme = $('#hb_ucs_sub_scheme').val() || $('#hb_ucs_sub_scheme_current').val() || '',
+            subId = parseInt($('#hb_ucs_sub_id_current').val() || '0', 10),
             qty = parseInt(row.find('.hb-ucs-item-qty').val() || '1', 10),
             unitPrice = row.find('.hb-ucs-item-price').val() || '';
 
@@ -5224,6 +6280,7 @@ jQuery(function($){
             nonce: cfg.nonce,
             product_id: productId,
             scheme: scheme,
+            sub_id: subId,
             qty: qty,
             unit_price: unitPrice,
             sync_price: syncPriceField ? '1' : '0',
@@ -5261,11 +6318,37 @@ jQuery(function($){
         updateTotalsFromRows();
     }
 
+    function addManualRow(templateId, targetSelector, rowSelector, prefix) {
+        var template = $(templateId).html(),
+            index = $(targetSelector).find(rowSelector).length,
+            row;
+
+        if (!template) {
+            return;
+        }
+
+        template = template.replace(/\{\{index\}\}/g, index);
+        $(targetSelector).append(template);
+        row = $(targetSelector).find(rowSelector).last();
+        setRowEditing(row, true, false);
+        syncManualChargeRow(row, prefix);
+        $('html, body').animate({ scrollTop: Math.max(row.offset().top - 120, 0) }, 150);
+    }
+
+    function showAddItemActions() {
+        $('div.wc-order-add-item').slideDown();
+    }
+
+    function hideAddItemActions(reloadPage) {
+        $('div.wc-order-add-item').slideUp();
+        if (reloadPage) {
+            window.location.reload();
+        }
+    }
+
     function updateAddressDisplay(type) {
         var prefix = '#hb_ucs_sub_' + type + '_',
-            wrapper = $('#order_data .hb-ucs-admin-order-address-column').filter(function() {
-                return $(this).find(prefix + 'first_name').length > 0;
-            }).find('.hb-ucs-address-preview'),
+            wrapper = $('#order_data .hb-ucs-subscription-' + type + '-column .hb-ucs-address-preview'),
             lines = [],
             firstName = $(prefix + 'first_name').val() || '',
             lastName = $(prefix + 'last_name').val() || '',
@@ -5398,23 +6481,82 @@ jQuery(function($){
     });
     $(document.body).on('click', '.edit-order-item', function(event) {
         event.preventDefault();
-        var row = $(this).closest('tr.item');
+        var row = $(this).closest('tr.item, tr.fee, tr.shipping');
         setRowEditing(row, !row.hasClass('editing'), !row.hasClass('editing'));
     });
     $(document.body).on('click', '.delete-order-item', function(event) {
         event.preventDefault();
-        var row = $(this).closest('tr.item');
+        var row = $(this).closest('tr.item, tr.fee, tr.shipping');
         row.find('.hb-ucs-item-remove').val('1');
+        row.find('.hb-ucs-fee-remove').val('1');
+        row.find('.hb-ucs-shipping-remove').val('1');
         row.remove();
         updateTotalsFromRows();
+    });
+    $(document.body).on('click', '#hb-ucs-show-add-item-actions', function(event) {
+        event.preventDefault();
+        showAddItemActions();
     });
     $(document.body).on('click', '#hb-ucs-add-order-item', function(event) {
         event.preventDefault();
         addItemRow();
     });
+    $(document.body).on('click', '#hb-ucs-add-order-fee', function(event) {
+        event.preventDefault();
+        addManualRow('#tmpl-hb-ucs-subscription-fee-row', '#order_fee_line_items', 'tr.hb-ucs-sub-fee-row', 'fee');
+    });
+    $(document.body).on('click', '#hb-ucs-add-order-shipping', function(event) {
+        event.preventDefault();
+        addManualRow('#tmpl-hb-ucs-subscription-shipping-row', '#order_shipping_line_items', 'tr.hb-ucs-sub-shipping-row', 'shipping');
+    });
+    $(document.body).on('click', '#hb-ucs-add-order-tax', function(event) {
+        event.preventDefault();
+        openTaxModal();
+    });
+    $(document.body).on('click', '.hb-ucs-tax-modal-wrapper .modal-close', function(event) {
+        event.preventDefault();
+        closeTaxModal();
+    });
+    $(document.body).on('click', '.hb-ucs-tax-modal-wrapper #btn-ok', function(event) {
+        var rateId = parseInt($('.hb-ucs-tax-modal-wrapper input[name="hb_ucs_add_tax_rate"]:checked').val() || $('.hb-ucs-tax-modal-wrapper #manual_tax_rate_id').val() || '0', 10),
+            existingRates = $('.order-tax-id').map(function() { return String($(this).val() || ''); }).get();
+
+        event.preventDefault();
+        if (!rateId) {
+            window.alert(cfg.selectTaxMessage);
+            return;
+        }
+        if ($.inArray(String(rateId), existingRates) !== -1) {
+            window.alert(cfg.duplicateTaxMessage);
+            return;
+        }
+        updateTaxRate('add', rateId);
+    });
+    $(document.body).on('click', 'a.delete-order-tax', function(event) {
+        var rateId = parseInt($(this).attr('data-rate_id') || '0', 10);
+        event.preventDefault();
+        if (!rateId) {
+            return;
+        }
+        updateTaxRate('remove', rateId);
+    });
+    $(document.body).on('click', '#hb-ucs-cancel-order-actions', function(event) {
+        event.preventDefault();
+        hideAddItemActions(true);
+    });
+    $(document.body).on('click', '#hb-ucs-save-order-actions', function(event) {
+        event.preventDefault();
+        $('#post').trigger('submit');
+    });
     $(document.body).on('click', '#hb-ucs-recalc-order-items', function(event) {
         event.preventDefault();
         refreshAllRows(false);
+        $('#order_fee_line_items tr.hb-ucs-sub-fee-row').each(function() {
+            syncManualChargeRow($(this), 'fee');
+        });
+        $('#order_shipping_line_items tr.hb-ucs-sub-shipping-row').each(function() {
+            syncManualChargeRow($(this), 'shipping');
+        });
     });
     $(document.body).on('change', '#hb_ucs_sub_scheme', function() {
         refreshAllRows(true);
@@ -5432,15 +6574,25 @@ jQuery(function($){
     $(document.body).on('input change', '.hb-ucs-item-qty, .hb-ucs-item-price', function() {
         requestRowPreview($(this).closest('tr.hb-ucs-sub-item-row'), false);
     });
+    $(document.body).on('input change', '.hb-ucs-fee-name, .hb-ucs-fee-total, .hb-ucs-fee-tax-input, #order_fee_line_items .hb-ucs-tax-input', function() {
+        syncManualChargeRow($(this).closest('tr.hb-ucs-sub-fee-row'), 'fee');
+    });
+    $(document.body).on('input change', '.hb-ucs-shipping-title, .hb-ucs-shipping-total, .hb-ucs-shipping-tax-input, #order_shipping_line_items .hb-ucs-tax-input', function() {
+        syncManualChargeRow($(this).closest('tr.hb-ucs-sub-shipping-row'), 'shipping');
+    });
     $(document.body).on('input change', '#order_data .edit_address :input', function() {
         var field = $(this),
-            id = field.attr('id') || '';
+            id = field.attr('id') || '',
+            isTaxField = /_(country|state|postcode|city)$/.test(id);
 
         if (id.indexOf('hb_ucs_sub_billing_') === 0) {
             updateAddressDisplay('billing');
         }
         if (id.indexOf('hb_ucs_sub_shipping_') === 0) {
             updateAddressDisplay('shipping');
+        }
+        if (isTaxField) {
+            refreshAllRows(false);
         }
     });
 
@@ -5450,16 +6602,18 @@ jQuery(function($){
 });
 JS;
                 $subscriptionAdminScript = str_replace(
-                    ['__AJAX_URL__', '__NONCE__', '__DECIMALS__', '__CURRENCY_SYMBOL__'],
-                    [wp_json_encode(admin_url('admin-ajax.php')), wp_json_encode(wp_create_nonce('hb_ucs_subscription_admin')), (string) ((int) wc_get_price_decimals()), wp_json_encode(function_exists('get_woocommerce_currency_symbol') ? get_woocommerce_currency_symbol() : '€')],
+                    ['__AJAX_URL__', '__NONCE__', '__DECIMALS__', '__CURRENCY_SYMBOL__', '__I18N_SELECT_TAX__', '__I18N_DUPLICATE_TAX__'],
+                    [wp_json_encode(admin_url('admin-ajax.php')), wp_json_encode(wp_create_nonce('hb_ucs_subscription_admin')), (string) ((int) wc_get_price_decimals()), wp_json_encode(function_exists('get_woocommerce_currency_symbol') ? get_woocommerce_currency_symbol() : '€'), wp_json_encode(__('Selecteer een belastingregel om toe te voegen.', 'hb-ucs')), wp_json_encode(__('Deze belastingregel is al toegevoegd.', 'hb-ucs'))],
                     $subscriptionAdminScriptTemplate
                 );
                 wp_add_inline_script('wc-enhanced-select', $subscriptionAdminScript);
             }
             wp_register_style('hb-ucs-subscriptions-admin-inline', false, [], $ver);
             wp_enqueue_style('hb-ucs-subscriptions-admin-inline');
-            wp_add_inline_style('hb-ucs-subscriptions-admin-inline', '.post-type-hb_ucs_subscription #titlediv{display:none}.post-type-hb_ucs_subscription .wrap>h1.wp-heading-inline{margin-bottom:12px}.hb-ucs-admin-subscription-header{display:flex;justify-content:space-between;align-items:stretch;gap:16px;background:#fff;border:1px solid #dcdcde;padding:16px 20px;margin:16px 0 20px;border-radius:2px}.hb-ucs-admin-subscription-header__title h1{font-size:20px;line-height:1.3;margin:0 0 10px}.hb-ucs-admin-subscription-header__meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.hb-ucs-admin-subscription-header__meta span{color:#646970}.hb-ucs-admin-subscription-summary{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:12px;flex:1}.hb-ucs-admin-subscription-summary__item{background:#f6f7f7;border:1px solid #dcdcde;padding:12px;border-radius:2px;display:flex;flex-direction:column;gap:4px}.hb-ucs-admin-subscription-summary__item span,.hb-ucs-admin-subscription-summary__item small{color:#646970}.hb-ucs-admin-subscription-summary__item strong{font-size:14px}.hb-ucs-admin-inline-links{display:block;margin-top:6px}.hb-ucs-admin-order-data-columns .order_data_column h3{font-size:14px;margin-bottom:12px}.post-type-hb_ucs_subscription .woocommerce_order_items .quantity,.post-type-hb_ucs_subscription .woocommerce_order_items .line_cost,.post-type-hb_ucs_subscription .woocommerce_order_items .item_cost{width:10%}.post-type-hb_ucs_subscription .column-hb_ucs_status{width:120px}.post-type-hb_ucs_subscription .column-hb_ucs_total{width:170px}.post-type-hb_ucs_subscription .column-hb_ucs_next_payment,.post-type-hb_ucs_subscription .column-hb_ucs_last_order_date,.post-type-hb_ucs_subscription .column-hb_ucs_start_date{width:140px}.post-type-hb_ucs_subscription .wp-list-table .column-title .row-title{font-weight:600}.post-type-hb_ucs_subscription .wc-order-bulk-actions{display:flex;gap:8px;align-items:center;padding-top:12px}.post-type-hb_ucs_subscription tr.item .edit{display:none}.post-type-hb_ucs_subscription tr.item.editing .edit{display:block}.post-type-hb_ucs_subscription tr.item.editing .view{display:none}@media (max-width:1200px){.hb-ucs-admin-subscription-header{flex-direction:column}.hb-ucs-admin-subscription-summary{grid-template-columns:repeat(2,minmax(140px,1fr))}}');
-            wp_add_inline_style('hb-ucs-subscriptions-admin-inline', '.post-type-hb_ucs_subscription .hb-ucs-admin-order-data-columns{display:flex;flex-wrap:wrap;gap:16px}.post-type-hb_ucs_subscription .hb-ucs-admin-order-data-columns__general{width:100%;max-width:none}.post-type-hb_ucs_subscription .hb-ucs-admin-order-address-columns{display:flex;gap:16px;width:100%}.post-type-hb_ucs_subscription .hb-ucs-admin-order-address-column{flex:1 1 0;min-width:0}.post-type-hb_ucs_subscription .hb-ucs-admin-order-address-column h3 span{display:inline-flex;gap:8px;margin-left:8px;font-weight:400}.post-type-hb_ucs_subscription #woocommerce-order-items.hb-ucs-order-items-metabox{margin:0}.post-type-hb_ucs_subscription #woocommerce-order-items .woocommerce_order_items .item_cost,.post-type-hb_ucs_subscription #woocommerce-order-items .woocommerce_order_items .quantity,.post-type-hb_ucs_subscription #woocommerce-order-items .woocommerce_order_items .line_cost,.post-type-hb_ucs_subscription #woocommerce-order-items .woocommerce_order_items .line_tax,.post-type-hb_ucs_subscription #woocommerce-order-items .woocommerce_order_items .line_total{width:1%;vertical-align:top}.post-type-hb_ucs_subscription #woocommerce-order-items .woocommerce_order_items td.name{width:auto;min-width:280px}.post-type-hb_ucs_subscription #woocommerce-order-items .woocommerce_order_items .wc-order-item-name{font-weight:600}.post-type-hb_ucs_subscription #woocommerce-order-items .woocommerce_order_items .wc-order-item-thumbnail img{width:38px;height:38px;object-fit:cover}.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-sku-wrap.is-empty,.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-variation-summary-wrap.is-empty{display:none}.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-variation-fields{margin-top:12px;border-top:1px solid #dcdcde;padding-top:12px;display:grid;gap:10px}.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-attribute-field label{display:block;margin-bottom:4px;font-weight:600}.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-attribute-field select,.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-price,.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-product{width:100%}.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-line-subtotal,.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-line-tax,.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-line-total,.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-unit-view{white-space:nowrap}.post-type-hb_ucs_subscription #woocommerce-order-items .wc-order-totals .total{text-align:right}.post-type-hb_ucs_subscription #woocommerce-order-items .wc-order-totals .label{font-weight:500}.post-type-hb_ucs_subscription #woocommerce-order-items .wc-order-totals tr:last-child .label,.post-type-hb_ucs_subscription #woocommerce-order-items .wc-order-totals tr:last-child .total{font-weight:700}.post-type-hb_ucs_subscription .hb-ucs-address-preview p{margin:0 0 8px}.post-type-hb_ucs_subscription .order_data_column .address,.post-type-hb_ucs_subscription .order_data_column .edit_address{min-height:180px}@media (max-width:1280px){.post-type-hb_ucs_subscription .hb-ucs-admin-order-address-columns{flex-direction:column}}');
+            wp_add_inline_style('hb-ucs-subscriptions-admin-inline', '.post-type-hb_ucs_subscription #titlediv{display:none}.post-type-hb_ucs_subscription .wrap>h1.wp-heading-inline{margin-bottom:12px}.post-type-hb_ucs_subscription #hb_ucs_subscription_data .inside{margin:0;padding:0}.post-type-hb_ucs_subscription #hb_ucs_subscription_data .postbox-header{display:none}.post-type-hb_ucs_subscription .woocommerce-order-data .order_data_column .form-field>label{display:block;margin-bottom:4px}.post-type-hb_ucs_subscription .woocommerce-order-data .order_data_column .form-field>span{display:block}.post-type-hb_ucs_subscription .hb-ucs-subscription-order-data-summary{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}.post-type-hb_ucs_subscription .hb-ucs-subscription-order-data-summary__item{display:inline-flex;align-items:center;min-height:32px;padding:0 12px;border:1px solid #dcdcde;border-radius:2px;background:#fff;font-weight:600}.post-type-hb_ucs_subscription .woocommerce_order_items .quantity,.post-type-hb_ucs_subscription .woocommerce_order_items .line_cost,.post-type-hb_ucs_subscription .woocommerce_order_items .item_cost{width:10%}.post-type-hb_ucs_subscription .column-hb_ucs_status{width:120px}.post-type-hb_ucs_subscription .column-hb_ucs_total{width:170px}.post-type-hb_ucs_subscription .column-hb_ucs_next_payment,.post-type-hb_ucs_subscription .column-hb_ucs_last_order_date,.post-type-hb_ucs_subscription .column-hb_ucs_start_date{width:140px}.post-type-hb_ucs_subscription .wp-list-table .column-title .row-title{font-weight:600}.post-type-hb_ucs_subscription .wc-order-bulk-actions{display:flex;gap:8px;align-items:center;padding-top:12px}.post-type-hb_ucs_subscription tr.item .edit{display:none}.post-type-hb_ucs_subscription tr.item.editing .edit{display:block}.post-type-hb_ucs_subscription tr.item.editing .view{display:none}.post-type-hb_ucs_subscription #poststuff #hb_ucs_subscription_actions .inside,.post-type-hb_ucs_subscription #poststuff #hb_ucs_subscription_notes .inside{margin:0;padding:0}.post-type-hb_ucs_subscription #hb_ucs_subscription_actions ul.order_actions li{padding:6px 10px;box-sizing:border-box}.post-type-hb_ucs_subscription #hb_ucs_subscription_notes ul.order_notes{margin:0}.post-type-hb_ucs_subscription #hb_ucs_subscription_notes ul.order_notes li{padding:0 10px;margin:0}.post-type-hb_ucs_subscription #hb_ucs_subscription_notes .add_note{padding:12px 10px 10px;border-top:1px solid #dcdcde}.post-type-hb_ucs_subscription #hb_ucs_subscription_notes .add_note textarea{width:100%}.post-type-hb_ucs_subscription #hb_ucs_subscription_notes .add_note select{max-width:100%;margin-right:6px}@media (max-width:1280px){.post-type-hb_ucs_subscription .hb-ucs-subscription-order-data-summary{justify-content:flex-start}}');
+            wp_add_inline_style('hb-ucs-subscriptions-admin-inline', '.post-type-hb_ucs_subscription #woocommerce-order-items.hb-ucs-order-items-metabox{margin:0}.post-type-hb_ucs_subscription #woocommerce-order-items .woocommerce_order_items .item_cost,.post-type-hb_ucs_subscription #woocommerce-order-items .woocommerce_order_items .quantity,.post-type-hb_ucs_subscription #woocommerce-order-items .woocommerce_order_items .line_cost,.post-type-hb_ucs_subscription #woocommerce-order-items .woocommerce_order_items .line_tax,.post-type-hb_ucs_subscription #woocommerce-order-items .woocommerce_order_items .line_total{width:1%;vertical-align:top}.post-type-hb_ucs_subscription #woocommerce-order-items .woocommerce_order_items td.name{width:auto;min-width:280px}.post-type-hb_ucs_subscription #woocommerce-order-items .woocommerce_order_items .wc-order-item-name{font-weight:600}.post-type-hb_ucs_subscription #woocommerce-order-items .woocommerce_order_items .wc-order-item-thumbnail img{width:38px;height:38px;object-fit:cover}.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-sku-wrap.is-empty,.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-variation-summary-wrap.is-empty{display:none}.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-variation-fields{margin-top:12px;border-top:1px solid #dcdcde;padding-top:12px;display:grid;gap:10px}.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-attribute-field label{display:block;margin-bottom:4px;font-weight:600}.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-attribute-field select,.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-price,.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-product{width:100%}.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-line-subtotal,.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-line-tax,.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-line-total,.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-item-unit-view{white-space:nowrap}.post-type-hb_ucs_subscription #woocommerce-order-items .wc-order-totals .total{text-align:right}.post-type-hb_ucs_subscription #woocommerce-order-items .wc-order-totals .label{font-weight:500}.post-type-hb_ucs_subscription #woocommerce-order-items .wc-order-totals tr:last-child .label,.post-type-hb_ucs_subscription #woocommerce-order-items .wc-order-totals tr:last-child .total{font-weight:700}.post-type-hb_ucs_subscription .hb-ucs-address-preview p{margin:0 0 8px}.post-type-hb_ucs_subscription .order_data_column .address,.post-type-hb_ucs_subscription .order_data_column .edit_address{min-height:180px}');
+            wp_add_inline_style('hb-ucs-subscriptions-admin-inline', '.post-type-hb_ucs_subscription .hb-ucs-subscription-address-column .address a{font-weight:500}.post-type-hb_ucs_subscription tr.fee .edit,.post-type-hb_ucs_subscription tr.shipping .edit{display:none}.post-type-hb_ucs_subscription tr.fee.editing .edit,.post-type-hb_ucs_subscription tr.shipping.editing .edit{display:block}.post-type-hb_ucs_subscription tr.fee.editing .view,.post-type-hb_ucs_subscription tr.shipping.editing .view{display:none}');
+            wp_add_inline_style('hb-ucs-subscriptions-admin-inline', '.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-sub-shipping-row .wc-order-item-thumbnail,.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-sub-fee-row .wc-order-item-thumbnail{display:flex;align-items:center;justify-content:center;min-height:38px;color:#646970}.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-sub-shipping-row .dashicons,.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-sub-fee-row .dashicons{font-size:18px;width:18px;height:18px}.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-shipping-meta{margin-top:4px;color:#646970}.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-sub-fee-row .edit input,.post-type-hb_ucs_subscription #woocommerce-order-items .hb-ucs-sub-shipping-row .edit input{width:100%}.post-type-hb_ucs_subscription #woocommerce-order-items .delete-order-tax{display:inline-block;width:16px;height:16px;margin-left:6px;vertical-align:middle;text-decoration:none}.post-type-hb_ucs_subscription #woocommerce-order-items .delete-order-tax:before{content:"\00d7";font-size:16px;line-height:16px;color:#b32d2e}.hb-ucs-tax-modal-wrapper{position:relative;z-index:100000}.hb-ucs-tax-modal-wrapper .wc-backbone-modal-content{max-width:800px}.hb-ucs-tax-modal-wrapper .widefat td:first-child,.hb-ucs-tax-modal-wrapper .widefat th:first-child{width:32px}');
             return;
         }
 
@@ -5531,7 +6685,10 @@ JS;
         $icon = '<span class="dashicons dashicons-update" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html($label) . '</span>';
 
         if ($subId > 0 && current_user_can('edit_post', $subId)) {
-            $link = admin_url('post.php?post=' . $subId . '&action=edit');
+            $link = $this->get_subscription_service()->get_preferred_editor_url($subId);
+            if ($link === '') {
+                $link = admin_url('post.php?post=' . $subId . '&action=edit');
+            }
             echo '<a class="' . esc_attr(implode(' ', $classes)) . '" href="' . esc_url($link) . '" title="' . esc_attr($label) . '">' . $icon . '</a>';
             return;
         }
@@ -5556,53 +6713,83 @@ JS;
             return $default;
         }
 
+        if (isset($this->shopOrderSubscriptionContextCache[$orderId])) {
+            return $this->shopOrderSubscriptionContextCache[$orderId];
+        }
+
+        $cacheKey = 'shop_order_subscription_context_' . $orderId;
+        $cached = wp_cache_get($cacheKey, 'hb_ucs');
+        if (is_array($cached)) {
+            $this->shopOrderSubscriptionContextCache[$orderId] = array_merge($default, $cached);
+            return $this->shopOrderSubscriptionContextCache[$orderId];
+        }
+
         $subId = method_exists($order, 'get_meta') ? (int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true) : 0;
         $isRenewal = method_exists($order, 'get_meta') && (string) $order->get_meta(self::ORDER_META_RENEWAL, true) === '1';
         if ($subId > 0) {
-            return [
+            $context = [
                 'is_subscription_order' => true,
                 'subscription_id' => $subId,
                 'type' => $isRenewal ? 'renewal' : 'subscription',
             ];
+            $this->shopOrderSubscriptionContextCache[$orderId] = $context;
+            wp_cache_set($cacheKey, $context, 'hb_ucs', MINUTE_IN_SECONDS * 10);
+
+            return $context;
         }
 
-        $parentSubscriptionIds = get_posts([
-            'post_type' => self::SUB_CPT,
-            'post_status' => 'any',
-            'fields' => 'ids',
-            'numberposts' => 1,
-            'meta_key' => self::SUB_META_PARENT_ORDER_ID,
-            'meta_value' => (string) $orderId,
-        ]);
+        $parentSubscriptionIds = function_exists('wc_get_orders')
+            ? wc_get_orders([
+                'type' => $this->get_subscription_order_type()->get_type(),
+                'limit' => 1,
+                'return' => 'ids',
+                'status' => array_keys(wc_get_order_statuses()),
+                'meta_key' => self::SUB_META_PARENT_ORDER_ID,
+                'meta_value' => (string) $orderId,
+            ])
+            : [];
         $parentSubId = !empty($parentSubscriptionIds) ? (int) $parentSubscriptionIds[0] : 0;
         if ($parentSubId > 0) {
-            return [
+            update_post_meta($orderId, self::ORDER_META_SUBSCRIPTION_ID, (string) $parentSubId);
+            update_post_meta($orderId, self::ORDER_META_CONTAINS_SUBSCRIPTION, 'yes');
+
+            $context = [
                 'is_subscription_order' => true,
                 'subscription_id' => $parentSubId,
                 'type' => 'parent',
             ];
+            $this->shopOrderSubscriptionContextCache[$orderId] = $context;
+            wp_cache_set($cacheKey, $context, 'hb_ucs', MINUTE_IN_SECONDS * 10);
+
+            return $context;
         }
 
         if ($this->order_contains_subscription($order)) {
-            return [
+            $context = [
                 'is_subscription_order' => true,
                 'subscription_id' => 0,
                 'type' => 'subscription',
             ];
+            $this->shopOrderSubscriptionContextCache[$orderId] = $context;
+            wp_cache_set($cacheKey, $context, 'hb_ucs', MINUTE_IN_SECONDS * 10);
+
+            return $context;
         }
+
+        $this->shopOrderSubscriptionContextCache[$orderId] = $default;
+        wp_cache_set($cacheKey, $default, 'hb_ucs', MINUTE_IN_SECONDS * 5);
 
         return $default;
     }
 
     public function enqueue_frontend_assets(): void {
         $isProductPage = function_exists('is_singular') && is_singular('product');
-        $isAccountPage = function_exists('is_account_page') && is_account_page();
         $isSubscriptionsEndpoint = function_exists('is_wc_endpoint_url') && is_wc_endpoint_url(self::ACCOUNT_ENDPOINT);
         if (!$isSubscriptionsEndpoint && function_exists('get_query_var')) {
             $endpointValue = get_query_var(self::ACCOUNT_ENDPOINT, null);
             $isSubscriptionsEndpoint = $endpointValue !== null;
         }
-        $isAccountSubscriptionsPage = $isAccountPage || $isSubscriptionsEndpoint;
+        $isAccountSubscriptionsPage = $isSubscriptionsEndpoint || $this->current_page_has_subscriptions_shortcode();
         if (!$isProductPage && !$isAccountSubscriptionsPage) {
             return;
         }
@@ -5620,10 +6807,7 @@ JS;
 
         $pluginFile = defined('HB_UCS_PLUGIN_FILE') ? HB_UCS_PLUGIN_FILE : (dirname(__FILE__, 4) . '/hb-unified-commerce-suite.php');
         $base = trailingslashit(plugins_url('src/assets/', $pluginFile));
-        $defaultVer = defined('HB_UCS_VERSION') ? HB_UCS_VERSION : '0.0.0';
-        $assetDir = dirname(__FILE__, 2) . '/assets/';
-        $jsVer = file_exists($assetDir . 'frontend-hb-ucs-subscriptions.js') ? (string) filemtime($assetDir . 'frontend-hb-ucs-subscriptions.js') : $defaultVer;
-        $cssVer = file_exists($assetDir . 'frontend-hb-ucs-subscriptions.css') ? (string) filemtime($assetDir . 'frontend-hb-ucs-subscriptions.css') : $defaultVer;
+        $assetVersion = defined('HB_UCS_VERSION') ? HB_UCS_VERSION : '0.0.0';
 
         $deps = ['jquery'];
         if ($isProductPage && (wp_script_is('wc-add-to-cart-variation', 'registered') || wp_script_is('wc-add-to-cart-variation', 'enqueued'))) {
@@ -5636,8 +6820,21 @@ JS;
             }
         }
 
-        wp_enqueue_style('hb-ucs-subscriptions-frontend-style', $base . 'frontend-hb-ucs-subscriptions.css', [], $cssVer);
-        wp_enqueue_script('hb-ucs-subscriptions-frontend', $base . 'frontend-hb-ucs-subscriptions.js', $deps, $jsVer, true);
+        wp_enqueue_style('hb-ucs-subscriptions-frontend-style', $base . 'frontend-hb-ucs-subscriptions.css', [], $assetVersion);
+        wp_enqueue_script('hb-ucs-subscriptions-frontend', $base . 'frontend-hb-ucs-subscriptions.js', $deps, $assetVersion, true);
+    }
+
+    private function current_page_has_subscriptions_shortcode(): bool {
+        if (!function_exists('is_singular') || !is_singular()) {
+            return false;
+        }
+
+        $post = get_post();
+        if (!$post || !isset($post->post_content) || !is_string($post->post_content)) {
+            return false;
+        }
+
+        return function_exists('has_shortcode') && has_shortcode($post->post_content, 'hb_ucs_subscriptions_account');
     }
 
     private function get_discount_settings(int $entityId, string $scheme, int $fallbackEntityId = 0): array {
@@ -5775,6 +6972,10 @@ JS;
     }
 
     private function get_settings(): array {
+        if (is_array($this->settingsCache)) {
+            return $this->settingsCache;
+        }
+
         $opt = get_option(Settings::OPT_SUBSCRIPTIONS, []);
         if (!is_array($opt)) {
             $opt = [];
@@ -5800,13 +7001,15 @@ JS;
                 'period' => 'week',
             ];
         }
-        return [
+        $this->settingsCache = [
             'engine' => $engine,
             'recurring_enabled' => $recurringEnabled,
             'recurring_webhook_token' => $webhookToken,
             'delete_data_on_uninstall' => empty($opt['delete_data_on_uninstall']) ? 0 : 1,
             'frequencies' => $freqs,
         ];
+
+        return $this->settingsCache;
     }
 
     public function maybe_create_subscriptions_from_order(int $orderId): void {
@@ -5818,7 +7021,25 @@ JS;
             return;
         }
 
+        if ($this->is_checkout_draft_order($order)) {
+            return;
+        }
+
         if ((string) $order->get_meta(self::ORDER_META_RECURRING_CREATED, true) === '1') {
+            return;
+        }
+
+        if ((string) $order->get_meta(self::ORDER_META_RENEWAL, true) === '1') {
+            return;
+        }
+
+        $existingSubscriptionIds = $this->get_existing_subscription_ids_for_parent_order($orderId);
+        if (!empty($existingSubscriptionIds)) {
+            $order->update_meta_data(self::ORDER_META_RECURRING_CREATED, '1');
+            if ((int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true) <= 0) {
+                $order->update_meta_data(self::ORDER_META_SUBSCRIPTION_ID, (string) (int) $existingSubscriptionIds[0]);
+            }
+            $order->save();
             return;
         }
 
@@ -5877,9 +7098,9 @@ JS;
             $nextTs = $startTs + ($interval * WEEK_IN_SECONDS);
 
             $subPostId = wp_insert_post([
-                'post_type' => self::SUB_CPT,
-                'post_status' => 'publish',
-                'post_title' => sprintf(__('Abonnement #%d', 'hb-ucs'), (int) $orderId),
+                'post_type' => $this->get_subscription_order_type()->get_type(),
+                'post_status' => 'wc-pending',
+                'post_title' => $this->build_subscription_title_from_order($order, (int) $orderId),
             ], true);
 
             if (is_wp_error($subPostId) || (int) $subPostId <= 0) {
@@ -5911,7 +7132,10 @@ JS;
                 'base_variation_id' => $baseVariationId,
                 'qty' => $qty,
                 'unit_price' => $unit,
+                'price_includes_tax' => 0,
+                'taxes' => method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : [],
             ]]);
+            $this->persist_subscription_fee_lines($subId, $this->extract_subscription_fee_lines($order));
             $this->persist_subscription_shipping_lines($subId, $this->extract_subscription_shipping_lines($order));
             update_post_meta($subId, self::SUB_META_PAYMENT_METHOD, $paymentMethod);
             update_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, $paymentMethodTitle);
@@ -5924,6 +7148,13 @@ JS;
                 update_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID, $mMandate);
             }
 
+            $this->hydrate_subscription_order_customer_data($subId, (int) $order->get_user_id(), $order);
+            $this->sync_subscription_order_type_record($subId);
+
+            if ((int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true) <= 0) {
+                $order->update_meta_data(self::ORDER_META_SUBSCRIPTION_ID, (string) $subId);
+            }
+
             $createdAny = true;
         }
 
@@ -5934,6 +7165,27 @@ JS;
         }
     }
 
+    private function get_existing_subscription_ids_for_parent_order(int $orderId): array {
+        if ($orderId <= 0 || !function_exists('wc_get_orders')) {
+            return [];
+        }
+
+        $subscriptionIds = wc_get_orders([
+            'type' => $this->get_subscription_order_type()->get_type(),
+            'limit' => 20,
+            'return' => 'ids',
+            'status' => array_keys(wc_get_order_statuses()),
+            'meta_key' => self::SUB_META_PARENT_ORDER_ID,
+            'meta_value' => (string) $orderId,
+        ]);
+
+        if (!is_array($subscriptionIds)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map('intval', $subscriptionIds)));
+    }
+
     public function process_due_renewals(): void {
         if (!$this->recurring_enabled() || $this->get_engine() !== 'manual') {
             return;
@@ -5942,21 +7194,23 @@ JS;
         $now = time();
 
         // First: try to activate subscriptions that are waiting for a Mollie mandate.
-        $pending = new \WP_Query([
-            'post_type' => self::SUB_CPT,
-            'post_status' => 'publish',
-            'posts_per_page' => 10,
-            'fields' => 'ids',
-            'meta_query' => [
-                [
-                    'key' => self::SUB_META_STATUS,
-                    'value' => 'pending_mandate',
-                    'compare' => '=',
+        $pending = function_exists('wc_get_orders')
+            ? wc_get_orders([
+                'type' => $this->get_subscription_order_type()->get_type(),
+                'limit' => 10,
+                'return' => 'ids',
+                'status' => array_keys(wc_get_order_statuses()),
+                'meta_query' => [
+                    [
+                        'key' => self::SUB_META_STATUS,
+                        'value' => 'pending_mandate',
+                        'compare' => '=',
+                    ],
                 ],
-            ],
-        ]);
-        if ($pending->have_posts()) {
-            foreach ($pending->posts as $subId) {
+            ])
+            : [];
+        if (!empty($pending)) {
+            foreach ($pending as $subId) {
                 $subId = (int) $subId;
                 if ($subId <= 0) continue;
                 $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
@@ -5981,48 +7235,62 @@ JS;
                     update_post_meta($subId, self::SUB_META_MOLLIE_CUSTOMER_ID, $mCustomer);
                     update_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID, $mMandate);
                     update_post_meta($subId, self::SUB_META_STATUS, 'active');
+                    $this->sync_subscription_order_type_record($subId);
                 }
             }
         }
 
-        $q = new \WP_Query([
-            'post_type' => self::SUB_CPT,
-            'post_status' => 'publish',
-            'posts_per_page' => 10,
-            'fields' => 'ids',
-            'meta_query' => [
-                [
-                    'key' => self::SUB_META_STATUS,
-                    'value' => ['active'],
-                    'compare' => 'IN',
+        $q = function_exists('wc_get_orders')
+            ? wc_get_orders([
+                'type' => $this->get_subscription_order_type()->get_type(),
+                'limit' => 10,
+                'return' => 'ids',
+                'status' => array_keys(wc_get_order_statuses()),
+                'meta_query' => [
+                    [
+                        'key' => self::SUB_META_STATUS,
+                        'value' => ['active'],
+                        'compare' => 'IN',
+                    ],
+                    [
+                        'key' => self::SUB_META_NEXT_PAYMENT,
+                        'value' => (string) $now,
+                        'type' => 'NUMERIC',
+                        'compare' => '<=',
+                    ],
                 ],
-                [
-                    'key' => self::SUB_META_NEXT_PAYMENT,
-                    'value' => (string) $now,
-                    'type' => 'NUMERIC',
-                    'compare' => '<=',
-                ],
-            ],
-        ]);
+            ])
+            : [];
 
-        if (!$q->have_posts()) {
+        if (empty($q)) {
             return;
         }
 
-        foreach ($q->posts as $subId) {
+        foreach ($q as $subId) {
             $subId = (int) $subId;
             if ($subId <= 0) {
                 continue;
             }
 
-            $result = $this->create_renewal_order_and_payment($subId);
+            $result = $this->create_renewal_order_and_payment($subId, false);
             if (is_wp_error($result)) {
                 update_post_meta($subId, self::SUB_META_STATUS, 'on-hold');
+                $this->sync_subscription_order_type_record($subId);
             }
         }
     }
 
-    private function create_renewal_order_and_payment(int $subId) {
+    private function create_renewal_order_and_payment(int $subId, bool $force = false) {
+        $nextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
+        if (!$force && $nextPayment > time()) {
+            return 0;
+        }
+
+        $latestRenewalOrderId = $this->get_latest_renewal_order_id_for_subscription($subId);
+        if ($latestRenewalOrderId > 0 && $nextPayment > time()) {
+            return $latestRenewalOrderId;
+        }
+
         $userId = (int) get_post_meta($subId, self::SUB_META_USER_ID, true);
         $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
         $scheme = (string) get_post_meta($subId, self::SUB_META_SCHEME, true);
@@ -6068,6 +7336,7 @@ JS;
         }
 
         $this->apply_subscription_snapshot_to_order($order, $subId, $userId, $parentOrder);
+        $customer = $this->get_subscription_tax_customer($subId, $parentOrder);
 
         foreach ($items as $subscriptionItem) {
             $baseProductId = (int) ($subscriptionItem['base_product_id'] ?? 0);
@@ -6084,10 +7353,22 @@ JS;
             }
 
             $item = new \WC_Order_Item_Product();
+            $lineSubtotal = (float) wc_format_decimal((string) ($unit * $qty));
+            $itemTaxes = $this->get_subscription_item_taxes($subscriptionItem, $customer);
+            $lineTax = (float) wc_format_decimal((string) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['total'])));
             $item->set_product($productToAdd);
             $item->set_quantity($qty);
-            $item->set_subtotal($unit * $qty);
-            $item->set_total($unit * $qty);
+            $item->set_subtotal($lineSubtotal);
+            $item->set_total($lineSubtotal);
+            if (method_exists($item, 'set_subtotal_tax')) {
+                $item->set_subtotal_tax($lineTax);
+            }
+            if (method_exists($item, 'set_total_tax')) {
+                $item->set_total_tax($lineTax);
+            }
+            if (!empty($itemTaxes['total']) && method_exists($item, 'set_taxes')) {
+                $item->set_taxes($itemTaxes);
+            }
             $item->add_meta_data('_hb_ucs_subscription_base_product_id', $baseProductId, true);
             if ($baseVariationId > 0) {
                 $item->add_meta_data('_hb_ucs_subscription_base_variation_id', $baseVariationId, true);
@@ -6102,6 +7383,7 @@ JS;
             $order->add_item($item);
         }
 
+        $this->apply_subscription_fee_lines_to_order($order, $subId, $parentOrder);
         $this->apply_subscription_shipping_lines_to_order($order, $subId, $parentOrder);
 
         $order->update_meta_data(self::ORDER_META_SUBSCRIPTION_ID, (string) $subId);
@@ -6123,7 +7405,21 @@ JS;
         }
 
         if (function_exists('wc_tax_enabled') && wc_tax_enabled()) {
-            $order->calculate_taxes();
+            foreach ($order->get_items('fee') as $index => $feeItem) {
+                $feeLines = array_values($this->get_effective_subscription_fee_lines($subId, $parentOrder));
+                if (isset($feeLines[$index]['taxes']) && !empty($feeLines[$index]['taxes']) && method_exists($feeItem, 'set_taxes')) {
+                    $feeItem->set_taxes((array) $feeLines[$index]['taxes']);
+                }
+            }
+            foreach ($order->get_items('shipping') as $index => $shippingItem) {
+                $shippingLines = array_values($this->get_effective_subscription_shipping_lines($subId, $parentOrder));
+                if (isset($shippingLines[$index]['taxes']) && !empty($shippingLines[$index]['taxes']) && method_exists($shippingItem, 'set_taxes')) {
+                    $shippingItem->set_taxes((array) $shippingLines[$index]['taxes']);
+                }
+            }
+            if (method_exists($order, 'update_taxes')) {
+                $order->update_taxes();
+            }
         }
         $order->calculate_totals(false);
         if ($requiresMandate) {
@@ -6144,6 +7440,7 @@ JS;
             $created = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
             $createdTs = $created ? (int) $created->getTimestamp() : time();
             update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $createdTs);
+            $this->sync_subscription_order_type_record($subId);
             return (int) $order->get_id();
         }
 
@@ -6194,8 +7491,41 @@ JS;
         $created = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
         $createdTs = $created ? (int) $created->getTimestamp() : time();
         update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $createdTs);
+        $this->sync_subscription_order_type_record($subId);
 
         return (int) $order->get_id();
+    }
+
+    private function get_latest_renewal_order_id_for_subscription(int $subId): int {
+        if ($subId <= 0 || !function_exists('wc_get_orders')) {
+            return 0;
+        }
+
+        $orderIds = wc_get_orders([
+            'limit' => 1,
+            'return' => 'ids',
+            'orderby' => 'date',
+            'order' => 'DESC',
+            'status' => array_keys(wc_get_order_statuses()),
+            'meta_query' => [
+                [
+                    'key' => self::ORDER_META_SUBSCRIPTION_ID,
+                    'value' => (string) $subId,
+                    'compare' => '=',
+                ],
+                [
+                    'key' => self::ORDER_META_RENEWAL,
+                    'value' => '1',
+                    'compare' => '=',
+                ],
+            ],
+        ]);
+
+        if (!is_array($orderIds) || empty($orderIds[0])) {
+            return 0;
+        }
+
+        return (int) $orderIds[0];
     }
 
     public function maybe_mark_manual_renewal_paid(int $orderId): void {
@@ -6236,6 +7566,7 @@ JS;
         $nextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
         if ($nextPayment > time()) {
             update_post_meta($subId, self::SUB_META_STATUS, 'active');
+            $this->sync_subscription_order_type_record($subId);
         } else {
             $this->mark_subscription_paid_and_advance($subId);
         }
@@ -6268,6 +7599,23 @@ JS;
             ];
         }
         return $out;
+    }
+
+    private function is_checkout_draft_order($order): bool {
+        if (!$order || !is_object($order)) {
+            return false;
+        }
+
+        $status = method_exists($order, 'get_status') ? (string) $order->get_status() : '';
+        if ($status !== '') {
+            $normalizedStatus = strpos($status, 'wc-') === 0 ? substr($status, 3) : $status;
+            return in_array($normalizedStatus, ['checkout-draft', 'draft', 'auto-draft'], true);
+        }
+
+        $postStatus = method_exists($order, 'get_id') ? (string) get_post_status((int) $order->get_id()) : '';
+        $normalizedPostStatus = strpos($postStatus, 'wc-') === 0 ? substr($postStatus, 3) : $postStatus;
+
+        return in_array($normalizedPostStatus, ['checkout-draft', 'draft', 'auto-draft'], true);
     }
 
     public function render_product_fields(): void {

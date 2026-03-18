@@ -37,17 +37,12 @@ class Settings {
         add_action('admin_post_hb_ucs_save_invoice_email', [$this, 'handle_save_invoice_email']);
         add_action('admin_post_hb_ucs_save_customer_order_note', [$this, 'handle_save_customer_order_note']);
         add_action('admin_post_hb_ucs_save_subscriptions', [$this, 'handle_save_subscriptions']);
+    }
 
-        // Zorg voor QLS defaults bij eerste run
+    public function seed_default_options(): void {
         add_option(self::OPT_QLS, $this->defaults_qls());
-
-        // Defaults voor Invoice e-mail settings
         add_option(self::OPT_INVOICE_EMAIL, $this->defaults_invoice_email());
-
-        // Defaults voor Klantnotitie module settings
         add_option(self::OPT_CUSTOMER_ORDER_NOTE, $this->defaults_customer_order_note());
-
-        // Defaults voor Subscriptions module settings
         add_option(self::OPT_SUBSCRIPTIONS, $this->defaults_subscriptions());
     }
 

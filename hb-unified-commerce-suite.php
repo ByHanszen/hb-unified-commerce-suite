@@ -37,6 +37,10 @@ register_activation_hook(__FILE__, function () {
     $opt = get_option('hb_ucs_settings', []);
     update_option('hb_ucs_settings', array_replace_recursive($defaults, is_array($opt)?$opt:[]));
 
+    if (class_exists('HB\\UCS\\Core\\Settings')) {
+        (new \HB\UCS\Core\Settings())->seed_default_options();
+    }
+
     // Store current plugin version for update tracking.
     if (defined('HB_UCS_VERSION')) {
         update_option('hb_ucs_version', HB_UCS_VERSION);
