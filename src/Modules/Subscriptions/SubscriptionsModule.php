@@ -610,25 +610,36 @@ class SubscriptionsModule {
 
         $order = function_exists('wc_get_order') ? wc_get_order($subId) : null;
         if ($order && is_object($order) && method_exists($order, 'get_meta')) {
-            if ($context['paymentId'] === '') {
-                $context['paymentId'] = (string) $order->get_meta('_mollie_payment_id', true);
+            $orderContext = $this->extract_mollie_context_from_order($order, true);
+            foreach ($orderContext as $key => $value) {
+                if (($context[$key] ?? '') === '' && $value !== '') {
+                    $context[$key] = $value;
+                }
             }
-            if ($context['customerId'] === '') {
-                $context['customerId'] = (string) $order->get_meta('_mollie_customer_id', true);
-            }
-            if ($context['mandateId'] === '') {
-                $context['mandateId'] = (string) $order->get_meta('_mollie_mandate_id', true);
-            }
-            $context['paymentMode'] = (string) $order->get_meta('_mollie_payment_mode', true);
         }
 
         $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
         $parentOrder = ($parentOrderId > 0 && function_exists('wc_get_order')) ? wc_get_order($parentOrderId) : null;
         if ($parentOrder && is_object($parentOrder)) {
-            $parentContext = $this->extract_mollie_context_from_order($parentOrder, false);
+            $parentContext = $this->extract_mollie_context_from_order($parentOrder, true);
             foreach ($parentContext as $key => $value) {
                 if (($context[$key] ?? '') === '' && $value !== '') {
                     $context[$key] = $value;
+                }
+            }
+        }
+
+        $sourceId = (int) get_post_meta($subId, self::SUB_META_WCS_SOURCE_ID, true);
+        if ($sourceId > 0 && $this->wcs_available() && function_exists('wcs_get_subscription')) {
+            $sourceSubscription = wcs_get_subscription($sourceId);
+            if ($sourceSubscription && is_object($sourceSubscription)) {
+                $sourceParentOrderId = method_exists($sourceSubscription, 'get_parent_id') ? (int) $sourceSubscription->get_parent_id() : 0;
+                $sourceParentOrder = $sourceParentOrderId > 0 && function_exists('wc_get_order') ? wc_get_order($sourceParentOrderId) : null;
+                $sourceContext = $this->extract_mollie_customer_and_mandate_from_wcs_subscription($sourceSubscription, $sourceParentOrder);
+                foreach ($sourceContext as $key => $value) {
+                    if (($context[$key] ?? '') === '' && $value !== '') {
+                        $context[$key] = $value;
+                    }
                 }
             }
         }
