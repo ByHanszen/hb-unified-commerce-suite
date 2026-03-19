@@ -107,6 +107,7 @@ class SubscriptionsModule {
         if (is_admin()) {
             add_action('admin_notices', [$this, 'maybe_notice_missing_wcs']);
             add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
+            add_action('woocommerce_admin_order_data_after_billing_address', [$this, 'render_subscription_mollie_admin_fields'], 20, 1);
             add_action('wp_ajax_hb_ucs_subscription_product_data', [$this, 'handle_subscription_product_data_ajax']);
             add_action('wp_ajax_hb_ucs_subscription_customer_details', [$this, 'handle_subscription_customer_details_ajax']);
             add_action('wp_ajax_hb_ucs_subscription_add_tax_rate', [$this, 'handle_subscription_add_tax_rate_ajax']);
@@ -692,6 +693,49 @@ class SubscriptionsModule {
         }
 
         return $context;
+    }
+
+    public function render_subscription_mollie_admin_fields($order): void {
+        if (!$order || !is_object($order) || !method_exists($order, 'get_type') || !method_exists($order, 'get_id')) {
+            return;
+        }
+
+        if ((string) $order->get_type() !== $this->get_subscription_order_type()->get_type()) {
+            return;
+        }
+
+        $subId = (int) $order->get_id();
+        if ($subId <= 0) {
+            return;
+        }
+
+        $mollieMeta = $this->get_subscription_mollie_meta_context($subId);
+        $paymentMethodTitle = method_exists($order, 'get_payment_method_title') ? (string) $order->get_payment_method_title() : '';
+        if ($paymentMethodTitle === '') {
+            $paymentMethodTitle = (string) get_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, true);
+        }
+
+        $fields = [
+            __('Betaalmethode', 'hb-ucs') => $paymentMethodTitle,
+            __('Mollie Payment ID', 'hb-ucs') => (string) ($mollieMeta['paymentId'] ?? ''),
+            __('Mollie Payment Mode', 'hb-ucs') => (string) ($mollieMeta['paymentMode'] ?? ''),
+            __('Mollie Customer ID', 'hb-ucs') => (string) ($mollieMeta['customerId'] ?? ''),
+            __('Mollie Mandate ID', 'hb-ucs') => (string) ($mollieMeta['mandateId'] ?? ''),
+        ];
+
+        $visibleFields = array_filter($fields, static function ($value): bool {
+            return (string) $value !== '';
+        });
+
+        if (empty($visibleFields)) {
+            return;
+        }
+
+        echo '<div class="hb-ucs-subscription-mollie-admin-fields">';
+        foreach ($visibleFields as $label => $value) {
+            echo '<p><strong>' . esc_html($label) . ':</strong> ' . esc_html((string) $value) . '</p>';
+        }
+        echo '</div>';
     }
 
     private function get_subscription_admin_payment_method_options(): array {
