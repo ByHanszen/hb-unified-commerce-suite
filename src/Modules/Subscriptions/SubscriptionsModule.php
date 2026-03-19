@@ -14,7 +14,7 @@ class SubscriptionsModule {
     private const ORDER_META_CONTAINS_SUBSCRIPTION = '_hb_ucs_contains_subscription';
 
     private const META_ENABLED = '_hb_ucs_subs_enabled';
-    private const META_PRICE_PREFIX = '_hb_ucs_subs_price_'; // suffix: 1w|2w|3w|4w
+    private const META_PRICE_PREFIX = '_hb_ucs_subs_price_'; // suffix: 1w|2w|3w|4w|6w
 
     private const META_DISC_ENABLED_PREFIX = '_hb_ucs_subs_disc_enabled_';
     private const META_DISC_TYPE_PREFIX = '_hb_ucs_subs_disc_type_';      // percent|fixed
@@ -3924,6 +3924,111 @@ class SubscriptionsModule {
         }
     }
 
+    private function get_current_mollie_payment_mode(): string {
+        $testMode = get_option('mollie-payments-for-woocommerce_test_mode_enabled');
+        $isTest = ((string) $testMode) === 'yes' || ((string) $testMode) === '1';
+
+        return $isTest ? 'test' : 'live';
+    }
+
+    private function extract_mollie_context_from_order($order, bool $resolveMandate = true): array {
+        $context = [
+            'customerId' => '',
+            'mandateId' => '',
+            'paymentId' => '',
+            'paymentMode' => '',
+        ];
+
+        if (!$order || !is_object($order) || !method_exists($order, 'get_meta')) {
+            return $context;
+        }
+
+        $context['customerId'] = (string) $order->get_meta('_mollie_customer_id', true);
+        $context['mandateId'] = (string) $order->get_meta('_mollie_mandate_id', true);
+        $context['paymentId'] = (string) $order->get_meta('_mollie_payment_id', true);
+        $context['paymentMode'] = (string) $order->get_meta('_mollie_payment_mode', true);
+
+        if ($resolveMandate && ($context['customerId'] === '' || $context['mandateId'] === '') && $context['paymentId'] !== '') {
+            $cm = $this->mollie_get_customer_and_mandate($context['paymentId']);
+            if ($context['customerId'] === '' && $cm['customerId'] !== '') {
+                $context['customerId'] = $cm['customerId'];
+            }
+            if ($context['mandateId'] === '' && $cm['mandateId'] !== '') {
+                $context['mandateId'] = $cm['mandateId'];
+            }
+        }
+
+        if ($context['paymentMode'] === '' && $context['paymentId'] !== '') {
+            $context['paymentMode'] = $this->get_current_mollie_payment_mode();
+        }
+
+        return $context;
+    }
+
+    private function hydrate_subscription_order_payment_data(int $subId, string $paymentMethod = '', string $paymentMethodTitle = '', array $mollie = [], $fallbackOrder = null): void {
+        if ($subId <= 0 || !function_exists('wc_get_order')) {
+            return;
+        }
+
+        $order = wc_get_order($subId);
+        if (!$order || !is_object($order)) {
+            return;
+        }
+
+        if (($paymentMethod === '' || $paymentMethodTitle === '') && $fallbackOrder && is_object($fallbackOrder)) {
+            $payment = $this->get_order_payment_method_data($fallbackOrder);
+            if ($paymentMethod === '') {
+                $paymentMethod = (string) ($payment['method'] ?? '');
+            }
+            if ($paymentMethodTitle === '') {
+                $paymentMethodTitle = (string) ($payment['title'] ?? '');
+            }
+        }
+
+        $mollieContext = [
+            'customerId' => (string) ($mollie['customerId'] ?? ''),
+            'mandateId' => (string) ($mollie['mandateId'] ?? ''),
+            'paymentId' => (string) ($mollie['paymentId'] ?? ''),
+            'paymentMode' => (string) ($mollie['paymentMode'] ?? ''),
+        ];
+
+        if ($fallbackOrder && is_object($fallbackOrder)) {
+            $fallbackContext = $this->extract_mollie_context_from_order($fallbackOrder);
+            foreach ($fallbackContext as $key => $value) {
+                if ($mollieContext[$key] === '' && $value !== '') {
+                    $mollieContext[$key] = $value;
+                }
+            }
+        }
+
+        if ($paymentMethod !== '' && method_exists($order, 'set_payment_method')) {
+            $order->set_payment_method($paymentMethod);
+        }
+        if ($paymentMethodTitle !== '' && method_exists($order, 'set_payment_method_title')) {
+            $order->set_payment_method_title($paymentMethodTitle);
+        }
+
+        $metaMap = [
+            '_mollie_customer_id' => $mollieContext['customerId'],
+            '_mollie_mandate_id' => $mollieContext['mandateId'],
+            '_mollie_payment_id' => $mollieContext['paymentId'],
+            '_mollie_payment_mode' => $mollieContext['paymentMode'],
+            self::ORDER_META_MOLLIE_PAYMENT_ID => $mollieContext['paymentId'],
+        ];
+
+        foreach ($metaMap as $metaKey => $metaValue) {
+            if ($metaValue !== '') {
+                $order->update_meta_data($metaKey, $metaValue);
+            } else {
+                $order->delete_meta_data($metaKey);
+            }
+        }
+
+        if (method_exists($order, 'save')) {
+            $order->save();
+        }
+    }
+
     private function apply_subscription_fee_lines_to_order($order, int $subId, $fallbackOrder = null): void {
         if (!$order || !is_object($order) || !method_exists($order, 'add_item')) {
             return;
@@ -4881,8 +4986,11 @@ class SubscriptionsModule {
         $this->persist_subscription_fee_lines($subId, $feeLines);
         $this->persist_subscription_shipping_lines($subId, $shippingLines);
 
+        $parentOrder = $parentOrderId > 0 ? wc_get_order($parentOrderId) : null;
+
         $this->sync_subscription_order_type_record($subId);
-        $this->hydrate_subscription_order_customer_data($subId, $userId, $parentOrderId > 0 ? wc_get_order($parentOrderId) : null);
+        $this->hydrate_subscription_order_customer_data($subId, $userId, $parentOrder);
+        $this->hydrate_subscription_order_payment_data($subId, $paymentMethod, $paymentMethodTitle, $mollie, $parentOrder);
 
         return $successResult;
     }
@@ -5042,7 +5150,7 @@ class SubscriptionsModule {
             return '';
         }
 
-        foreach ($this->get_enabled_frequencies() as $scheme => $row) {
+        foreach ($this->get_configured_frequencies(false) as $scheme => $row) {
             if ((int) ($row['interval'] ?? 0) === $interval && (string) ($row['period'] ?? '') === $period) {
                 return (string) $scheme;
             }
@@ -5153,11 +5261,13 @@ class SubscriptionsModule {
         $customerId = '';
         $mandateId = '';
         $paymentId = '';
+        $paymentMode = '';
 
         if ($subscription && is_object($subscription) && method_exists($subscription, 'get_meta')) {
             $customerId = (string) $subscription->get_meta('_mollie_customer_id', true);
             $mandateId = (string) $subscription->get_meta('_mollie_mandate_id', true);
             $paymentId = (string) $subscription->get_meta('_mollie_payment_id', true);
+            $paymentMode = (string) $subscription->get_meta('_mollie_payment_mode', true);
         }
 
         if (($customerId === '' || $mandateId === '') && $parentOrder && is_object($parentOrder) && method_exists($parentOrder, 'get_meta')) {
@@ -5169,6 +5279,9 @@ class SubscriptionsModule {
             }
             if ($paymentId === '') {
                 $paymentId = (string) $parentOrder->get_meta('_mollie_payment_id', true);
+            }
+            if ($paymentMode === '') {
+                $paymentMode = (string) $parentOrder->get_meta('_mollie_payment_mode', true);
             }
             if ($customerId === '' || $mandateId === '') {
                 if ($paymentId !== '') {
@@ -5183,10 +5296,15 @@ class SubscriptionsModule {
             }
         }
 
+        if ($paymentMode === '' && $paymentId !== '') {
+            $paymentMode = $this->get_current_mollie_payment_mode();
+        }
+
         return [
             'customerId' => $customerId,
             'mandateId' => $mandateId,
             'paymentId' => $paymentId,
+            'paymentMode' => $paymentMode,
         ];
     }
 
@@ -7031,7 +7149,7 @@ JS;
 
         $freqsRaw = isset($opt['frequencies']) && is_array($opt['frequencies']) ? $opt['frequencies'] : [];
         $freqs = [];
-        foreach (['1w' => 1, '2w' => 2, '3w' => 3, '4w' => 4] as $key => $interval) {
+        foreach (['1w' => 1, '2w' => 2, '3w' => 3, '4w' => 4, '6w' => 6] as $key => $interval) {
             $row = isset($freqsRaw[$key]) && is_array($freqsRaw[$key]) ? $freqsRaw[$key] : [];
             $freqs[$key] = [
                 'enabled' => empty($row['enabled']) ? 0 : 1,
@@ -7087,20 +7205,9 @@ JS;
         $paymentMethodTitle = (string) ($payment['title'] ?? '');
         $requiresMandate = $this->payment_method_requires_mandate($paymentMethod);
 
-        $mCustomer = (string) $order->get_meta('_mollie_customer_id', true);
-        $mMandate = (string) $order->get_meta('_mollie_mandate_id', true);
-        if ($requiresMandate && ($mCustomer === '' || $mMandate === '')) {
-            $molliePaymentId = (string) $order->get_meta('_mollie_payment_id', true);
-            if ($molliePaymentId !== '') {
-                $cm = $this->mollie_get_customer_and_mandate($molliePaymentId);
-                if ($mCustomer === '' && $cm['customerId'] !== '') {
-                    $mCustomer = $cm['customerId'];
-                }
-                if ($mMandate === '' && $cm['mandateId'] !== '') {
-                    $mMandate = $cm['mandateId'];
-                }
-            }
-        }
+        $mollieContext = $this->extract_mollie_context_from_order($order, $requiresMandate);
+        $mCustomer = (string) ($mollieContext['customerId'] ?? '');
+        $mMandate = (string) ($mollieContext['mandateId'] ?? '');
 
         $createdAny = false;
         foreach ($order->get_items('line_item') as $itemId => $item) {
@@ -7125,7 +7232,7 @@ JS;
             $lineTotal = (float) (method_exists($item, 'get_total') ? $item->get_total() : 0.0);
             $unit = $qty > 0 ? ($lineTotal / $qty) : $lineTotal;
 
-            $freqs = $this->get_enabled_frequencies();
+            $freqs = $this->get_configured_frequencies(false);
             $interval = isset($freqs[$scheme]['interval']) ? (int) $freqs[$scheme]['interval'] : 1;
             $period = isset($freqs[$scheme]['period']) ? (string) $freqs[$scheme]['period'] : 'week';
             if ($interval <= 0) {
@@ -7180,15 +7287,19 @@ JS;
             update_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, $paymentMethodTitle);
             update_post_meta($subId, self::SUB_META_BILLING, $this->get_subscription_address_snapshot($subId, 'billing', (int) $order->get_user_id(), $order));
             update_post_meta($subId, self::SUB_META_SHIPPING, $this->get_subscription_address_snapshot($subId, 'shipping', (int) $order->get_user_id(), $order));
-            if ($requiresMandate && $mCustomer !== '') {
+            if ($mCustomer !== '') {
                 update_post_meta($subId, self::SUB_META_MOLLIE_CUSTOMER_ID, $mCustomer);
             }
-            if ($requiresMandate && $mMandate !== '') {
+            if ($mMandate !== '') {
                 update_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID, $mMandate);
+            }
+            if (!empty($mollieContext['paymentId'])) {
+                update_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, (string) $mollieContext['paymentId']);
             }
 
             $this->hydrate_subscription_order_customer_data($subId, (int) $order->get_user_id(), $order);
             $this->sync_subscription_order_type_record($subId);
+            $this->hydrate_subscription_order_payment_data($subId, $paymentMethod, $paymentMethodTitle, $mollieContext, $order);
 
             if ((int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true) <= 0) {
                 $order->update_meta_data(self::ORDER_META_SUBSCRIPTION_ID, (string) $subId);
@@ -7275,6 +7386,10 @@ JS;
                     update_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID, $mMandate);
                     update_post_meta($subId, self::SUB_META_STATUS, 'active');
                     $this->sync_subscription_order_type_record($subId);
+                    $this->hydrate_subscription_order_payment_data($subId, '', '', [
+                        'customerId' => $mCustomer,
+                        'mandateId' => $mMandate,
+                    ], $parentOrder);
                 }
             }
         }
@@ -7615,14 +7730,14 @@ JS;
         }
     }
 
-    private function get_enabled_frequencies(): array {
+    private function get_configured_frequencies(bool $enabledOnly = true): array {
         $settings = $this->get_settings();
         $freqs = (array) ($settings['frequencies'] ?? []);
 
         $out = [];
-        foreach (['1w', '2w', '3w', '4w'] as $key) {
+        foreach (['1w', '2w', '3w', '4w', '6w'] as $key) {
             $row = isset($freqs[$key]) && is_array($freqs[$key]) ? $freqs[$key] : [];
-            if (empty($row['enabled'])) {
+            if ($enabledOnly && empty($row['enabled'])) {
                 continue;
             }
             $label = (string) ($row['label'] ?? $key);
@@ -7638,6 +7753,10 @@ JS;
             ];
         }
         return $out;
+    }
+
+    private function get_enabled_frequencies(): array {
+        return $this->get_configured_frequencies(true);
     }
 
     private function is_checkout_draft_order($order): bool {
@@ -8567,7 +8686,7 @@ JS;
 
     private function get_or_create_child_product_id(int $baseProductId, string $scheme): int {
         $scheme = sanitize_key($scheme);
-        if (!in_array($scheme, ['1w', '2w', '3w', '4w'], true)) {
+        if (!in_array($scheme, ['1w', '2w', '3w', '4w', '6w'], true)) {
             return 0;
         }
 
@@ -8618,7 +8737,7 @@ JS;
 
     private function get_or_create_child_product_id_for_variation(int $parentProductId, int $variationId, string $scheme): int {
         $scheme = sanitize_key($scheme);
-        if (!in_array($scheme, ['1w', '2w', '3w', '4w'], true)) {
+        if (!in_array($scheme, ['1w', '2w', '3w', '4w', '6w'], true)) {
             return 0;
         }
 
