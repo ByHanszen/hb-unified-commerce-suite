@@ -4849,8 +4849,8 @@ class SubscriptionsModule {
         update_post_meta($subId, self::SUB_META_QTY, (string) ($first['qty'] ?? 1));
         update_post_meta($subId, self::SUB_META_PAYMENT_METHOD, $paymentMethod);
         update_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, $paymentMethodTitle);
-        update_post_meta($subId, self::SUB_META_BILLING, $this->get_wcs_subscription_address_snapshot($subscription, 'billing'));
-        update_post_meta($subId, self::SUB_META_SHIPPING, $this->get_wcs_subscription_address_snapshot($subscription, 'shipping'));
+        update_post_meta($subId, self::SUB_META_BILLING, $this->get_wcs_subscription_address_snapshot($subscription, 'billing', $parentOrderId > 0 ? wc_get_order($parentOrderId) : null, $userId));
+        update_post_meta($subId, self::SUB_META_SHIPPING, $this->get_wcs_subscription_address_snapshot($subscription, 'shipping', $parentOrderId > 0 ? wc_get_order($parentOrderId) : null, $userId));
         if ($trialEndTs > 0) {
             update_post_meta($subId, self::SUB_META_TRIAL_END, (string) $trialEndTs);
         }
@@ -4861,11 +4861,20 @@ class SubscriptionsModule {
             update_post_meta($subId, self::SUB_META_LAST_ORDER_ID, (string) $parentOrderId);
             update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $startTs);
         }
-        if ($requiresMandate && $mollie['customerId'] !== '') {
+        if ($mollie['customerId'] !== '') {
             update_post_meta($subId, self::SUB_META_MOLLIE_CUSTOMER_ID, $mollie['customerId']);
+        } else {
+            delete_post_meta($subId, self::SUB_META_MOLLIE_CUSTOMER_ID);
         }
-        if ($requiresMandate && $mollie['mandateId'] !== '') {
+        if ($mollie['mandateId'] !== '') {
             update_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID, $mollie['mandateId']);
+        } else {
+            delete_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID);
+        }
+        if (!empty($mollie['paymentId'])) {
+            update_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, (string) $mollie['paymentId']);
+        } else {
+            delete_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID);
         }
 
         $this->persist_subscription_items($subId, $items);
@@ -4873,6 +4882,7 @@ class SubscriptionsModule {
         $this->persist_subscription_shipping_lines($subId, $shippingLines);
 
         $this->sync_subscription_order_type_record($subId);
+        $this->hydrate_subscription_order_customer_data($subId, $userId, $parentOrderId > 0 ? wc_get_order($parentOrderId) : null);
 
         return $successResult;
     }
@@ -5142,10 +5152,12 @@ class SubscriptionsModule {
     private function extract_mollie_customer_and_mandate_from_wcs_subscription($subscription, $parentOrder = null): array {
         $customerId = '';
         $mandateId = '';
+        $paymentId = '';
 
         if ($subscription && is_object($subscription) && method_exists($subscription, 'get_meta')) {
             $customerId = (string) $subscription->get_meta('_mollie_customer_id', true);
             $mandateId = (string) $subscription->get_meta('_mollie_mandate_id', true);
+            $paymentId = (string) $subscription->get_meta('_mollie_payment_id', true);
         }
 
         if (($customerId === '' || $mandateId === '') && $parentOrder && is_object($parentOrder) && method_exists($parentOrder, 'get_meta')) {
@@ -5155,8 +5167,10 @@ class SubscriptionsModule {
             if ($mandateId === '') {
                 $mandateId = (string) $parentOrder->get_meta('_mollie_mandate_id', true);
             }
-            if ($customerId === '' || $mandateId === '') {
+            if ($paymentId === '') {
                 $paymentId = (string) $parentOrder->get_meta('_mollie_payment_id', true);
+            }
+            if ($customerId === '' || $mandateId === '') {
                 if ($paymentId !== '') {
                     $cm = $this->mollie_get_customer_and_mandate($paymentId);
                     if ($customerId === '' && $cm['customerId'] !== '') {
@@ -5172,21 +5186,46 @@ class SubscriptionsModule {
         return [
             'customerId' => $customerId,
             'mandateId' => $mandateId,
+            'paymentId' => $paymentId,
         ];
     }
 
-    private function get_wcs_subscription_address_snapshot($subscription, string $type): array {
-        if (!$subscription || !is_object($subscription) || !method_exists($subscription, 'get_address')) {
-            return [];
+    private function get_wcs_subscription_address_snapshot($subscription, string $type, $fallbackOrder = null, int $userId = 0): array {
+        $address = [];
+
+        if ($subscription && is_object($subscription) && method_exists($subscription, 'get_address')) {
+            $address = (array) $subscription->get_address($type);
+            if ($type === 'billing') {
+                $address['email'] = method_exists($subscription, 'get_billing_email') ? (string) $subscription->get_billing_email() : '';
+                $address['phone'] = method_exists($subscription, 'get_billing_phone') ? (string) $subscription->get_billing_phone() : '';
+            }
         }
 
-        $address = (array) $subscription->get_address($type);
-        if ($type === 'billing') {
-            $address['email'] = method_exists($subscription, 'get_billing_email') ? (string) $subscription->get_billing_email() : '';
-            $address['phone'] = method_exists($subscription, 'get_billing_phone') ? (string) $subscription->get_billing_phone() : '';
+        $hasMeaningfulAddress = false;
+        foreach (['first_name', 'last_name', 'company', 'address_1', 'address_2', 'city', 'state', 'postcode', 'country', 'email', 'phone'] as $field) {
+            if (!empty($address[$field])) {
+                $hasMeaningfulAddress = true;
+                break;
+            }
         }
 
-        return $address;
+        if (!$hasMeaningfulAddress && $fallbackOrder && is_object($fallbackOrder) && method_exists($fallbackOrder, 'get_address')) {
+            $fallbackAddress = (array) $fallbackOrder->get_address($type);
+            if ($type === 'billing') {
+                $fallbackAddress['email'] = method_exists($fallbackOrder, 'get_billing_email') ? (string) $fallbackOrder->get_billing_email() : '';
+                $fallbackAddress['phone'] = method_exists($fallbackOrder, 'get_billing_phone') ? (string) $fallbackOrder->get_billing_phone() : '';
+            }
+            $address = $fallbackAddress;
+            $hasMeaningfulAddress = !empty(array_filter($address, static function ($value) {
+                return $value !== null && $value !== '';
+            }));
+        }
+
+        if (!$hasMeaningfulAddress && $userId > 0) {
+            $address = $this->build_user_contact_snapshot($userId, $type);
+        }
+
+        return is_array($address) ? $address : [];
     }
 
     private function recurring_enabled(): bool {
