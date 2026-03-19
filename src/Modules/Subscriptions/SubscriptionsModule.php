@@ -3329,6 +3329,7 @@ class SubscriptionsModule {
         }
 
         if (!empty($items)) {
+            $items = $this->maybe_repair_migrated_wcs_subscription_items($subId, $items);
             return $items;
         }
 
@@ -3340,6 +3341,55 @@ class SubscriptionsModule {
         ]);
 
         return $legacyItem ? [$legacyItem] : [];
+    }
+
+    private function maybe_repair_migrated_wcs_subscription_items(int $subId, array $items): array {
+        if ($subId <= 0 || empty($items) || (int) get_post_meta($subId, self::SUB_META_WCS_SOURCE_ID, true) <= 0) {
+            return $items;
+        }
+
+        $repaired = [];
+        $didRepair = false;
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $taxes = $this->normalize_subscription_item_taxes($item['taxes'] ?? []);
+            $qty = max(1, (int) ($item['qty'] ?? 1));
+            $unitPrice = isset($item['unit_price']) ? (float) wc_format_decimal((string) $item['unit_price']) : 0.0;
+            $productId = (int) (($item['base_variation_id'] ?? 0) ?: ($item['base_product_id'] ?? 0));
+
+            if (
+                empty($item['price_includes_tax'])
+                && $productId > 0
+                && $unitPrice > 0
+                && !empty($taxes['total'])
+                && $this->should_subscription_item_price_be_treated_as_including_tax($productId, $unitPrice, $qty, $taxes)
+            ) {
+                $storageUnitPrice = $this->get_subscription_item_storage_unit_price(array_merge($item, [
+                    'unit_price' => $unitPrice,
+                    'price_includes_tax' => 1,
+                    'taxes' => $taxes,
+                ]));
+
+                if ($storageUnitPrice > 0 && abs($storageUnitPrice - $unitPrice) > 0.0001) {
+                    $item['unit_price'] = $storageUnitPrice;
+                    $item['price_includes_tax'] = 0;
+                    $item['taxes'] = $taxes;
+                    $didRepair = true;
+                }
+            }
+
+            $repaired[] = $item;
+        }
+
+        if ($didRepair) {
+            $this->persist_subscription_items($subId, $repaired);
+        }
+
+        return $repaired;
     }
 
     private function persist_subscription_items(int $subId, array $items): void {
@@ -3373,7 +3423,7 @@ class SubscriptionsModule {
         update_post_meta($subId, self::SUB_META_BASE_PRODUCT_ID, (string) ($first['base_product_id'] ?? 0));
         update_post_meta($subId, self::SUB_META_BASE_VARIATION_ID, (string) ($first['base_variation_id'] ?? 0));
         update_post_meta($subId, self::SUB_META_QTY, (string) ($first['qty'] ?? 1));
-        update_post_meta($subId, self::SUB_META_UNIT_PRICE, (string) wc_format_decimal((string) ($first['unit_price'] ?? 0.0), wc_get_price_decimals()));
+    update_post_meta($subId, self::SUB_META_UNIT_PRICE, (string) wc_format_decimal((string) $this->get_subscription_item_storage_unit_price($first), wc_get_price_decimals()));
     }
 
     private function normalize_subscription_shipping_line(array $line): ?array {
@@ -5092,7 +5142,7 @@ class SubscriptionsModule {
         update_post_meta($subId, self::SUB_META_INTERVAL, (string) $interval);
         update_post_meta($subId, self::SUB_META_PERIOD, $period);
         update_post_meta($subId, self::SUB_META_NEXT_PAYMENT, (string) max(0, $nextPaymentTs));
-        update_post_meta($subId, self::SUB_META_UNIT_PRICE, (string) wc_format_decimal((string) ($first['unit_price'] ?? 0.0), wc_get_price_decimals()));
+        update_post_meta($subId, self::SUB_META_UNIT_PRICE, (string) wc_format_decimal((string) $this->get_subscription_item_storage_unit_price($first), wc_get_price_decimals()));
         update_post_meta($subId, self::SUB_META_QTY, (string) ($first['qty'] ?? 1));
         update_post_meta($subId, self::SUB_META_PAYMENT_METHOD, $paymentMethod);
         update_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, $paymentMethodTitle);
@@ -5371,9 +5421,7 @@ class SubscriptionsModule {
             }
 
             $lineTotal = method_exists($item, 'get_total') ? (float) $item->get_total() : 0.0;
-            $lineTax = method_exists($item, 'get_total_tax') ? (float) $item->get_total_tax() : 0.0;
-            $lineGross = $lineTotal + $lineTax;
-            $unitPrice = $qty > 0 ? ($lineGross / $qty) : $lineGross;
+            $unitPrice = $qty > 0 ? ($lineTotal / $qty) : $lineTotal;
 
             $selectedAttributes = [];
             $product = $baseVariationId > 0 ? wc_get_product($baseVariationId) : wc_get_product($baseProductId);
@@ -5386,7 +5434,7 @@ class SubscriptionsModule {
                 'base_variation_id' => $baseVariationId,
                 'qty' => $qty,
                 'unit_price' => $unitPrice,
-                'price_includes_tax' => 1,
+                'price_includes_tax' => 0,
                 'taxes' => method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : [],
                 'selected_attributes' => $selectedAttributes,
             ]);
