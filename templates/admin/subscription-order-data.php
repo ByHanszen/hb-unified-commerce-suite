@@ -6,6 +6,12 @@
  */
 
 defined('ABSPATH') || exit;
+
+$mollieMeta = $this->get_subscription_mollie_meta_context($subId);
+$backendPaymentId = (string) ($mollieMeta['paymentId'] ?? '');
+$backendPaymentMode = (string) ($mollieMeta['paymentMode'] ?? '');
+$backendCustomerId = (string) ($mollieMeta['customerId'] ?? '');
+$backendMandateId = (string) ($mollieMeta['mandateId'] ?? '');
 ?>
 <div class="panel-wrap woocommerce">
     <input name="post_title" type="hidden" value="<?php echo esc_attr(get_the_title($subId)); ?>" />
@@ -101,17 +107,22 @@ defined('ABSPATH') || exit;
 
                 <p class="form-field form-field-wide">
                     <label><?php esc_html_e('Mollie customerId:', 'hb-ucs'); ?></label>
-                    <span><?php echo esc_html($customerId !== '' ? $customerId : '—'); ?></span>
+                    <span><?php echo esc_html($backendCustomerId !== '' ? $backendCustomerId : '—'); ?></span>
                 </p>
 
                 <p class="form-field form-field-wide">
                     <label><?php esc_html_e('Mandate ID:', 'hb-ucs'); ?></label>
-                    <span><?php echo esc_html($mandateId !== '' ? $mandateId : '—'); ?></span>
+                    <span><?php echo esc_html($backendMandateId !== '' ? $backendMandateId : '—'); ?></span>
+                </p>
+
+                <p class="form-field form-field-wide">
+                    <label><?php esc_html_e('Mollie payment mode:', 'hb-ucs'); ?></label>
+                    <span><?php echo esc_html($backendPaymentMode !== '' ? $backendPaymentMode : '—'); ?></span>
                 </p>
 
                 <p class="form-field form-field-wide">
                     <label><?php esc_html_e('Last payment ID:', 'hb-ucs'); ?></label>
-                    <span><?php echo esc_html($lastPaymentId !== '' ? $lastPaymentId : '—'); ?></span>
+                    <span><?php echo esc_html($backendPaymentId !== '' ? $backendPaymentId : '—'); ?></span>
                 </p>
             </div>
 
@@ -125,6 +136,10 @@ defined('ABSPATH') || exit;
                 <div class="address">
                     <?php $this->render_subscription_address_display('billing', $billingAddress); ?>
                     <p><strong><?php esc_html_e('Betaalmethode', 'hb-ucs'); ?>:</strong> <?php echo esc_html($paymentMethodLabel !== '' ? $paymentMethodLabel : '—'); ?></p>
+                    <p><strong><?php esc_html_e('Mollie Payment ID', 'hb-ucs'); ?>:</strong> <?php echo esc_html($backendPaymentId !== '' ? $backendPaymentId : '—'); ?></p>
+                    <p><strong><?php esc_html_e('Mollie Payment Mode', 'hb-ucs'); ?>:</strong> <?php echo esc_html($backendPaymentMode !== '' ? $backendPaymentMode : '—'); ?></p>
+                    <p><strong><?php esc_html_e('Mollie Customer ID', 'hb-ucs'); ?>:</strong> <?php echo esc_html($backendCustomerId !== '' ? $backendCustomerId : '—'); ?></p>
+                    <p><strong><?php esc_html_e('Mollie Mandate ID', 'hb-ucs'); ?>:</strong> <?php echo esc_html($backendMandateId !== '' ? $backendMandateId : '—'); ?></p>
                     <?php if ($userLink !== '') : ?>
                         <p><a href="<?php echo esc_url($userLink); ?>"><?php esc_html_e('Klantprofiel openen →', 'hb-ucs'); ?></a></p>
                     <?php endif; ?>
