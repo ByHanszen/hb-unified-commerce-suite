@@ -8,6 +8,10 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 ### Fixed
 - Abonnementen: Mollie Payment ID, Payment Mode, Customer ID en Mandate ID worden nu ook zichtbaar gerenderd in de backend orderdata-box onder Facturering op het abonnement ordertype-scherm.
 
+## [0.3.12] — 2026-03-19
+### Fixed
+- Abonnementen: naar de prullenbak verplaatste abonnementen krijgen nu weer een zichtbare `Prullenbak`-view op het custom ordertype-scherm, inclusief correcte query-state en telling.
+
 ## [0.3.11] — 2026-03-19
 ### Fixed
 - Abonnementen: WCS-migratie slaat artikelprijzen nu consistent exclusief btw op in de abonnements-opslaglaag, zodat gemigreerde incl.-btw bedragen niet meer in de ex.-btw velden van het abonnementsscherm terechtkomen.

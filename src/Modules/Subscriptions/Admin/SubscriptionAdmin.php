@@ -342,8 +342,9 @@ class SubscriptionAdmin {
 
     public function filter_order_type_view_links(array $views): array {
         $currentStatus = isset($_GET['hb_ucs_sub_status']) ? sanitize_key((string) wp_unslash($_GET['hb_ucs_sub_status'])) : '';
+        $currentOrderStatus = $this->get_current_order_type_status_request();
         $links = [];
-        $links['all'] = $this->build_order_type_view_link('', __('Alle', 'hb-ucs'), $this->count_subscriptions_for_status(''), $currentStatus === '');
+        $links['all'] = $this->build_order_type_view_link('', __('Alle', 'hb-ucs'), $this->count_subscriptions_for_status(''), $currentStatus === '' && $currentOrderStatus !== 'trash');
 
         foreach ($this->get_subscription_statuses() as $statusKey => $label) {
             $count = $this->count_subscriptions_for_status($statusKey);
@@ -352,6 +353,11 @@ class SubscriptionAdmin {
             }
 
             $links[$statusKey] = $this->build_order_type_view_link($statusKey, $label, $count, $currentStatus === $statusKey);
+        }
+
+        $trashCount = $this->count_subscriptions_in_trash();
+        if ($trashCount > 0 || $currentOrderStatus === 'trash') {
+            $links['trash'] = $this->build_order_type_trash_view_link(__('Prullenbak', 'hb-ucs'), $trashCount, $currentOrderStatus === 'trash');
         }
 
         return $links;
@@ -477,6 +483,58 @@ class SubscriptionAdmin {
         $url = add_query_arg($queryArgs, $this->get_order_type_list_url());
 
         return '<a href="' . esc_url($url) . '"' . ($current ? ' class="current" aria-current="page"' : '') . '>' . esc_html($label) . ' <span class="count">(' . esc_html((string) $count) . ')</span></a>';
+    }
+
+    private function build_order_type_trash_view_link(string $label, int $count, bool $current): string {
+        $queryArgs = [];
+
+        foreach (['hb_ucs_sub_scheme', 'orderby', 'order', 's'] as $key) {
+            if (!isset($_GET[$key])) {
+                continue;
+            }
+
+            $value = wp_unslash($_GET[$key]);
+            if (!is_scalar($value) || $value === '') {
+                continue;
+            }
+
+            $queryArgs[$key] = sanitize_text_field((string) $value);
+        }
+
+        $queryArgs['status'] = 'trash';
+        unset($queryArgs['hb_ucs_sub_status']);
+
+        $url = add_query_arg($queryArgs, $this->get_order_type_list_url());
+
+        return '<a href="' . esc_url($url) . '"' . ($current ? ' class="current" aria-current="page"' : '') . '>' . esc_html($label) . ' <span class="count">(' . esc_html((string) $count) . ')</span></a>';
+    }
+
+    private function count_subscriptions_in_trash(): int {
+        if (!function_exists('wc_get_orders')) {
+            return 0;
+        }
+
+        $orderIds = wc_get_orders([
+            'type' => $this->orderType->get_type(),
+            'status' => ['trash'],
+            'limit' => -1,
+            'return' => 'ids',
+        ]);
+
+        return is_array($orderIds) ? count($orderIds) : 0;
+    }
+
+    private function get_current_order_type_status_request(): string {
+        if (!isset($_GET['status'])) {
+            return '';
+        }
+
+        $status = wp_unslash($_GET['status']);
+        if (is_array($status)) {
+            $status = reset($status);
+        }
+
+        return is_scalar($status) ? sanitize_key((string) $status) : '';
     }
 
     public function filter_order_type_bulk_actions(array $actions): array {
