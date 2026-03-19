@@ -601,11 +601,18 @@ class SubscriptionsModule {
     }
 
     private function get_subscription_mollie_meta_context(int $subId): array {
-        $context = [
+        $originalContext = [
             'paymentId' => (string) get_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, true),
             'customerId' => (string) get_post_meta($subId, self::SUB_META_MOLLIE_CUSTOMER_ID, true),
             'mandateId' => (string) get_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID, true),
             'paymentMode' => '',
+        ];
+
+        $context = [
+            'paymentId' => $originalContext['paymentId'],
+            'customerId' => $originalContext['customerId'],
+            'mandateId' => $originalContext['mandateId'],
+            'paymentMode' => $originalContext['paymentMode'],
         ];
 
         $order = function_exists('wc_get_order') ? wc_get_order($subId) : null;
@@ -646,6 +653,29 @@ class SubscriptionsModule {
 
         if ($context['paymentMode'] === '' && $context['paymentId'] !== '') {
             $context['paymentMode'] = $this->get_current_mollie_payment_mode();
+        }
+
+        $needsPersist = $context['paymentId'] !== $originalContext['paymentId']
+            || $context['customerId'] !== $originalContext['customerId']
+            || $context['mandateId'] !== $originalContext['mandateId']
+            || $context['paymentMode'] !== $originalContext['paymentMode'];
+
+        if ($needsPersist) {
+            if ($context['paymentId'] !== '') {
+                update_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, $context['paymentId']);
+            }
+            if ($context['customerId'] !== '') {
+                update_post_meta($subId, self::SUB_META_MOLLIE_CUSTOMER_ID, $context['customerId']);
+            }
+            if ($context['mandateId'] !== '') {
+                update_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID, $context['mandateId']);
+            }
+
+            $paymentMethod = (string) get_post_meta($subId, self::SUB_META_PAYMENT_METHOD, true);
+            $paymentMethodTitle = (string) get_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, true);
+            $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
+            $parentOrder = ($parentOrderId > 0 && function_exists('wc_get_order')) ? wc_get_order($parentOrderId) : null;
+            $this->hydrate_subscription_order_payment_data($subId, $paymentMethod, $paymentMethodTitle, $context, $parentOrder);
         }
 
         return $context;
