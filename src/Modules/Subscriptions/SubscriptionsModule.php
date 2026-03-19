@@ -636,6 +636,19 @@ class SubscriptionsModule {
             }
         }
 
+        $lastOrderId = (int) get_post_meta($subId, self::SUB_META_LAST_ORDER_ID, true);
+        if ($lastOrderId > 0 && $lastOrderId !== $parentOrderId && function_exists('wc_get_order')) {
+            $lastOrder = wc_get_order($lastOrderId);
+            if ($lastOrder && is_object($lastOrder)) {
+                $lastOrderContext = $this->extract_mollie_context_from_order($lastOrder, true);
+                foreach ($lastOrderContext as $key => $value) {
+                    if (($context[$key] ?? '') === '' && $value !== '') {
+                        $context[$key] = $value;
+                    }
+                }
+            }
+        }
+
         $sourceId = (int) get_post_meta($subId, self::SUB_META_WCS_SOURCE_ID, true);
         if ($sourceId > 0 && $this->wcs_available() && function_exists('wcs_get_subscription')) {
             $sourceSubscription = wcs_get_subscription($sourceId);
@@ -5355,7 +5368,7 @@ class SubscriptionsModule {
             $paymentMode = (string) $subscription->get_meta('_mollie_payment_mode', true);
         }
 
-        if (($customerId === '' || $mandateId === '') && $parentOrder && is_object($parentOrder) && method_exists($parentOrder, 'get_meta')) {
+        if ($parentOrder && is_object($parentOrder) && method_exists($parentOrder, 'get_meta')) {
             if ($customerId === '') {
                 $customerId = (string) $parentOrder->get_meta('_mollie_customer_id', true);
             }
@@ -5368,16 +5381,15 @@ class SubscriptionsModule {
             if ($paymentMode === '') {
                 $paymentMode = (string) $parentOrder->get_meta('_mollie_payment_mode', true);
             }
-            if ($customerId === '' || $mandateId === '') {
-                if ($paymentId !== '') {
-                    $cm = $this->mollie_get_customer_and_mandate($paymentId);
-                    if ($customerId === '' && $cm['customerId'] !== '') {
-                        $customerId = $cm['customerId'];
-                    }
-                    if ($mandateId === '' && $cm['mandateId'] !== '') {
-                        $mandateId = $cm['mandateId'];
-                    }
-                }
+        }
+
+        if (($customerId === '' || $mandateId === '') && $paymentId !== '') {
+            $cm = $this->mollie_get_customer_and_mandate($paymentId);
+            if ($customerId === '' && $cm['customerId'] !== '') {
+                $customerId = $cm['customerId'];
+            }
+            if ($mandateId === '' && $cm['mandateId'] !== '') {
+                $mandateId = $cm['mandateId'];
             }
         }
 

@@ -310,47 +310,14 @@ class SubscriptionAdmin {
     }
 
     public function filter_order_type_count(int $count, array $statuses): int {
-        if (!function_exists('wc_get_orders')) {
-            return $count;
-        }
-
         $statuses = array_values(array_filter(array_map('strval', $statuses)));
         if (empty($statuses)) {
             return 0;
         }
 
-        $queryArgs = [
-            'type' => $this->orderType->get_type(),
-            'status' => $statuses,
-            'limit' => 1,
-            'paginate' => true,
-            'return' => 'ids',
-        ];
-
         $statusFilter = isset($_GET['hb_ucs_sub_status']) ? sanitize_key((string) wp_unslash($_GET['hb_ucs_sub_status'])) : '';
-        if ($statusFilter !== '') {
-            $queryArgs['meta_query'][] = [
-                'key' => '_hb_ucs_subscription_status',
-                'value' => $statusFilter,
-                'compare' => '=',
-            ];
-        }
 
-        $schemeFilter = isset($_GET['hb_ucs_sub_scheme']) ? sanitize_key((string) wp_unslash($_GET['hb_ucs_sub_scheme'])) : '';
-        if ($schemeFilter !== '') {
-            $queryArgs['meta_query'][] = [
-                'key' => '_hb_ucs_subscription_scheme',
-                'value' => $schemeFilter,
-                'compare' => '=',
-            ];
-        }
-
-        $orders = wc_get_orders($queryArgs);
-        if (is_object($orders) && isset($orders->total)) {
-            return (int) $orders->total;
-        }
-
-        return $count;
+        return $this->count_subscriptions_by_order_statuses($statuses, $statusFilter);
     }
 
     public function filter_order_type_view_links(array $views): array {
@@ -382,36 +349,93 @@ class SubscriptionAdmin {
         $queryArgs = [
             'type' => $this->orderType->get_type(),
             'status' => array_keys(wc_get_order_statuses()),
-            'limit' => 1,
-            'paginate' => true,
+            'limit' => -1,
             'return' => 'ids',
         ];
 
-        $metaQuery = [];
-        if ($subscriptionStatus !== '') {
-            $metaQuery[] = [
-                'key' => '_hb_ucs_subscription_status',
-                'value' => $subscriptionStatus,
-                'compare' => '=',
-            ];
+        $schemeFilter = isset($_GET['hb_ucs_sub_scheme']) ? sanitize_key((string) wp_unslash($_GET['hb_ucs_sub_scheme'])) : '';
+
+        $orderIds = wc_get_orders($queryArgs);
+        if (!is_array($orderIds) || empty($orderIds)) {
+            return 0;
+        }
+
+        $count = 0;
+        foreach ($orderIds as $orderId) {
+            $orderId = (int) $orderId;
+            if ($orderId <= 0) {
+                continue;
+            }
+
+            $order = $this->get_subscription_order($orderId);
+            if (!$order) {
+                continue;
+            }
+
+            $currentStatus = $this->get_subscription_status_for_order($order);
+            if ($subscriptionStatus !== '' && $currentStatus !== $subscriptionStatus) {
+                continue;
+            }
+
+            if ($schemeFilter !== '') {
+                $currentScheme = method_exists($order, 'get_meta') ? (string) $order->get_meta('_hb_ucs_subscription_scheme', true) : '';
+                if ($currentScheme !== $schemeFilter) {
+                    continue;
+                }
+            }
+
+            $count++;
+        }
+
+        return $count;
+    }
+
+    private function count_subscriptions_by_order_statuses(array $orderStatuses, string $subscriptionStatusFilter = ''): int {
+        if (!function_exists('wc_get_orders')) {
+            return 0;
+        }
+
+        $orderIds = wc_get_orders([
+            'type' => $this->orderType->get_type(),
+            'status' => $orderStatuses,
+            'limit' => -1,
+            'return' => 'ids',
+        ]);
+
+        if (!is_array($orderIds) || empty($orderIds)) {
+            return 0;
         }
 
         $schemeFilter = isset($_GET['hb_ucs_sub_scheme']) ? sanitize_key((string) wp_unslash($_GET['hb_ucs_sub_scheme'])) : '';
-        if ($schemeFilter !== '') {
-            $metaQuery[] = [
-                'key' => '_hb_ucs_subscription_scheme',
-                'value' => $schemeFilter,
-                'compare' => '=',
-            ];
+        $count = 0;
+
+        foreach ($orderIds as $orderId) {
+            $orderId = (int) $orderId;
+            if ($orderId <= 0) {
+                continue;
+            }
+
+            $order = $this->get_subscription_order($orderId);
+            if (!$order) {
+                continue;
+            }
+
+            $currentStatus = $this->get_subscription_status_for_order($order);
+            if ($subscriptionStatusFilter !== '' && $currentStatus !== $subscriptionStatusFilter) {
+                continue;
+            }
+
+            if ($schemeFilter !== '') {
+                $currentScheme = method_exists($order, 'get_meta') ? (string) $order->get_meta('_hb_ucs_subscription_scheme', true) : '';
+                if ($currentScheme !== $schemeFilter) {
+                    continue;
+                }
+            }
+
+            $count++;
         }
 
-        if (!empty($metaQuery)) {
-            $queryArgs['meta_query'] = $metaQuery;
-        }
-
-        $orders = wc_get_orders($queryArgs);
-
-        return (is_object($orders) && isset($orders->total)) ? (int) $orders->total : 0;
+        return $count;
     }
 
     private function build_order_type_view_link(string $status, string $label, int $count, bool $current): string {
