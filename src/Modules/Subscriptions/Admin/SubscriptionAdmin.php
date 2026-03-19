@@ -34,6 +34,7 @@ class SubscriptionAdmin {
         add_action('admin_footer', [$this, 'render_order_type_list_scripts']);
 
         add_filter('woocommerce_' . $this->orderType->get_type() . '_list_table_columns', [$this, 'filter_order_type_columns']);
+        add_filter('woocommerce_' . $this->orderType->get_type() . '_list_table_sortable_columns', [$this, 'filter_order_type_sortable_columns']);
         add_action('woocommerce_' . $this->orderType->get_type() . '_list_table_custom_column', [$this, 'render_order_type_column'], 10, 2);
         add_action('woocommerce_order_list_table_restrict_manage_orders', [$this, 'render_order_type_filters'], 10, 2);
         add_filter('woocommerce_' . $this->orderType->get_type() . '_list_table_prepare_items_query_args', [$this, 'filter_order_type_query_args']);
@@ -266,6 +267,12 @@ class SubscriptionAdmin {
         echo '</select>';
     }
 
+    public function filter_order_type_sortable_columns(array $columns): array {
+        $columns['hb_ucs_subscription_next_payment'] = 'hb_ucs_subscription_next_payment';
+
+        return $columns;
+    }
+
     public function filter_order_type_query_args(array $queryArgs): array {
         $metaQuery = isset($queryArgs['meta_query']) && is_array($queryArgs['meta_query']) ? $queryArgs['meta_query'] : [];
 
@@ -289,6 +296,13 @@ class SubscriptionAdmin {
 
         if (!empty($metaQuery)) {
             $queryArgs['meta_query'] = $metaQuery;
+        }
+
+        $orderby = isset($_GET['orderby']) ? sanitize_key((string) wp_unslash($_GET['orderby'])) : '';
+        if ($orderby === 'hb_ucs_subscription_next_payment') {
+            $queryArgs['meta_key'] = '_hb_ucs_subscription_next_payment';
+            $queryArgs['orderby'] = 'meta_value_num';
+            $queryArgs['meta_type'] = 'NUMERIC';
         }
 
         return $queryArgs;
