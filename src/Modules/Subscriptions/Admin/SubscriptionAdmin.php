@@ -33,6 +33,7 @@ class SubscriptionAdmin {
         add_action('admin_head', [$this, 'render_order_type_list_styles']);
         add_action('admin_footer', [$this, 'render_order_type_list_scripts']);
 
+        add_filter('woocommerce_before_' . $this->orderType->get_type() . '_list_table_view_links', [$this, 'filter_order_type_view_links']);
         add_filter('woocommerce_' . $this->orderType->get_type() . '_list_table_columns', [$this, 'filter_order_type_columns']);
         add_filter('woocommerce_' . $this->orderType->get_type() . '_list_table_sortable_columns', [$this, 'filter_order_type_sortable_columns']);
         add_action('woocommerce_' . $this->orderType->get_type() . '_list_table_custom_column', [$this, 'render_order_type_column'], 10, 2);
@@ -352,6 +353,92 @@ class SubscriptionAdmin {
         return $count;
     }
 
+    public function filter_order_type_view_links(array $views): array {
+        if (!$this->is_subscription_order_type_screen()) {
+            return $views;
+        }
+
+        $currentStatus = isset($_GET['hb_ucs_sub_status']) ? sanitize_key((string) wp_unslash($_GET['hb_ucs_sub_status'])) : '';
+        $links = [];
+        $links['all'] = $this->build_order_type_view_link('', __('Alle', 'hb-ucs'), $this->count_subscriptions_for_status(''), $currentStatus === '');
+
+        foreach ($this->get_subscription_statuses() as $statusKey => $label) {
+            $count = $this->count_subscriptions_for_status($statusKey);
+            if ($count <= 0) {
+                continue;
+            }
+
+            $links[$statusKey] = $this->build_order_type_view_link($statusKey, $label, $count, $currentStatus === $statusKey);
+        }
+
+        return $links;
+    }
+
+    private function count_subscriptions_for_status(string $subscriptionStatus = ''): int {
+        if (!function_exists('wc_get_orders')) {
+            return 0;
+        }
+
+        $queryArgs = [
+            'type' => $this->orderType->get_type(),
+            'status' => array_keys(wc_get_order_statuses()),
+            'limit' => 1,
+            'paginate' => true,
+            'return' => 'ids',
+        ];
+
+        $metaQuery = [];
+        if ($subscriptionStatus !== '') {
+            $metaQuery[] = [
+                'key' => '_hb_ucs_subscription_status',
+                'value' => $subscriptionStatus,
+                'compare' => '=',
+            ];
+        }
+
+        $schemeFilter = isset($_GET['hb_ucs_sub_scheme']) ? sanitize_key((string) wp_unslash($_GET['hb_ucs_sub_scheme'])) : '';
+        if ($schemeFilter !== '') {
+            $metaQuery[] = [
+                'key' => '_hb_ucs_subscription_scheme',
+                'value' => $schemeFilter,
+                'compare' => '=',
+            ];
+        }
+
+        if (!empty($metaQuery)) {
+            $queryArgs['meta_query'] = $metaQuery;
+        }
+
+        $orders = wc_get_orders($queryArgs);
+
+        return (is_object($orders) && isset($orders->total)) ? (int) $orders->total : 0;
+    }
+
+    private function build_order_type_view_link(string $status, string $label, int $count, bool $current): string {
+        $queryArgs = [];
+
+        foreach (['hb_ucs_sub_scheme', 'orderby', 'order', 's'] as $key) {
+            if (!isset($_GET[$key])) {
+                continue;
+            }
+
+            $value = wp_unslash($_GET[$key]);
+            if (!is_scalar($value) || $value === '') {
+                continue;
+            }
+
+            $queryArgs[$key] = sanitize_text_field((string) $value);
+        }
+
+        if ($status !== '') {
+            $queryArgs['hb_ucs_sub_status'] = $status;
+        }
+
+        $url = add_query_arg($queryArgs, $this->get_order_type_list_url());
+
+        return '<a href="' . esc_url($url) . '"' . ($current ? ' class="current" aria-current="page"' : '') . '>' . esc_html($label) . ' <span class="count">(' . esc_html((string) $count) . ')</span></a>';
+    }
+
     public function filter_order_type_bulk_actions(array $actions): array {
         $actions['hb_ucs_mark_subscription_paused'] = __('Pauzeer abonnementen', 'hb-ucs');
         $actions['hb_ucs_mark_subscription_active'] = __('Hervat abonnementen', 'hb-ucs');
@@ -441,35 +528,11 @@ class SubscriptionAdmin {
         echo '<script>';
         echo '(function(){';
         echo 'var labels=' . wp_json_encode($dateLabels) . ';';
-        echo 'var statusLabels=' . wp_json_encode([
-            'wc-processing' => __('Actief', 'hb-ucs'),
-            'processing' => __('Actief', 'hb-ucs'),
-            'wc-completed' => __('Actief', 'hb-ucs'),
-            'completed' => __('Actief', 'hb-ucs'),
-            'wc-pending' => __('Wacht op mandate', 'hb-ucs'),
-            'pending' => __('Wacht op mandate', 'hb-ucs'),
-            'wc-on-hold' => __('Gepauzeerd / In de wacht', 'hb-ucs'),
-            'on-hold' => __('Gepauzeerd / In de wacht', 'hb-ucs'),
-            'wc-cancelled' => __('Geannuleerd / Verlopen', 'hb-ucs'),
-            'cancelled' => __('Geannuleerd / Verlopen', 'hb-ucs'),
-            'wc-failed' => __('Verlopen', 'hb-ucs'),
-            'failed' => __('Verlopen', 'hb-ucs')
-        ]) . ';';
         echo 'Object.keys(labels).forEach(function(orderId){';
         echo 'var node=document.querySelector("#order-"+orderId+" .column-order_date time");';
         echo 'if(!node){return;}';
         echo 'node.textContent=labels[orderId];';
         echo 'node.setAttribute("title", labels[orderId]);';
-        echo '});';
-        echo 'document.querySelectorAll(".subsubsub a").forEach(function(link){';
-        echo 'var href=(link.getAttribute("href")||"");';
-        echo 'var matchedKey="";';
-        echo 'Object.keys(statusLabels).forEach(function(key){ if(!matchedKey && href.indexOf("status="+key)!==-1){ matchedKey=key; } });';
-        echo 'if(!matchedKey){return;}';
-        echo 'var countNode=link.querySelector(".count");';
-        echo 'var label=statusLabels[matchedKey]||"";';
-        echo 'if(!label){return;}';
-        echo 'if(countNode){ link.childNodes.forEach(function(node){ if(node.nodeType===3){ node.textContent=label+" "; } }); } else { link.textContent=label; }';
         echo '});';
         echo '})();';
         echo '</script>';

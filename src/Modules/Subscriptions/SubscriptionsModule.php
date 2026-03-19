@@ -600,6 +600,46 @@ class SubscriptionsModule {
         return $method !== '' ? $method : '—';
     }
 
+    private function get_subscription_mollie_meta_context(int $subId): array {
+        $context = [
+            'paymentId' => (string) get_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, true),
+            'customerId' => (string) get_post_meta($subId, self::SUB_META_MOLLIE_CUSTOMER_ID, true),
+            'mandateId' => (string) get_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID, true),
+            'paymentMode' => '',
+        ];
+
+        $order = function_exists('wc_get_order') ? wc_get_order($subId) : null;
+        if ($order && is_object($order) && method_exists($order, 'get_meta')) {
+            if ($context['paymentId'] === '') {
+                $context['paymentId'] = (string) $order->get_meta('_mollie_payment_id', true);
+            }
+            if ($context['customerId'] === '') {
+                $context['customerId'] = (string) $order->get_meta('_mollie_customer_id', true);
+            }
+            if ($context['mandateId'] === '') {
+                $context['mandateId'] = (string) $order->get_meta('_mollie_mandate_id', true);
+            }
+            $context['paymentMode'] = (string) $order->get_meta('_mollie_payment_mode', true);
+        }
+
+        $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
+        $parentOrder = ($parentOrderId > 0 && function_exists('wc_get_order')) ? wc_get_order($parentOrderId) : null;
+        if ($parentOrder && is_object($parentOrder)) {
+            $parentContext = $this->extract_mollie_context_from_order($parentOrder, false);
+            foreach ($parentContext as $key => $value) {
+                if (($context[$key] ?? '') === '' && $value !== '') {
+                    $context[$key] = $value;
+                }
+            }
+        }
+
+        if ($context['paymentMode'] === '' && $context['paymentId'] !== '') {
+            $context['paymentMode'] = $this->get_current_mollie_payment_mode();
+        }
+
+        return $context;
+    }
+
     private function get_subscription_admin_payment_method_options(): array {
         $options = [];
 
@@ -2001,6 +2041,7 @@ class SubscriptionsModule {
         $statusLabel = $this->get_subscription_statuses()[$status] ?? ($status !== '' ? $status : '—');
         $scheme = (string) get_post_meta($subId, self::SUB_META_SCHEME, true);
         $paymentMethodTitle = (string) get_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, true);
+        $mollieMeta = $this->get_subscription_mollie_meta_context($subId);
         $nextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
         $locked = $this->subscription_has_locked_orders($subId);
         $items = $this->get_subscription_items($subId);
@@ -2167,6 +2208,9 @@ class SubscriptionsModule {
         echo '<div class="hb-ucs-info-list__row"><span>' . esc_html__('E-mail', 'hb-ucs') . '</span><strong>' . esc_html((string) ($contact['billing_email'] ?? '—')) . '</strong></div>';
         echo '<div class="hb-ucs-info-list__row"><span>' . esc_html__('Telefoon', 'hb-ucs') . '</span><strong>' . esc_html((string) ($contact['billing_phone'] ?? '—')) . '</strong></div>';
         echo '<div class="hb-ucs-info-list__row"><span>' . esc_html__('Betaalmethode', 'hb-ucs') . '</span><strong>' . esc_html($paymentMethodTitle !== '' ? $paymentMethodTitle : '—') . '</strong></div>';
+        echo '<div class="hb-ucs-info-list__row"><span>' . esc_html__('Mollie Payment ID', 'hb-ucs') . '</span><strong>' . esc_html($mollieMeta['paymentId'] !== '' ? (string) $mollieMeta['paymentId'] : '—') . '</strong></div>';
+        echo '<div class="hb-ucs-info-list__row"><span>' . esc_html__('Mollie Payment Mode', 'hb-ucs') . '</span><strong>' . esc_html($mollieMeta['paymentMode'] !== '' ? (string) $mollieMeta['paymentMode'] : '—') . '</strong></div>';
+        echo '<div class="hb-ucs-info-list__row"><span>' . esc_html__('Mollie Customer ID', 'hb-ucs') . '</span><strong>' . esc_html($mollieMeta['customerId'] !== '' ? (string) $mollieMeta['customerId'] : '—') . '</strong></div>';
         echo '</div>';
         echo '<div class="hb-ucs-address-grid">';
         echo '<div class="hb-ucs-address-block">';
