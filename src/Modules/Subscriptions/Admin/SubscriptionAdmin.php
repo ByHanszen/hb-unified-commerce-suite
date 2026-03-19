@@ -34,6 +34,8 @@ class SubscriptionAdmin {
         add_action('admin_footer', [$this, 'render_order_type_list_scripts']);
 
         add_filter('woocommerce_before_' . $this->orderType->get_type() . '_list_table_view_links', [$this, 'filter_order_type_view_links']);
+        add_filter('woocommerce_' . $this->orderType->get_type() . '_list_table_request', [$this, 'filter_order_type_request']);
+        add_filter('woocommerce_' . $this->orderType->get_type() . '_list_table_default_statuses', [$this, 'filter_order_type_default_statuses']);
         add_filter('woocommerce_' . $this->orderType->get_type() . '_list_table_columns', [$this, 'filter_order_type_columns']);
         add_filter('woocommerce_' . $this->orderType->get_type() . '_list_table_sortable_columns', [$this, 'filter_order_type_sortable_columns']);
         add_action('woocommerce_' . $this->orderType->get_type() . '_list_table_custom_column', [$this, 'render_order_type_column'], 10, 2);
@@ -320,11 +322,24 @@ class SubscriptionAdmin {
         return $this->count_subscriptions_by_order_statuses($statuses, $statusFilter);
     }
 
-    public function filter_order_type_view_links(array $views): array {
-        if (!$this->is_subscription_order_type_screen()) {
-            return $views;
+    public function filter_order_type_request(array $request): array {
+        $status = isset($request['status']) ? sanitize_key((string) $request['status']) : '';
+        if ($status !== '' && $status !== 'all' && $status !== 'trash') {
+            $request['status'] = '';
         }
 
+        return $request;
+    }
+
+    public function filter_order_type_default_statuses(array $statuses): array {
+        if (!function_exists('wc_get_order_statuses')) {
+            return $statuses;
+        }
+
+        return array_keys(wc_get_order_statuses());
+    }
+
+    public function filter_order_type_view_links(array $views): array {
         $currentStatus = isset($_GET['hb_ucs_sub_status']) ? sanitize_key((string) wp_unslash($_GET['hb_ucs_sub_status'])) : '';
         $links = [];
         $links['all'] = $this->build_order_type_view_link('', __('Alle', 'hb-ucs'), $this->count_subscriptions_for_status(''), $currentStatus === '');
@@ -464,6 +479,13 @@ class SubscriptionAdmin {
     }
 
     public function filter_order_type_bulk_actions(array $actions): array {
+        unset(
+            $actions['mark_processing'],
+            $actions['mark_on-hold'],
+            $actions['mark_completed'],
+            $actions['mark_cancelled']
+        );
+
         $actions['hb_ucs_mark_subscription_paused'] = __('Pauzeer abonnementen', 'hb-ucs');
         $actions['hb_ucs_mark_subscription_active'] = __('Hervat abonnementen', 'hb-ucs');
         $actions['hb_ucs_mark_subscription_cancelled'] = __('Annuleer abonnementen', 'hb-ucs');
