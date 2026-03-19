@@ -4,6 +4,23 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.9] — 2026-03-19
+### Fixed
+- Abonnementen: de hoofdstatusselectie op het ordertype-abonnementenscherm gebruikt nu abonnementsstatussen in plaats van reguliere WooCommerce orderstatussen, en wordt bij opslaan veilig terug gemapt naar de onderliggende Woo status.
+
+## [0.3.8] — 2026-03-19
+### Fixed
+- Abonnementen: backend abonnement-editor normaliseert het statuskeuzeveld nu expliciet naar de HB UCS abonnementsstatussen, zodat oude of Woo-achtige statussen niet meer zichtbaar blijven.
+
+## [0.3.7] — 2026-03-19
+### Fixed
+- Abonnementen: backend abonnementenlijst verbergt nu ook zichtbare WooCommerce orderstatusfilters in de UI, zodat alleen abonnementsstatusfilters overblijven.
+
+## [0.3.6] — 2026-03-19
+### Fixed
+- Abonnementen: admin abonnementenlijst negeert nu reguliere WooCommerce orderstatus-requests robuuster, zodat abonnementsstatusfilters leidend blijven.
+- Abonnementen: bulkacties op het abonnementenscherm tonen geen standaard WooCommerce orderstatus-overgangen meer, alleen abonnementsacties.
+
 ## [0.3.5] — 2026-03-19
 ### Added
 - Abonnementen: ondersteuning voor een extra frequentie van iedere 6 weken in instellingen, runtime en migratie.

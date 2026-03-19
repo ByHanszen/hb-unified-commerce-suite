@@ -49,6 +49,7 @@ class SubscriptionAdmin {
         add_action('woocommerce_order_action_hb_ucs_pause_subscription', [$this, 'handle_pause_subscription_action']);
         add_action('woocommerce_order_action_hb_ucs_resume_subscription', [$this, 'handle_resume_subscription_action']);
         add_action('woocommerce_order_action_hb_ucs_cancel_subscription', [$this, 'handle_cancel_subscription_action']);
+        add_action('woocommerce_process_shop_order_meta', [$this, 'normalize_order_type_posted_status'], 5, 2);
         add_action('woocommerce_process_shop_order_meta', [$this, 'save_order_type_screen'], 60, 2);
 
         foreach ($this->get_order_screen_ids() as $screenId) {
@@ -537,6 +538,12 @@ class SubscriptionAdmin {
         }
 
         echo '<style>';
+        echo '.woocommerce_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .subsubsub a[href*="status=wc-"],';
+        echo '.woocommerce_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .subsubsub li:has(a[href*="status=wc-"]),';
+        echo '.woocommerce_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' select[name="status"],';
+        echo '.admin_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .subsubsub a[href*="status=wc-"],';
+        echo '.admin_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .subsubsub li:has(a[href*="status=wc-"]),';
+        echo '.admin_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' select[name="status"]{display:none!important;}';
         echo '.woocommerce_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .column-order_number .order-preview,';
         echo '.admin_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .column-order_number .order-preview{display:none!important;}';
         echo '.woocommerce_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .column-order_number .order_date.small-screen-only,';
@@ -570,9 +577,99 @@ class SubscriptionAdmin {
         }
 
         $dateLabels = $this->get_current_list_order_date_labels();
+        $subscriptionStatuses = [];
+        foreach ($this->get_subscription_statuses() as $statusKey => $label) {
+            $subscriptionStatuses[] = [
+                'value' => (string) $statusKey,
+                'label' => (string) $label,
+            ];
+        }
+        $statusOrderMap = $this->get_subscription_status_to_order_status_map();
+        $screenBodyClasses = [
+            'woocommerce_page_wc-orders--' . $this->orderType->get_type(),
+            'admin_page_wc-orders--' . $this->orderType->get_type(),
+        ];
 
         echo '<script>';
         echo '(function(){';
+        echo 'var isSubscriptionScreen=' . wp_json_encode(array_values($screenBodyClasses)) . '.some(function(className){return document.body && document.body.classList.contains(className);});';
+        echo 'if(!isSubscriptionScreen){return;}';
+        echo 'document.querySelectorAll(".subsubsub a[href*=\"status=wc-\"]").forEach(function(link){';
+        echo 'var item=link.closest("li");';
+        echo 'if(item){item.remove();return;}';
+        echo 'link.remove();';
+        echo '});';
+        echo 'document.querySelectorAll("select[name=\"status\"] option").forEach(function(option){';
+        echo 'if((option.value||"").indexOf("wc-")===0){option.remove();}';
+        echo '});';
+        echo 'document.querySelectorAll("select[name=\"status\"]").forEach(function(select){';
+        echo 'if(select.options.length<=1){select.style.display="none";}';
+        echo '});';
+        echo 'var subscriptionStatuses=' . wp_json_encode($subscriptionStatuses) . ';';
+        echo 'var subscriptionStatusOrderMap=' . wp_json_encode($statusOrderMap) . ';';
+        echo 'var mainOrderStatusSelect=document.querySelector("#order_status");';
+        echo 'if(mainOrderStatusSelect){';
+        echo 'var currentSubscriptionStatus="";';
+        echo 'var mirroredSubscriptionSelect=document.querySelector("select[name=\"hb_ucs_sub_status\"]");';
+        echo 'if(mirroredSubscriptionSelect){currentSubscriptionStatus=mirroredSubscriptionSelect.value||"";}';
+        echo 'if(!currentSubscriptionStatus&&mainOrderStatusSelect.dataset.hbUcsCurrentSubscriptionStatus){currentSubscriptionStatus=mainOrderStatusSelect.dataset.hbUcsCurrentSubscriptionStatus;}';
+        echo 'if(!mainOrderStatusSelect.dataset.hbUcsProxyInitialized){';
+        echo 'mainOrderStatusSelect.dataset.hbUcsProxyInitialized="1";';
+        echo 'mainOrderStatusSelect.name="hb_ucs_sub_status_proxy";';
+        echo 'var mappedInput=document.createElement("input");';
+        echo 'mappedInput.type="hidden";';
+        echo 'mappedInput.name="order_status";';
+        echo 'mappedInput.id="hb_ucs_mapped_order_status";';
+        echo 'mainOrderStatusSelect.parentNode.insertBefore(mappedInput, mainOrderStatusSelect);';
+        echo '}';
+        echo 'var mappedOrderStatusInput=document.querySelector("#hb_ucs_mapped_order_status");';
+        echo 'if(mappedOrderStatusInput){';
+        echo 'mainOrderStatusSelect.innerHTML="";';
+        echo 'subscriptionStatuses.forEach(function(optionData){';
+        echo 'var option=document.createElement("option");';
+        echo 'option.value=optionData.value;';
+        echo 'option.textContent=optionData.label;';
+        echo 'if(optionData.value===currentSubscriptionStatus){option.selected=true;}';
+        echo 'mainOrderStatusSelect.appendChild(option);';
+        echo '});';
+        echo 'if(!mainOrderStatusSelect.value&&subscriptionStatuses.length){mainOrderStatusSelect.value=currentSubscriptionStatus||subscriptionStatuses[0].value;}';
+        echo 'var syncSubscriptionStatus=function(){';
+        echo 'var selectedSubscriptionStatus=mainOrderStatusSelect.value||"";';
+        echo 'if(mirroredSubscriptionSelect){mirroredSubscriptionSelect.value=selectedSubscriptionStatus;}';
+        echo 'mappedOrderStatusInput.value=subscriptionStatusOrderMap[selectedSubscriptionStatus]||"wc-pending";';
+        echo '};';
+        echo 'syncSubscriptionStatus();';
+        echo 'mainOrderStatusSelect.addEventListener("change", syncSubscriptionStatus);';
+        echo 'if(window.jQuery){';
+        echo 'var $mainOrderStatusSelect=window.jQuery(mainOrderStatusSelect);';
+        echo 'if($mainOrderStatusSelect.hasClass("select2-hidden-accessible")||$mainOrderStatusSelect.hasClass("enhanced")){';
+        echo '$mainOrderStatusSelect.trigger("change.select2");';
+        echo '}';
+        echo '}';
+        echo '}';
+        echo '}';
+        echo 'document.querySelectorAll("select[name=\"hb_ucs_sub_status\"]").forEach(function(select){';
+        echo 'var currentValue=select.value||"";';
+        echo 'var currentLabels=Array.from(select.options).map(function(option){return (option.value||"")+"::"+(option.textContent||"").trim();});';
+        echo 'var expectedLabels=subscriptionStatuses.map(function(option){return option.value+"::"+option.label;});';
+        echo 'var isDifferent=currentLabels.length!==expectedLabels.length||expectedLabels.some(function(entry,index){return currentLabels[index]!==entry;});';
+        echo 'if(!isDifferent){return;}';
+        echo 'select.innerHTML="";';
+        echo 'subscriptionStatuses.forEach(function(optionData){';
+        echo 'var option=document.createElement("option");';
+        echo 'option.value=optionData.value;';
+        echo 'option.textContent=optionData.label;';
+        echo 'if(optionData.value===currentValue){option.selected=true;}';
+        echo 'select.appendChild(option);';
+        echo '});';
+        echo 'if(!select.value&&subscriptionStatuses.length){select.value=currentValue||subscriptionStatuses[0].value;}';
+        echo 'if(window.jQuery){';
+        echo 'var $select=window.jQuery(select);';
+        echo 'if($select.hasClass("select2-hidden-accessible")||$select.hasClass("enhanced")){';
+        echo '$select.trigger("change.select2");';
+        echo '}';
+        echo '}';
+        echo '});';
         echo 'var labels=' . wp_json_encode($dateLabels) . ';';
         echo 'Object.keys(labels).forEach(function(orderId){';
         echo 'var node=document.querySelector("#order-"+orderId+" .column-order_date time");';
@@ -659,6 +756,37 @@ class SubscriptionAdmin {
 
     public function handle_cancel_subscription_action($order): void {
         $this->handle_subscription_status_action($order, 'cancelled', __('Abonnement is geannuleerd vanuit de backend.', 'hb-ucs'));
+    }
+
+    public function normalize_order_type_posted_status(int $orderId, $order): void {
+        $order = $this->get_subscription_order($order ?: $orderId);
+        if (!$order || !current_user_can('edit_shop_orders')) {
+            return;
+        }
+
+        $allowedStatuses = array_keys($this->get_subscription_statuses());
+        $subscriptionStatus = '';
+
+        if (isset($_POST['hb_ucs_sub_status'])) {
+            $candidate = sanitize_key((string) wp_unslash($_POST['hb_ucs_sub_status']));
+            if (in_array($candidate, $allowedStatuses, true)) {
+                $subscriptionStatus = $candidate;
+            }
+        }
+
+        if ($subscriptionStatus === '' && isset($_POST['hb_ucs_sub_status_proxy'])) {
+            $candidate = sanitize_key((string) wp_unslash($_POST['hb_ucs_sub_status_proxy']));
+            if (in_array($candidate, $allowedStatuses, true)) {
+                $subscriptionStatus = $candidate;
+            }
+        }
+
+        if ($subscriptionStatus === '') {
+            return;
+        }
+
+        $_POST['hb_ucs_sub_status'] = $subscriptionStatus;
+        $_POST['order_status'] = $this->map_subscription_status_to_order_status($subscriptionStatus);
     }
 
     public function save_order_type_screen(int $orderId, $order): void {
@@ -912,6 +1040,25 @@ class SubscriptionAdmin {
             'cancelled' => __('Geannuleerd', 'hb-ucs'),
             'expired' => __('Verlopen', 'hb-ucs'),
         ];
+    }
+
+    private function get_subscription_status_to_order_status_map(): array {
+        return [
+            'active' => 'wc-processing',
+            'pending_mandate' => 'wc-pending',
+            'payment_pending' => 'wc-pending',
+            'on-hold' => 'wc-on-hold',
+            'paused' => 'wc-on-hold',
+            'cancelled' => 'wc-cancelled',
+            'expired' => 'wc-cancelled',
+        ];
+    }
+
+    private function map_subscription_status_to_order_status(string $subscriptionStatus): string {
+        $subscriptionStatus = sanitize_key($subscriptionStatus);
+        $map = $this->get_subscription_status_to_order_status_map();
+
+        return $map[$subscriptionStatus] ?? 'wc-pending';
     }
 
     private function get_subscription_status_badge_html(string $status): string {

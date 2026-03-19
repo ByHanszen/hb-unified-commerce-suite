@@ -19,6 +19,7 @@ Bij elke wijziging die je wilt uitrollen:
    - Constante `HB_UCS_VERSION` = `X.Y.Z`
 2. Update `CHANGELOG.md`:
    - Voeg of werk de sectie `[X.Y.Z]` bij
+3. Doe dit voor iedere functionele codewijziging, ook bij kleine admin- of bugfixes, zodat GitHub-updaters altijd een hogere detecteerbare versie zien.
 
 ## 3) Tag + release
 Maak een tag met exact dezelfde versie als de plugin:
