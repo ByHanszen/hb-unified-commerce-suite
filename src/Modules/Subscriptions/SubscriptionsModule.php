@@ -3847,6 +3847,8 @@ class SubscriptionsModule {
                 continue;
             }
 
+            $row['unit_price'] = $this->get_subscription_item_storage_unit_price($row);
+            $row['price_includes_tax'] = 0;
             $row['taxes'] = $this->get_subscription_item_taxes(array_merge($row, ['taxes' => []]), $customer);
             $recalculated[] = $row;
         }

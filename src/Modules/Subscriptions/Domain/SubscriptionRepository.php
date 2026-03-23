@@ -843,7 +843,7 @@ class SubscriptionRepository {
                 'base_variation_id' => $variationId,
                 'qty' => $qty,
                 'unit_price' => $qty > 0 ? $this->normalize_decimal($subtotal / $qty) : 0.0,
-                'price_includes_tax' => method_exists($order, 'get_prices_include_tax') && $order->get_prices_include_tax() ? 1 : 0,
+                'price_includes_tax' => 0,
                 'taxes' => $this->normalize_item_taxes(method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : []),
                 'selected_attributes' => $attributes,
             ];
@@ -998,7 +998,7 @@ class SubscriptionRepository {
             $targetId = $variationId > 0 ? $variationId : $productId;
             $product = $targetId > 0 ? wc_get_product($targetId) : false;
             $qty = max(1, (int) ($row['qty'] ?? 1));
-            $unitPrice = $this->normalize_decimal($row['unit_price'] ?? 0.0);
+            $unitPrice = $this->get_legacy_item_storage_unit_price($row, $product);
             $lineSubtotal = $this->normalize_decimal($unitPrice * $qty);
             $taxes = $this->normalize_item_taxes($row['taxes'] ?? []);
             $subtotalTax = array_sum($this->normalize_tax_group($taxes['subtotal'] ?? []));
@@ -1106,7 +1106,9 @@ class SubscriptionRepository {
             }
 
             $qty = max(1, (int) ($item['qty'] ?? 1));
-            $lineSubtotal = $this->normalize_decimal(((float) ($item['unit_price'] ?? 0.0)) * $qty);
+            $productId = (int) (($item['base_variation_id'] ?? 0) ?: ($item['base_product_id'] ?? 0));
+            $product = $productId > 0 ? wc_get_product($productId) : false;
+            $lineSubtotal = $this->normalize_decimal($this->get_legacy_item_storage_unit_price($item, $product) * $qty);
             $itemSubtotal += $lineSubtotal;
 
             $itemTaxes = $this->normalize_item_taxes($item['taxes'] ?? []);

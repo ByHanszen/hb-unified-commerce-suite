@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.37] — 2026-03-23
+### Fixed
+- Abonnementen: na frontend product- of adreswijzigingen worden subscription-itemprijzen nu altijd teruggeschreven als exclusief-btw opslagprijs, met btw apart herberekend. Daarnaast gebruikt de backend shadow-order synchronisatie voortaan dezelfde storage-prijsnormalisatie. Daardoor komt in de backend op de ex-btw plek niet langer de incl.-btw prijs terecht en wordt product-btw niet nog eens extra bovenop die prijs opgeteld.
+
 ## [0.3.36] — 2026-03-23
 ### Fixed
 - Abonnementen: bij productwijzigingen vanuit Mijn Account worden nu niet alleen de gewijzigde artikelregels, maar ook hun product-btw en de verzend-btw eerst opnieuw berekend in de actuele klant/adrescontext voordat legacy- en backend-abonnementrecords worden gesynchroniseerd. Daardoor tonen backend orderregels en totalen na product- of adreswijzigingen weer de correcte btw voor zowel artikelen als verzendkosten.
