@@ -2418,7 +2418,9 @@ class SubscriptionsModule {
         }
 
         $locked = $this->subscription_has_locked_orders($subId);
-        $status = (string) get_post_meta($subId, self::SUB_META_STATUS, true);
+        $status = method_exists($subscription, 'get_subscription_status')
+            ? (string) $subscription->get_subscription_status()
+            : (string) get_post_meta($subId, self::SUB_META_STATUS, true);
         $manageDisabled = in_array($status, ['cancelled', 'expired'], true);
         $didUpdateSubscription = false;
 
@@ -2428,8 +2430,14 @@ class SubscriptionsModule {
                     wc_add_notice(__('Dit abonnement kan nu niet gepauzeerd worden.', 'hb-ucs'), 'error');
                     break;
                 }
-                update_post_meta($subId, self::SUB_META_STATUS, 'paused');
-                update_post_meta($subId, '_hb_ucs_subscription_status', 'paused');
+                if (method_exists($subscription, 'set_subscription_status')) {
+                    $subscription->set_subscription_status('paused');
+                } elseif (method_exists($subscription, 'update_meta_data')) {
+                    $subscription->update_meta_data('_hb_ucs_subscription_status', 'paused');
+                }
+                if (method_exists($subscription, 'update_meta_data')) {
+                    $subscription->update_meta_data(self::SUB_META_STATUS, 'paused');
+                }
                 $this->add_subscription_admin_note($subId, __('Klant heeft het abonnement gepauzeerd via Mijn Account.', 'hb-ucs'));
                 $didUpdateSubscription = true;
                 wc_add_notice(__('Het abonnement is gepauzeerd.', 'hb-ucs'));
@@ -2440,14 +2448,28 @@ class SubscriptionsModule {
                     wc_add_notice(__('Dit abonnement kan nu niet hervat worden.', 'hb-ucs'), 'error');
                     break;
                 }
-                update_post_meta($subId, self::SUB_META_STATUS, 'active');
-                update_post_meta($subId, '_hb_ucs_subscription_status', 'active');
-                $nextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
+                if (method_exists($subscription, 'set_subscription_status')) {
+                    $subscription->set_subscription_status('active');
+                } elseif (method_exists($subscription, 'update_meta_data')) {
+                    $subscription->update_meta_data('_hb_ucs_subscription_status', 'active');
+                }
+                if (method_exists($subscription, 'update_meta_data')) {
+                    $subscription->update_meta_data(self::SUB_META_STATUS, 'active');
+                }
+                $nextPayment = method_exists($subscription, 'get_next_payment_timestamp')
+                    ? (int) $subscription->get_next_payment_timestamp()
+                    : (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
                 if ($nextPayment <= time()) {
                     $nextPayment = (int) $this->calculate_next_payment_timestamp($subId);
-                    update_post_meta($subId, self::SUB_META_NEXT_PAYMENT, (string) $nextPayment);
                 }
-                update_post_meta($subId, '_hb_ucs_subscription_next_payment', (string) $nextPayment);
+                if (method_exists($subscription, 'set_next_payment_timestamp')) {
+                    $subscription->set_next_payment_timestamp($nextPayment);
+                } elseif (method_exists($subscription, 'update_meta_data')) {
+                    $subscription->update_meta_data('_hb_ucs_subscription_next_payment', $nextPayment);
+                }
+                if (method_exists($subscription, 'update_meta_data')) {
+                    $subscription->update_meta_data(self::SUB_META_NEXT_PAYMENT, $nextPayment);
+                }
                 $this->add_subscription_admin_note($subId, __('Klant heeft het abonnement hervat via Mijn Account.', 'hb-ucs'));
                 $didUpdateSubscription = true;
                 wc_add_notice(__('Het abonnement is hervat.', 'hb-ucs'));
@@ -2458,11 +2480,19 @@ class SubscriptionsModule {
                     wc_add_notice(__('Dit abonnement kan nu niet geannuleerd worden.', 'hb-ucs'), 'error');
                     break;
                 }
-                update_post_meta($subId, self::SUB_META_STATUS, 'cancelled');
-                update_post_meta($subId, '_hb_ucs_subscription_status', 'cancelled');
+                if (method_exists($subscription, 'set_subscription_status')) {
+                    $subscription->set_subscription_status('cancelled');
+                } elseif (method_exists($subscription, 'update_meta_data')) {
+                    $subscription->update_meta_data('_hb_ucs_subscription_status', 'cancelled');
+                }
+                if (method_exists($subscription, 'update_meta_data')) {
+                    $subscription->update_meta_data(self::SUB_META_STATUS, 'cancelled');
+                }
                 $endTimestamp = time();
-                update_post_meta($subId, self::SUB_META_END_DATE, (string) $endTimestamp);
-                update_post_meta($subId, '_hb_ucs_subscription_end_date', (string) $endTimestamp);
+                if (method_exists($subscription, 'update_meta_data')) {
+                    $subscription->update_meta_data(self::SUB_META_END_DATE, $endTimestamp);
+                    $subscription->update_meta_data('_hb_ucs_subscription_end_date', $endTimestamp);
+                }
                 $this->add_subscription_admin_note($subId, __('Klant heeft het abonnement geannuleerd via Mijn Account.', 'hb-ucs'));
                 $didUpdateSubscription = true;
                 wc_add_notice(__('Het abonnement is geannuleerd.', 'hb-ucs'));
@@ -2487,14 +2517,26 @@ class SubscriptionsModule {
                 }
                 $existingScheme = (string) get_post_meta($subId, self::SUB_META_SCHEME, true);
                 $existingNextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
-                update_post_meta($subId, self::SUB_META_SCHEME, $scheme);
-                update_post_meta($subId, self::SUB_META_INTERVAL, (string) ((int) ($freqs[$scheme]['interval'] ?? 1)));
-                update_post_meta($subId, self::SUB_META_PERIOD, (string) ($freqs[$scheme]['period'] ?? 'week'));
-                update_post_meta($subId, self::SUB_META_NEXT_PAYMENT, (string) $nextPayment);
-                update_post_meta($subId, '_hb_ucs_subscription_scheme', $scheme);
-                update_post_meta($subId, '_hb_ucs_subscription_interval', (string) ((int) ($freqs[$scheme]['interval'] ?? 1)));
-                update_post_meta($subId, '_hb_ucs_subscription_period', (string) ($freqs[$scheme]['period'] ?? 'week'));
-                update_post_meta($subId, '_hb_ucs_subscription_next_payment', (string) $nextPayment);
+                $interval = (int) ($freqs[$scheme]['interval'] ?? 1);
+                $period = (string) ($freqs[$scheme]['period'] ?? 'week');
+                if (method_exists($subscription, 'set_subscription_scheme')) {
+                    $subscription->set_subscription_scheme($scheme);
+                } elseif (method_exists($subscription, 'update_meta_data')) {
+                    $subscription->update_meta_data('_hb_ucs_subscription_scheme', $scheme);
+                }
+                if (method_exists($subscription, 'set_next_payment_timestamp')) {
+                    $subscription->set_next_payment_timestamp($nextPayment);
+                } elseif (method_exists($subscription, 'update_meta_data')) {
+                    $subscription->update_meta_data('_hb_ucs_subscription_next_payment', $nextPayment);
+                }
+                if (method_exists($subscription, 'update_meta_data')) {
+                    $subscription->update_meta_data(self::SUB_META_SCHEME, $scheme);
+                    $subscription->update_meta_data(self::SUB_META_INTERVAL, $interval);
+                    $subscription->update_meta_data(self::SUB_META_PERIOD, $period);
+                    $subscription->update_meta_data(self::SUB_META_NEXT_PAYMENT, $nextPayment);
+                    $subscription->update_meta_data('_hb_ucs_subscription_interval', $interval);
+                    $subscription->update_meta_data('_hb_ucs_subscription_period', $period);
+                }
                 $scheduleNote = $this->build_account_subscription_schedule_update_note($existingScheme, $existingNextPayment, $scheme, $nextPayment);
                 if ($scheduleNote !== '') {
                     $this->add_subscription_admin_note($subId, $scheduleNote);
@@ -2567,6 +2609,9 @@ class SubscriptionsModule {
         }
 
         if ($didUpdateSubscription) {
+            if (method_exists($subscription, 'save')) {
+                $subscription->save();
+            }
             $this->sync_subscription_order_type_record($subId);
         }
 

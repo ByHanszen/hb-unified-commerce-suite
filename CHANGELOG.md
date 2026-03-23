@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.17] — 2026-03-23
+### Fixed
+- Abonnementen: Mijn Account acties voor pauzeren, hervatten, annuleren en planning wijzigen schrijven status- en schemawijzigingen nu via het WooCommerce abonnement-orderobject weg, zodat de abonnementsstatus echt persistent wijzigt en zichtbaar blijft in frontend én backend.
+
 ## [0.3.16] — 2026-03-23
 ### Fixed
 - Abonnementen: Mijn Account status- en planningsacties schrijven nu ook de gekoppelde ordertype-meta weg, zodat frontend- en backendstatus niet meer uiteenlopen of teruggedraaid worden bij synchronisatie.
