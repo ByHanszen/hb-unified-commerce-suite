@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.29] — 2026-03-23
+### Fixed
+- Abonnementen: renewals nemen nu expliciet de offline/handmatige betaalmethode van de oorspronkelijke bestelling over als een opgeslagen subscription-betaalmethode onterecht nog op een Mollie mandate-pad stond. Daardoor vallen B2B renewals niet meer automatisch terug naar SEPA Direct Debit.
+
 ## [0.3.28] — 2026-03-23
 ### Fixed
 - Abonnementen: nieuw aangemaakte abonnement-orders vanuit winkelwagen/checkout schrijven de gekozen frequentie nu direct ook naar de order-type meta (`_hb_ucs_subscription_scheme` en gerelateerde schemawaarden). Daardoor is de frequentie meteen zichtbaar in de backend en hoeft die niet eerst handmatig opgeslagen te worden.

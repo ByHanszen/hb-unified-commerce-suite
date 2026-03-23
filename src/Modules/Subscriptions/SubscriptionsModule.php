@@ -6380,6 +6380,40 @@ class SubscriptionsModule {
         return (bool) apply_filters('hb_ucs_subs_payment_method_requires_mandate', $requiresMandate, $paymentMethod);
     }
 
+    private function resolve_subscription_payment_method_for_renewal(int $subId, string $paymentMethod, string $paymentMethodTitle, $parentOrder = null): array {
+        $resolvedMethod = trim($paymentMethod);
+        $resolvedTitle = trim($paymentMethodTitle);
+        $storedRequiresMandate = $this->payment_method_requires_mandate($resolvedMethod);
+
+        if ($parentOrder && is_object($parentOrder)) {
+            $parentPayment = $this->get_order_payment_method_data($parentOrder);
+            $parentMethod = trim((string) ($parentPayment['method'] ?? ''));
+            $parentTitle = trim((string) ($parentPayment['title'] ?? ''));
+            $parentRequiresMandate = $this->payment_method_requires_mandate($parentMethod);
+
+            if ($resolvedMethod === '' && $parentMethod !== '') {
+                $resolvedMethod = $parentMethod;
+                $resolvedTitle = $parentTitle !== '' ? $parentTitle : $resolvedTitle;
+            } elseif ($storedRequiresMandate && $parentMethod !== '' && !$parentRequiresMandate) {
+                $resolvedMethod = $parentMethod;
+                $resolvedTitle = $parentTitle !== '' ? $parentTitle : $resolvedTitle;
+            } elseif ($resolvedTitle === '' && $parentTitle !== '') {
+                $resolvedTitle = $parentTitle;
+            }
+        }
+
+        if ($subId > 0 && ($resolvedMethod !== trim($paymentMethod) || $resolvedTitle !== trim($paymentMethodTitle))) {
+            update_post_meta($subId, self::SUB_META_PAYMENT_METHOD, $resolvedMethod);
+            update_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, $resolvedTitle);
+            $this->hydrate_subscription_order_payment_data($subId, $resolvedMethod, $resolvedTitle, [], $parentOrder);
+        }
+
+        return [
+            'method' => $resolvedMethod,
+            'title' => $resolvedTitle,
+        ];
+    }
+
     private function get_order_payment_method_data($order): array {
         $paymentMethod = '';
         $paymentMethodTitle = '';
@@ -8188,19 +8222,15 @@ JS;
         $scheme = (string) get_post_meta($subId, self::SUB_META_SCHEME, true);
         $paymentMethod = (string) get_post_meta($subId, self::SUB_META_PAYMENT_METHOD, true);
         $paymentMethodTitle = (string) get_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, true);
-        $items = $this->get_subscription_items($subId);
+        $items = $this->get_subscription_items($subId); 
         if (empty($items)) {
             return new \WP_Error('hb_ucs_missing_items', __('Dit abonnement bevat geen geldige artikelen.', 'hb-ucs'));
         }
 
         $parentOrder = $parentOrderId > 0 ? wc_get_order($parentOrderId) : null;
-        if ($paymentMethod === '' && $parentOrder && is_object($parentOrder)) {
-            $payment = $this->get_order_payment_method_data($parentOrder);
-            $paymentMethod = (string) ($payment['method'] ?? '');
-            if ($paymentMethodTitle === '') {
-                $paymentMethodTitle = (string) ($payment['title'] ?? '');
-            }
-        }
+        $resolvedPayment = $this->resolve_subscription_payment_method_for_renewal($subId, $paymentMethod, $paymentMethodTitle, $parentOrder);
+        $paymentMethod = (string) ($resolvedPayment['method'] ?? '');
+        $paymentMethodTitle = (string) ($resolvedPayment['title'] ?? '');
 
         $requiresMandate = $this->payment_method_requires_mandate($paymentMethod);
         $token = '';
