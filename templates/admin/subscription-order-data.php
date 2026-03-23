@@ -12,6 +12,8 @@ $backendPaymentId = (string) ($mollieMeta['paymentId'] ?? '');
 $backendPaymentMode = (string) ($mollieMeta['paymentMode'] ?? '');
 $backendCustomerId = (string) ($mollieMeta['customerId'] ?? '');
 $backendMandateId = (string) ($mollieMeta['mandateId'] ?? '');
+$paymentMethodTitleValue = (string) ($paymentMethodLabel !== '' ? $paymentMethodLabel : '');
+$isMandateMethod = strpos((string) $paymentMethod, 'mollie_wc_gateway_') === 0;
 ?>
 <div class="panel-wrap woocommerce">
     <input name="post_title" type="hidden" value="<?php echo esc_attr(get_the_title($subId)); ?>" />
@@ -124,6 +126,12 @@ $backendMandateId = (string) ($mollieMeta['mandateId'] ?? '');
                     <label><?php esc_html_e('Last payment ID:', 'hb-ucs'); ?></label>
                     <span><?php echo esc_html($backendPaymentId !== '' ? $backendPaymentId : '—'); ?></span>
                 </p>
+
+                <p class="form-field form-field-wide description">
+                    <?php echo esc_html($isMandateMethod
+                        ? __('Voor automatische Mollie-incasso zijn minimaal een geldige betaalmethode, Mollie Customer ID en Mollie Mandate ID vereist.', 'hb-ucs')
+                        : __('Voor handmatige/offline betaalmethoden zijn Mollie mandate-gegevens niet vereist.', 'hb-ucs')); ?>
+                </p>
             </div>
 
             <div class="order_data_column hb-ucs-subscription-address-column hb-ucs-subscription-billing-column">
@@ -154,6 +162,30 @@ $backendMandateId = (string) ($mollieMeta['mandateId'] ?? '');
                             <?php foreach ($gatewayChoices as $gatewayId => $gatewayTitle) : ?>
                                 <option value="<?php echo esc_attr((string) $gatewayId); ?>" <?php selected($paymentMethod, (string) $gatewayId); ?>><?php echo esc_html((string) $gatewayTitle); ?></option>
                             <?php endforeach; ?>
+                        </select>
+                    </p>
+                    <p class="form-field form-field-wide">
+                        <label for="hb_ucs_sub_payment_method_title"><strong><?php esc_html_e('Titel betaalmethode', 'hb-ucs'); ?></strong></label>
+                        <input type="text" name="hb_ucs_sub_payment_method_title" id="hb_ucs_sub_payment_method_title" value="<?php echo esc_attr($paymentMethodTitleValue); ?>" style="width:100%;" />
+                    </p>
+                    <p class="form-field form-field-wide">
+                        <label for="hb_ucs_sub_mollie_customer_id"><strong><?php esc_html_e('Mollie Customer ID', 'hb-ucs'); ?></strong></label>
+                        <input type="text" name="hb_ucs_sub_mollie_customer_id" id="hb_ucs_sub_mollie_customer_id" value="<?php echo esc_attr($backendCustomerId); ?>" style="width:100%;" />
+                    </p>
+                    <p class="form-field form-field-wide">
+                        <label for="hb_ucs_sub_mollie_mandate_id"><strong><?php esc_html_e('Mollie Mandate ID', 'hb-ucs'); ?></strong></label>
+                        <input type="text" name="hb_ucs_sub_mollie_mandate_id" id="hb_ucs_sub_mollie_mandate_id" value="<?php echo esc_attr($backendMandateId); ?>" style="width:100%;" />
+                    </p>
+                    <p class="form-field form-field-wide">
+                        <label for="hb_ucs_sub_last_payment_id"><strong><?php esc_html_e('Mollie Payment ID', 'hb-ucs'); ?></strong></label>
+                        <input type="text" name="hb_ucs_sub_last_payment_id" id="hb_ucs_sub_last_payment_id" value="<?php echo esc_attr($backendPaymentId); ?>" style="width:100%;" />
+                    </p>
+                    <p class="form-field form-field-wide">
+                        <label for="hb_ucs_sub_payment_mode"><strong><?php esc_html_e('Mollie Payment Mode', 'hb-ucs'); ?></strong></label>
+                        <select name="hb_ucs_sub_payment_mode" id="hb_ucs_sub_payment_mode" style="width:100%;">
+                            <option value=""><?php esc_html_e('Automatisch bepalen', 'hb-ucs'); ?></option>
+                            <option value="test" <?php selected($backendPaymentMode, 'test'); ?>><?php esc_html_e('test', 'hb-ucs'); ?></option>
+                            <option value="live" <?php selected($backendPaymentMode, 'live'); ?>><?php esc_html_e('live', 'hb-ucs'); ?></option>
                         </select>
                     </p>
                 </div>

@@ -4,9 +4,21 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.14] — 2026-03-20
+### Added
+- Abonnementen: de WCS-exporttool voor handmatige migratie bevat nu ook gestructureerde JSON-snapshots van artikelen, fees, verzending, totalen en adresdata, plus extra kolommen zoals HB-statusmapping, mandate-indicatie en parent-order context.
+
 ## [0.3.10] — 2026-03-19
 ### Fixed
 - Abonnementen: Mollie Payment ID, Payment Mode, Customer ID en Mandate ID worden nu ook zichtbaar gerenderd in de backend orderdata-box onder Facturering op het abonnement ordertype-scherm.
+
+## [0.3.13] — 2026-03-20
+### Added
+- Abonnementen: backend abonnement-editor ondersteunt nu handmatige invoer van betaalmethode, betaalmethode-titel, Mollie Customer ID, Mollie Mandate ID, Mollie Payment ID en Payment Mode voor handmatige overname van bestaande abonnementen.
+- Abonnementen: WCS-notice op het abonnementenoverzicht bevat nu een CSV-export van relevante WooCommerce Subscriptions gegevens voor handmatige migratie.
+
+### Fixed
+- Abonnementen: handmatig ingevulde incasso- en betaalmethodegegevens worden nu direct teruggesynchroniseerd naar het onderliggende abonnement-orderrecord, zodat renewals de juiste Mollie mandate-data gebruiken.
 
 ## [0.3.12] — 2026-03-19
 ### Fixed

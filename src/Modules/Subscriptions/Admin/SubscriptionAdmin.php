@@ -869,6 +869,86 @@ class SubscriptionAdmin {
             }
         }
 
+        if (isset($_POST['hb_ucs_sub_user_id'])) {
+            $userId = (int) absint((string) wp_unslash($_POST['hb_ucs_sub_user_id']));
+            update_post_meta($orderId, SubscriptionRepository::LEGACY_USER_ID_META, (string) $userId);
+
+            if (method_exists($order, 'set_customer_id')) {
+                $order->set_customer_id($userId);
+            }
+        }
+
+        $paymentMethod = '';
+        if (isset($_POST['hb_ucs_sub_payment_method'])) {
+            $paymentMethod = sanitize_text_field((string) wp_unslash($_POST['hb_ucs_sub_payment_method']));
+            update_post_meta($orderId, SubscriptionRepository::LEGACY_PAYMENT_METHOD_META, $paymentMethod);
+
+            if (method_exists($order, 'set_payment_method')) {
+                $order->set_payment_method($paymentMethod);
+            }
+        }
+
+        if (isset($_POST['hb_ucs_sub_payment_method_title'])) {
+            $paymentMethodTitle = sanitize_text_field((string) wp_unslash($_POST['hb_ucs_sub_payment_method_title']));
+            if ($paymentMethodTitle === '' && $paymentMethod !== '') {
+                $paymentMethodTitle = $this->get_payment_method_title_for_admin($paymentMethod);
+            }
+
+            update_post_meta($orderId, SubscriptionRepository::LEGACY_PAYMENT_METHOD_TITLE_META, $paymentMethodTitle);
+            if (method_exists($order, 'set_payment_method_title')) {
+                $order->set_payment_method_title($paymentMethodTitle);
+            }
+        }
+
+        foreach ([
+            'hb_ucs_sub_mollie_customer_id' => SubscriptionRepository::LEGACY_MOLLIE_CUSTOMER_ID_META,
+            'hb_ucs_sub_mollie_mandate_id' => SubscriptionRepository::LEGACY_MOLLIE_MANDATE_ID_META,
+            'hb_ucs_sub_last_payment_id' => SubscriptionRepository::LEGACY_LAST_PAYMENT_ID_META,
+        ] as $inputKey => $metaKey) {
+            if (!isset($_POST[$inputKey])) {
+                continue;
+            }
+
+            $value = sanitize_text_field((string) wp_unslash($_POST[$inputKey]));
+            if ($value !== '') {
+                update_post_meta($orderId, $metaKey, $value);
+            } else {
+                delete_post_meta($orderId, $metaKey);
+            }
+        }
+
+        if (isset($_POST['hb_ucs_sub_payment_mode'])) {
+            $paymentMode = sanitize_text_field((string) wp_unslash($_POST['hb_ucs_sub_payment_mode']));
+            if ($paymentMode !== '') {
+                update_post_meta($orderId, '_mollie_payment_mode', $paymentMode);
+                if (method_exists($order, 'update_meta_data')) {
+                    $order->update_meta_data('_mollie_payment_mode', $paymentMode);
+                }
+            } else {
+                delete_post_meta($orderId, '_mollie_payment_mode');
+                if (method_exists($order, 'delete_meta_data')) {
+                    $order->delete_meta_data('_mollie_payment_mode');
+                }
+            }
+        }
+
+        $mollieMetaMap = [
+            SubscriptionRepository::LEGACY_MOLLIE_CUSTOMER_ID_META => '_mollie_customer_id',
+            SubscriptionRepository::LEGACY_MOLLIE_MANDATE_ID_META => '_mollie_mandate_id',
+            SubscriptionRepository::LEGACY_LAST_PAYMENT_ID_META => '_mollie_payment_id',
+        ];
+
+        if (method_exists($order, 'update_meta_data') && method_exists($order, 'delete_meta_data')) {
+            foreach ($mollieMetaMap as $subscriptionMetaKey => $orderMetaKey) {
+                $value = (string) get_post_meta($orderId, $subscriptionMetaKey, true);
+                if ($value !== '') {
+                    $order->update_meta_data($orderMetaKey, $value);
+                } else {
+                    $order->delete_meta_data($orderMetaKey);
+                }
+            }
+        }
+
         foreach ([
             'hb_ucs_sub_next_payment' => '_hb_ucs_subscription_next_payment',
             'hb_ucs_sub_trial_end' => '_hb_ucs_subscription_trial_end',
@@ -884,6 +964,10 @@ class SubscriptionAdmin {
             } else {
                 delete_post_meta($orderId, $metaKey);
             }
+        }
+
+        if (method_exists($order, 'save')) {
+            $order->save();
         }
 
         $this->service->get_repository()->sync_order_type_self($orderId);
@@ -1164,6 +1248,38 @@ class SubscriptionAdmin {
         } catch (\Throwable $e) {
             return '';
         }
+    }
+
+    private function get_payment_method_title_for_admin(string $paymentMethod): string {
+        $paymentMethod = trim($paymentMethod);
+        if ($paymentMethod === '') {
+            return '';
+        }
+
+        if ($paymentMethod === 'mollie_wc_gateway_directdebit') {
+            return 'SEPA Direct Debit';
+        }
+
+        if (function_exists('WC') && WC() && WC()->payment_gateways()) {
+            $gateways = WC()->payment_gateways()->payment_gateways();
+            if (is_array($gateways) && isset($gateways[$paymentMethod]) && is_object($gateways[$paymentMethod])) {
+                $gateway = $gateways[$paymentMethod];
+                if (method_exists($gateway, 'get_title')) {
+                    $title = wp_strip_all_tags((string) $gateway->get_title(), true);
+                    if ($title !== '') {
+                        return $title;
+                    }
+                }
+                if (isset($gateway->title)) {
+                    $title = wp_strip_all_tags((string) $gateway->title, true);
+                    if ($title !== '') {
+                        return $title;
+                    }
+                }
+            }
+        }
+
+        return $paymentMethod;
     }
 
     private function count_related_orders(int $subscriptionId, int $parentOrderId): int {
