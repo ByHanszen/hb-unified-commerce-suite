@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.28] — 2026-03-23
+### Fixed
+- Abonnementen: nieuw aangemaakte abonnement-orders vanuit winkelwagen/checkout schrijven de gekozen frequentie nu direct ook naar de order-type meta (`_hb_ucs_subscription_scheme` en gerelateerde schemawaarden). Daardoor is de frequentie meteen zichtbaar in de backend en hoeft die niet eerst handmatig opgeslagen te worden.
+
 ## [0.3.27] — 2026-03-23
 ### Changed
 - Abonnementen: de uitgebreide synchronisatie-debuglogging blijft beschikbaar in de code, maar staat voortaan standaard uit. Je kunt deze alleen nog expliciet aanzetten via de constante `HB_UCS_SUBSCRIPTION_SYNC_DEBUG` of de filter `hb_ucs_subscription_sync_debug_enabled`.

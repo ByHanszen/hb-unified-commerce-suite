@@ -7999,6 +7999,11 @@ JS;
             update_post_meta($subId, self::SUB_META_INTERVAL, (string) $interval);
             update_post_meta($subId, self::SUB_META_PERIOD, (string) $period);
             update_post_meta($subId, self::SUB_META_NEXT_PAYMENT, (string) $nextTs);
+            update_post_meta($subId, '_hb_ucs_subscription_status', $status);
+            update_post_meta($subId, '_hb_ucs_subscription_scheme', (string) $scheme);
+            update_post_meta($subId, '_hb_ucs_subscription_interval', (string) $interval);
+            update_post_meta($subId, '_hb_ucs_subscription_period', (string) $period);
+            update_post_meta($subId, '_hb_ucs_subscription_next_payment', (string) $nextTs);
             // Start order is also the initial 'last order'.
             update_post_meta($subId, self::SUB_META_LAST_ORDER_ID, (string) $orderId);
             update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $startTs);
@@ -8016,6 +8021,8 @@ JS;
             $this->persist_subscription_shipping_lines($subId, $this->extract_subscription_shipping_lines($order));
             update_post_meta($subId, self::SUB_META_PAYMENT_METHOD, $paymentMethod);
             update_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, $paymentMethodTitle);
+            update_post_meta($subId, '_payment_method', $paymentMethod);
+            update_post_meta($subId, '_payment_method_title', $paymentMethodTitle);
             update_post_meta($subId, self::SUB_META_BILLING, $this->get_subscription_address_snapshot($subId, 'billing', (int) $order->get_user_id(), $order));
             update_post_meta($subId, self::SUB_META_SHIPPING, $this->get_subscription_address_snapshot($subId, 'shipping', (int) $order->get_user_id(), $order));
             if ($mCustomer !== '') {
