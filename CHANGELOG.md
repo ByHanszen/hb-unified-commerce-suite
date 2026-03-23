@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.19] — 2026-03-23
+### Fixed
+- Abonnementen: wijzigingen die je in de backend-editor opslaat voor status, schema en datums worden nu via het WooCommerce abonnement-orderobject persisted voordat synchronisatie draait, zodat `Opslaan` deze waarden niet meer onbedoeld terugdraait en de frontend dezelfde actuele abonnementsstatus en planning toont.
+
 ## [0.3.18] — 2026-03-23
 ### Fixed
 - Abonnementen: backend wijzigingen aan status, volgende datum en adresdata synchroniseren nu weer correct terug naar de frontend abonnementspagina, doordat de admin-editor na opslaan de legacy/frontend abonnementsdata vanuit het ordertype-record bijwerkt.

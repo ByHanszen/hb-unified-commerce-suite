@@ -884,7 +884,13 @@ class SubscriptionAdmin {
         if (isset($_POST['hb_ucs_sub_status'])) {
             $status = sanitize_key((string) wp_unslash($_POST['hb_ucs_sub_status']));
             if (in_array($status, $allowedStatuses, true)) {
-                update_post_meta($orderId, '_hb_ucs_subscription_status', $status);
+                if (method_exists($order, 'set_subscription_status')) {
+                    $order->set_subscription_status($status);
+                } elseif (method_exists($order, 'update_meta_data')) {
+                    $order->update_meta_data('_hb_ucs_subscription_status', $status);
+                } else {
+                    update_post_meta($orderId, '_hb_ucs_subscription_status', $status);
+                }
                 $savedStatus = $status;
             }
         }
@@ -894,7 +900,13 @@ class SubscriptionAdmin {
             $scheme = sanitize_key((string) wp_unslash($_POST['hb_ucs_sub_scheme']));
             $options = $this->get_schedule_options();
             if (isset($options[$scheme])) {
-                update_post_meta($orderId, '_hb_ucs_subscription_scheme', $scheme);
+                if (method_exists($order, 'set_subscription_scheme')) {
+                    $order->set_subscription_scheme($scheme);
+                } elseif (method_exists($order, 'update_meta_data')) {
+                    $order->update_meta_data('_hb_ucs_subscription_scheme', $scheme);
+                } else {
+                    update_post_meta($orderId, '_hb_ucs_subscription_scheme', $scheme);
+                }
                 $savedScheme = $scheme;
             }
         }
@@ -995,10 +1007,22 @@ class SubscriptionAdmin {
 
             $timestamp = $this->parse_datetime_local((string) wp_unslash($_POST[$inputKey]));
             if ($timestamp > 0) {
-                update_post_meta($orderId, $metaKey, $timestamp);
+                if ($metaKey === '_hb_ucs_subscription_next_payment' && method_exists($order, 'set_next_payment_timestamp')) {
+                    $order->set_next_payment_timestamp($timestamp);
+                } elseif (method_exists($order, 'update_meta_data')) {
+                    $order->update_meta_data($metaKey, $timestamp);
+                } else {
+                    update_post_meta($orderId, $metaKey, $timestamp);
+                }
                 $savedDates[$metaKey] = $timestamp;
             } else {
-                delete_post_meta($orderId, $metaKey);
+                if ($metaKey === '_hb_ucs_subscription_next_payment' && method_exists($order, 'set_next_payment_timestamp')) {
+                    $order->set_next_payment_timestamp(0);
+                } elseif (method_exists($order, 'delete_meta_data')) {
+                    $order->delete_meta_data($metaKey);
+                } else {
+                    delete_post_meta($orderId, $metaKey);
+                }
                 $savedDates[$metaKey] = 0;
             }
         }
