@@ -4,6 +4,26 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.36] — 2026-03-23
+### Fixed
+- Abonnementen: bij productwijzigingen vanuit Mijn Account worden nu niet alleen de gewijzigde artikelregels, maar ook hun product-btw en de verzend-btw eerst opnieuw berekend in de actuele klant/adrescontext voordat legacy- en backend-abonnementrecords worden gesynchroniseerd. Daardoor tonen backend orderregels en totalen na product- of adreswijzigingen weer de correcte btw voor zowel artikelen als verzendkosten.
+
+## [0.3.35] — 2026-03-23
+### Fixed
+- Abonnementen: wijzigingen aan factuur- of verzendadres vanuit Mijn Account (en het handmatig herladen van klantadressen in de backend) triggeren nu dezelfde WooCommerce shipping-recalculatie als itemwijzigingen. Daardoor worden verzendmethode, gratis-verzending-regels, B2B shipping filters en btw op verzendkosten ook na adreswijzigingen opnieuw correct toegepast en naar backend/legacy gesynchroniseerd.
+
+## [0.3.34] — 2026-03-23
+### Fixed
+- Abonnementen: na productwijzigingen vanuit Mijn Account worden verzendkosten nu opnieuw via WooCommerce shipping rates berekend op basis van de actuele abonnement-items, het afleveradres en B2B shipping filters. Daardoor werken regels zoals gratis verzending per abonnementsbedrag weer correct en wordt shipping tax opgeslagen als ex btw + aparte belasting, in lijn met WooCommerce.
+
+## [0.3.33] — 2026-03-23
+### Fixed
+- Abonnementen: itemwijzigingen vanuit Mijn Account schrijven de nieuwe productset nu direct ook naar de gekoppelde legacy subscription-post. Daardoor gebruikt de daaropvolgende synchronisatie niet langer oude legacy itemdata en komen product- en attribuutwijzigingen alsnog correct in het backend abonnement terecht.
+
+## [0.3.32] — 2026-03-23
+### Fixed
+- Abonnementen: frontend itemwijzigingen gebruiken bij het bijwerken van een bestaand order-type abonnement nu expliciet de legacy → order synchronisatierichting. Daardoor worden gewijzigde producten en attributen niet meer direct terug overschreven door oude backend orderdata.
+
 ## [0.3.31] — 2026-03-23
 ### Fixed
 - Abonnementen: product-, variatie-, attribuut- en prijswijzigingen vanuit Mijn Account verversen nu ook de echte orderregels van het backend abonnementrecord. Daardoor tonen frontend en backend na itemwijzigingen weer dezelfde producten en bedragen.

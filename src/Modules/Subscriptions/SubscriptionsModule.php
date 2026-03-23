@@ -234,6 +234,12 @@ class SubscriptionsModule {
 
         $record = $this->get_subscription_repository()->find($subId);
         if (is_array($record) && (($record['storage'] ?? '') === 'order_type')) {
+            $legacyPostId = $this->get_subscription_repository()->get_linked_legacy_post_id($subId);
+            if ($legacyPostId > 0) {
+                $this->get_subscription_repository()->sync_order_type_record($legacyPostId, $subId);
+                return;
+            }
+
             $this->get_subscription_repository()->sync_order_type_self($subId);
             return;
         }
@@ -287,6 +293,65 @@ class SubscriptionsModule {
 
             update_post_meta($subId, (string) $metaKey, $metaValue);
         }
+    }
+
+    private function persist_linked_legacy_subscription_items(int $subId, array $items): void {
+        if ($subId <= 0) {
+            return;
+        }
+
+        $legacyPostId = $this->get_subscription_repository()->get_linked_legacy_post_id($subId);
+        if ($legacyPostId <= 0 || $legacyPostId === $subId) {
+            return;
+        }
+
+        $this->persist_subscription_items($legacyPostId, $items);
+    }
+
+    private function persist_linked_legacy_subscription_shipping_lines(int $subId, array $lines): void {
+        if ($subId <= 0) {
+            return;
+        }
+
+        $legacyPostId = $this->get_subscription_repository()->get_linked_legacy_post_id($subId);
+        if ($legacyPostId <= 0 || $legacyPostId === $subId) {
+            return;
+        }
+
+        $this->persist_subscription_shipping_lines($legacyPostId, $lines);
+    }
+
+    private function persist_linked_legacy_subscription_addresses(int $subId, array $billing, array $shipping): void {
+        if ($subId <= 0) {
+            return;
+        }
+
+        $legacyPostId = $this->get_subscription_repository()->get_linked_legacy_post_id($subId);
+        if ($legacyPostId <= 0 || $legacyPostId === $subId) {
+            return;
+        }
+
+        update_post_meta($legacyPostId, \HB\UCS\Modules\Subscriptions\Domain\SubscriptionRepository::LEGACY_BILLING_META, $billing);
+        update_post_meta($legacyPostId, \HB\UCS\Modules\Subscriptions\Domain\SubscriptionRepository::LEGACY_SHIPPING_META, $shipping);
+    }
+
+    private function refresh_subscription_contact_snapshots_and_shipping(int $subId, array $billing, array $shipping): void {
+        if ($subId <= 0) {
+            return;
+        }
+
+        update_post_meta($subId, self::SUB_META_BILLING, $billing);
+        update_post_meta($subId, self::SUB_META_SHIPPING, $shipping);
+        $this->persist_linked_legacy_subscription_addresses($subId, $billing, $shipping);
+
+        $items = $this->recalculate_subscription_item_taxes($subId, $this->get_subscription_items($subId));
+        $this->persist_subscription_items($subId, $items);
+        $this->persist_linked_legacy_subscription_items($subId, $items);
+
+        $shippingLines = $this->calculate_subscription_shipping_lines($subId, $items);
+        $this->persist_subscription_shipping_lines($subId, $shippingLines);
+        $this->persist_linked_legacy_subscription_shipping_lines($subId, $shippingLines);
+        $this->sync_subscription_order_type_record($subId);
     }
 
     private function order_contains_subscription($order): bool {
@@ -1960,8 +2025,11 @@ class SubscriptionsModule {
             case 'sync_customer_addresses':
                 $userId = (int) get_post_meta($subId, self::SUB_META_USER_ID, true);
                 if ($userId > 0) {
-                    update_post_meta($subId, self::SUB_META_BILLING, $this->build_user_contact_snapshot($userId, 'billing'));
-                    update_post_meta($subId, self::SUB_META_SHIPPING, $this->build_user_contact_snapshot($userId, 'shipping'));
+                    $this->refresh_subscription_contact_snapshots_and_shipping(
+                        $subId,
+                        $this->build_user_contact_snapshot($userId, 'billing'),
+                        $this->build_user_contact_snapshot($userId, 'shipping')
+                    );
                     $this->add_subscription_admin_note($subId, __('Factuur- en verzendadres opnieuw geladen vanaf het klantprofiel.', 'hb-ucs'));
                 }
                 break;
@@ -2684,7 +2752,12 @@ class SubscriptionsModule {
                 }
 
                 $itemsNote = $this->build_account_subscription_items_update_note($existingItems, $newItems);
+                $newItems = $this->recalculate_subscription_item_taxes($subId, $newItems, $subscription);
                 $this->persist_subscription_items($subId, $newItems);
+                $this->persist_linked_legacy_subscription_items($subId, $newItems);
+                $shippingLines = $this->calculate_subscription_shipping_lines($subId, $newItems, $subscription);
+                $this->persist_subscription_shipping_lines($subId, $shippingLines);
+                $this->persist_linked_legacy_subscription_shipping_lines($subId, $shippingLines);
                 if ($itemsNote !== '') {
                     $this->add_subscription_admin_note($subId, $itemsNote);
                 }
@@ -3760,6 +3833,27 @@ class SubscriptionsModule {
     update_post_meta($subId, self::SUB_META_UNIT_PRICE, (string) wc_format_decimal((string) $this->get_subscription_item_storage_unit_price($first), wc_get_price_decimals()));
     }
 
+    private function recalculate_subscription_item_taxes(int $subId, array $items, $fallbackOrder = null): array {
+        $customer = $subId > 0 ? $this->get_subscription_tax_customer($subId, $fallbackOrder) : null;
+        $recalculated = [];
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $row = $this->normalize_subscription_item($item);
+            if (!$row) {
+                continue;
+            }
+
+            $row['taxes'] = $this->get_subscription_item_taxes(array_merge($row, ['taxes' => []]), $customer);
+            $recalculated[] = $row;
+        }
+
+        return $recalculated;
+    }
+
     private function normalize_subscription_shipping_line(array $line): ?array {
         $methodId = sanitize_text_field((string) ($line['method_id'] ?? ''));
         $methodTitle = sanitize_text_field((string) ($line['method_title'] ?? ''));
@@ -3973,6 +4067,139 @@ class SubscriptionsModule {
         }
 
         update_post_meta($subId, self::SUB_META_SHIPPING_LINES, $normalized);
+    }
+
+    private function calculate_subscription_shipping_lines(int $subId, array $items, $fallbackOrder = null): array {
+        if ($subId <= 0 || empty($items) || !function_exists('WC') || !WC() || !WC()->shipping()) {
+            return [];
+        }
+
+        $shipping = WC()->shipping();
+        if (!method_exists($shipping, 'calculate_shipping') || !method_exists($shipping, 'get_packages')) {
+            return [];
+        }
+
+        $destination = $this->get_subscription_address_snapshot($subId, 'shipping', (int) get_post_meta($subId, self::SUB_META_USER_ID, true), $fallbackOrder);
+        if (empty($destination)) {
+            $destination = $this->get_subscription_address_snapshot($subId, 'billing', (int) get_post_meta($subId, self::SUB_META_USER_ID, true), $fallbackOrder);
+        }
+
+        $contents = [];
+        $contentsCost = 0.0;
+
+        foreach ($items as $index => $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $productId = (int) (($item['base_variation_id'] ?? 0) ?: ($item['base_product_id'] ?? 0));
+            $product = $productId > 0 ? wc_get_product($productId) : false;
+            if (!$product || !is_object($product)) {
+                continue;
+            }
+
+            $qty = max(1, (int) ($item['qty'] ?? 1));
+            $lineSubtotal = (float) wc_format_decimal((string) ($this->get_subscription_item_storage_unit_price($item) * $qty));
+            $lineTaxes = $this->normalize_subscription_tax_amounts($this->get_subscription_item_taxes($item, $this->get_subscription_tax_customer($subId, $fallbackOrder))['total']);
+            $lineTaxTotal = (float) wc_format_decimal((string) array_sum($lineTaxes));
+            $contentsCost += $lineSubtotal;
+
+            $contents['hb_ucs_sub_' . $index] = [
+                'key' => 'hb_ucs_sub_' . $index,
+                'product_id' => (int) ($item['base_product_id'] ?? 0),
+                'variation_id' => (int) ($item['base_variation_id'] ?? 0),
+                'variation' => (array) ($item['selected_attributes'] ?? []),
+                'quantity' => $qty,
+                'data' => $product,
+                'line_subtotal' => $lineSubtotal,
+                'line_total' => $lineSubtotal,
+                'line_tax' => $lineTaxTotal,
+                'line_subtotal_tax' => $lineTaxTotal,
+            ];
+        }
+
+        if (empty($contents)) {
+            return [];
+        }
+
+        $package = [
+            'contents' => $contents,
+            'contents_cost' => (float) wc_format_decimal((string) $contentsCost),
+            'applied_coupons' => [],
+            'coupon_discount_amounts' => [],
+            'user' => [
+                'ID' => (int) get_post_meta($subId, self::SUB_META_USER_ID, true),
+            ],
+            'destination' => [
+                'country' => (string) ($destination['country'] ?? ''),
+                'state' => (string) ($destination['state'] ?? ''),
+                'postcode' => (string) ($destination['postcode'] ?? ''),
+                'city' => (string) ($destination['city'] ?? ''),
+                'address' => (string) ($destination['address_1'] ?? ''),
+                'address_1' => (string) ($destination['address_1'] ?? ''),
+                'address_2' => (string) ($destination['address_2'] ?? ''),
+            ],
+            'cart_subtotal' => (float) wc_format_decimal((string) $contentsCost),
+        ];
+
+        try {
+            if (
+                class_exists('HB\\UCS\\Modules\\B2B\\Support\\Context')
+            ) {
+                \HB\UCS\Modules\B2B\Support\Context::set_forced_user_id((int) get_post_meta($subId, self::SUB_META_USER_ID, true));
+            }
+
+            $shipping->calculate_shipping([$package]);
+            $packages = (array) $shipping->get_packages();
+        } catch (\Throwable $e) {
+            $packages = [];
+        }
+
+        if (class_exists('HB\\UCS\\Modules\\B2B\\Support\\Context')) {
+            \HB\UCS\Modules\B2B\Support\Context::set_forced_user_id(0);
+        }
+
+        $rates = isset($packages[0]['rates']) && is_array($packages[0]['rates']) ? $packages[0]['rates'] : [];
+        if (empty($rates)) {
+            return [];
+        }
+
+        $existingLines = $this->get_subscription_shipping_lines($subId);
+        $selectedRate = null;
+        foreach ($existingLines as $existingLine) {
+            $existingMethodId = (string) ($existingLine['method_id'] ?? '');
+            $existingInstanceId = (int) ($existingLine['instance_id'] ?? 0);
+            foreach ($rates as $rate) {
+                if (!$rate || !is_object($rate)) {
+                    continue;
+                }
+                $rateMethodId = method_exists($rate, 'get_method_id') ? (string) $rate->get_method_id() : '';
+                $rateInstanceId = method_exists($rate, 'get_instance_id') ? (int) $rate->get_instance_id() : 0;
+                if ($existingMethodId === $rateMethodId && $existingInstanceId === $rateInstanceId) {
+                    $selectedRate = $rate;
+                    break 2;
+                }
+            }
+        }
+
+        if (!$selectedRate) {
+            $firstRate = reset($rates);
+            $selectedRate = $firstRate && is_object($firstRate) ? $firstRate : null;
+        }
+
+        if (!$selectedRate || !is_object($selectedRate)) {
+            return [];
+        }
+
+        return array_values(array_filter([
+            $this->normalize_subscription_shipping_line([
+                'method_id' => method_exists($selectedRate, 'get_method_id') ? (string) $selectedRate->get_method_id() : '',
+                'method_title' => method_exists($selectedRate, 'get_label') ? (string) $selectedRate->get_label() : '',
+                'instance_id' => method_exists($selectedRate, 'get_instance_id') ? (int) $selectedRate->get_instance_id() : 0,
+                'total' => method_exists($selectedRate, 'get_cost') ? (float) $selectedRate->get_cost() : 0.0,
+                'taxes' => method_exists($selectedRate, 'get_taxes') ? ['total' => (array) $selectedRate->get_taxes()] : [],
+            ]),
+        ]));
     }
 
     private function extract_subscription_shipping_lines($order): array {
@@ -4379,8 +4606,7 @@ class SubscriptionsModule {
         $shipping = $this->build_user_contact_snapshot($userId, 'shipping');
 
         foreach ($this->get_user_subscription_ids($userId) as $subId) {
-            update_post_meta($subId, self::SUB_META_BILLING, $billing);
-            update_post_meta($subId, self::SUB_META_SHIPPING, $shipping);
+            $this->refresh_subscription_contact_snapshots_and_shipping($subId, $billing, $shipping);
         }
     }
 
