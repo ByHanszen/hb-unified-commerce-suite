@@ -231,7 +231,13 @@ class SubscriptionsModule {
             return;
         }
 
-        $this->get_subscription_repository()->sync_order_type_self($subId);
+        $record = $this->get_subscription_repository()->find($subId);
+        if (is_array($record) && (($record['storage'] ?? '') === 'order_type')) {
+            $this->get_subscription_repository()->sync_order_type_self($subId);
+            return;
+        }
+
+        $this->get_subscription_repository()->ensure_order_type_record($subId, true);
     }
 
     private function order_contains_subscription($order): bool {
