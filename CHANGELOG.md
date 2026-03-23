@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.20] — 2026-03-23
+### Fixed
+- Abonnementen: backend statusacties en handmatige status-/planningswijzigingen forceren nu ook de onderliggende subscription-meta en Woo-orderstatus naar de database voordat de frontend/legacy sync draait, zodat statussen zoals `gepauzeerd` niet meer direct terugvallen naar de oude waarde.
+
 ## [0.3.19] — 2026-03-23
 ### Fixed
 - Abonnementen: wijzigingen die je in de backend-editor opslaat voor status, schema en datums worden nu via het WooCommerce abonnement-orderobject persisted voordat synchronisatie draait, zodat `Opslaan` deze waarden niet meer onbedoeld terugdraait en de frontend dezelfde actuele abonnementsstatus en planning toont.

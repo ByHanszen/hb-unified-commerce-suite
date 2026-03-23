@@ -569,15 +569,20 @@ class SubscriptionAdmin {
                 continue;
             }
 
-            if (method_exists($order, 'set_subscription_status')) {
-                $order->set_subscription_status($statusMap[$action]);
-            } elseif (method_exists($order, 'update_meta_data')) {
-                $order->update_meta_data('_hb_ucs_subscription_status', $statusMap[$action]);
-            }
+            $this->apply_subscription_status_to_order($order, $statusMap[$action]);
             if (method_exists($order, 'save')) {
                 $order->save();
             }
-            $this->service->get_repository()->sync_legacy_from_order($order);
+
+            $this->persist_subscription_shadow_meta((int) $order->get_id(), [
+                '_hb_ucs_subscription_status' => $statusMap[$action],
+                SubscriptionRepository::LEGACY_STATUS_META => $statusMap[$action],
+            ]);
+
+            $freshOrder = $this->get_subscription_order((int) $order->get_id());
+            if ($freshOrder) {
+                $this->service->get_repository()->sync_legacy_from_order($freshOrder);
+            }
             $updated++;
         }
 
@@ -884,13 +889,7 @@ class SubscriptionAdmin {
         if (isset($_POST['hb_ucs_sub_status'])) {
             $status = sanitize_key((string) wp_unslash($_POST['hb_ucs_sub_status']));
             if (in_array($status, $allowedStatuses, true)) {
-                if (method_exists($order, 'set_subscription_status')) {
-                    $order->set_subscription_status($status);
-                } elseif (method_exists($order, 'update_meta_data')) {
-                    $order->update_meta_data('_hb_ucs_subscription_status', $status);
-                } else {
-                    update_post_meta($orderId, '_hb_ucs_subscription_status', $status);
-                }
+                $this->apply_subscription_status_to_order($order, $status);
                 $savedStatus = $status;
             }
         }
@@ -1031,7 +1030,21 @@ class SubscriptionAdmin {
             $order->save();
         }
 
-        $this->service->get_repository()->sync_legacy_from_order($order);
+        $shadowMetaUpdates = [
+            '_hb_ucs_subscription_status' => $savedStatus,
+            SubscriptionRepository::LEGACY_STATUS_META => $savedStatus,
+            '_hb_ucs_subscription_scheme' => $savedScheme,
+            '_hb_ucs_subscription_next_payment' => (int) ($savedDates['_hb_ucs_subscription_next_payment'] ?? 0),
+            '_hb_ucs_subscription_trial_end' => (int) ($savedDates['_hb_ucs_subscription_trial_end'] ?? 0),
+            '_hb_ucs_subscription_end_date' => (int) ($savedDates['_hb_ucs_subscription_end_date'] ?? 0),
+        ];
+
+        $this->persist_subscription_shadow_meta($orderId, $shadowMetaUpdates);
+
+        $freshOrder = $this->get_subscription_order($orderId);
+        if ($freshOrder) {
+            $this->service->get_repository()->sync_legacy_from_order($freshOrder);
+        }
 
         $changes = [];
 
@@ -1262,18 +1275,57 @@ class SubscriptionAdmin {
             return;
         }
 
+        $this->apply_subscription_status_to_order($order, $status);
+        if (method_exists($order, 'save')) {
+            $order->save();
+        }
+
+        $this->persist_subscription_shadow_meta((int) $order->get_id(), [
+            '_hb_ucs_subscription_status' => $status,
+            SubscriptionRepository::LEGACY_STATUS_META => $status,
+        ]);
+
+        $freshOrder = $this->get_subscription_order((int) $order->get_id());
+        if ($freshOrder) {
+            $this->service->get_repository()->sync_legacy_from_order($freshOrder);
+        }
+
+        if (method_exists($order, 'add_order_note')) {
+            $order->add_order_note($note);
+        }
+    }
+
+    private function apply_subscription_status_to_order($order, string $status): void {
+        $status = sanitize_key($status);
+
         if (method_exists($order, 'set_subscription_status')) {
             $order->set_subscription_status($status);
         } elseif (method_exists($order, 'update_meta_data')) {
             $order->update_meta_data('_hb_ucs_subscription_status', $status);
         }
-        if (method_exists($order, 'save')) {
-            $order->save();
-        }
-        $this->service->get_repository()->sync_legacy_from_order($order);
 
-        if (method_exists($order, 'add_order_note')) {
-            $order->add_order_note($note);
+        if (method_exists($order, 'update_meta_data')) {
+            $order->update_meta_data(SubscriptionRepository::LEGACY_STATUS_META, $status);
+        }
+
+        $mappedOrderStatus = preg_replace('/^wc-/', '', $this->map_subscription_status_to_order_status($status));
+        if ($mappedOrderStatus !== '' && method_exists($order, 'set_status')) {
+            $order->set_status($mappedOrderStatus, '', true);
+        }
+    }
+
+    private function persist_subscription_shadow_meta(int $orderId, array $metaMap): void {
+        if ($orderId <= 0) {
+            return;
+        }
+
+        foreach ($metaMap as $metaKey => $metaValue) {
+            if ($metaValue === '' || $metaValue === null || $metaValue === []) {
+                delete_post_meta($orderId, (string) $metaKey);
+                continue;
+            }
+
+            update_post_meta($orderId, (string) $metaKey, $metaValue);
         }
     }
 
