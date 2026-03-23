@@ -569,8 +569,15 @@ class SubscriptionAdmin {
                 continue;
             }
 
-            update_post_meta((int) $order->get_id(), '_hb_ucs_subscription_status', $statusMap[$action]);
-            $this->service->get_repository()->sync_order_type_self((int) $order->get_id());
+            if (method_exists($order, 'set_subscription_status')) {
+                $order->set_subscription_status($statusMap[$action]);
+            } elseif (method_exists($order, 'update_meta_data')) {
+                $order->update_meta_data('_hb_ucs_subscription_status', $statusMap[$action]);
+            }
+            if (method_exists($order, 'save')) {
+                $order->save();
+            }
+            $this->service->get_repository()->sync_legacy_from_order($order);
             $updated++;
         }
 
@@ -770,7 +777,7 @@ class SubscriptionAdmin {
         }
 
         apply_filters('hb_ucs_subscription_admin_execute_action', null, 'create_renewal_order', (int) $order->get_id(), $order);
-        $this->service->get_repository()->sync_order_type_self((int) $order->get_id());
+        $this->service->get_repository()->sync_legacy_from_order($order);
     }
 
     public function handle_sync_customer_addresses_action($order): void {
@@ -797,7 +804,15 @@ class SubscriptionAdmin {
             update_post_meta((int) $order->get_id(), '_shipping_' . $field, $value);
         }
 
-        $this->service->get_repository()->sync_order_type_self((int) $order->get_id());
+        if (method_exists($order, 'set_address')) {
+            $order->set_address($billing, 'billing');
+            $order->set_address($shipping, 'shipping');
+        }
+        if (method_exists($order, 'save')) {
+            $order->save();
+        }
+
+        $this->service->get_repository()->sync_legacy_from_order($order);
 
         if (method_exists($order, 'add_order_note')) {
             $order->add_order_note(__('Factuur- en verzendadres opnieuw geladen vanaf het klantprofiel.', 'hb-ucs'));
@@ -992,7 +1007,7 @@ class SubscriptionAdmin {
             $order->save();
         }
 
-        $this->service->get_repository()->sync_order_type_self($orderId);
+        $this->service->get_repository()->sync_legacy_from_order($order);
 
         $changes = [];
 
@@ -1223,8 +1238,15 @@ class SubscriptionAdmin {
             return;
         }
 
-        update_post_meta((int) $order->get_id(), '_hb_ucs_subscription_status', $status);
-        $this->service->get_repository()->sync_order_type_self((int) $order->get_id());
+        if (method_exists($order, 'set_subscription_status')) {
+            $order->set_subscription_status($status);
+        } elseif (method_exists($order, 'update_meta_data')) {
+            $order->update_meta_data('_hb_ucs_subscription_status', $status);
+        }
+        if (method_exists($order, 'save')) {
+            $order->save();
+        }
+        $this->service->get_repository()->sync_legacy_from_order($order);
 
         if (method_exists($order, 'add_order_note')) {
             $order->add_order_note($note);

@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.18] — 2026-03-23
+### Fixed
+- Abonnementen: backend wijzigingen aan status, volgende datum en adresdata synchroniseren nu weer correct terug naar de frontend abonnementspagina, doordat de admin-editor na opslaan de legacy/frontend abonnementsdata vanuit het ordertype-record bijwerkt.
+
 ## [0.3.17] — 2026-03-23
 ### Fixed
 - Abonnementen: Mijn Account acties voor pauzeren, hervatten, annuleren en planning wijzigen schrijven status- en schemawijzigingen nu via het WooCommerce abonnement-orderobject weg, zodat de abonnementsstatus echt persistent wijzigt en zichtbaar blijft in frontend én backend.
