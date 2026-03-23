@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.38] — 2026-03-23
+### Fixed
+- Abonnementen: nieuw toegevoegde producten vanuit Mijn Account gebruiken nu overal dezelfde exclusief-btw opslagprijs als bron voor subscription pricing, cart-data en opgeslagen itemregels, terwijl de frontend prijsweergave apart volgens de WooCommerce shop-instelling (incl./excl. btw) wordt opgebouwd. Daardoor wordt na opslaan niet langer nogmaals btw bovenop de al juiste frontend prijs gezet.
+
 ## [0.3.37] — 2026-03-23
 ### Fixed
 - Abonnementen: na frontend product- of adreswijzigingen worden subscription-itemprijzen nu altijd teruggeschreven als exclusief-btw opslagprijs, met btw apart herberekend. Daarnaast gebruikt de backend shadow-order synchronisatie voortaan dezelfde storage-prijsnormalisatie. Daardoor komt in de backend op de ex-btw plek niet langer de incl.-btw prijs terecht en wordt product-btw niet nog eens extra bovenop die prijs opgeteld.
