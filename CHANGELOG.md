@@ -4,6 +4,34 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.27] — 2026-03-23
+### Changed
+- Abonnementen: de uitgebreide synchronisatie-debuglogging blijft beschikbaar in de code, maar staat voortaan standaard uit. Je kunt deze alleen nog expliciet aanzetten via de constante `HB_UCS_SUBSCRIPTION_SYNC_DEBUG` of de filter `hb_ucs_subscription_sync_debug_enabled`.
+
+## [0.3.26] — 2026-03-23
+### Fixed
+- Abonnementen: wijzigingen vanuit Mijn Account voor pauzeren, hervatten, annuleren en planning aanpassen gebruiken nu dezelfde persist- en synchronisatieroute als backend. Status, volgende orderdatum en schema worden eerst hard naar het orderrecord geschreven en daarna direct naar legacy/frontend gesynchroniseerd, zodat frontend-acties niet meer stil terugvallen naar oude waarden.
+
+## [0.3.25] — 2026-03-23
+### Fixed
+- Abonnementen: op het backend bewerkscherm krijgt de daadwerkelijk gekozen hoofdstatus nu voorrang boven een mogelijk verouderde waarde uit de schema-meta-box, en alle statusselects worden bij wijziging en submit expliciet gelijkgetrokken. Daardoor wordt een keuze zoals `Actief` niet meer overschreven door een oude `Gepauzeerd` waarde tijdens opslaan.
+
+## [0.3.24] — 2026-03-23
+### Added
+- Abonnementen: extra debuglogging voor het herladen van abonnement-orderobjecten via de custom data-store en voor het renderen van de backend schema-meta-box. Hiermee wordt zichtbaar of waarden pas na opslaan, bij het opnieuw laden van het scherm, terugvallen.
+
+## [0.3.23] — 2026-03-23
+### Added
+- Abonnementen: gerichte debuglogging voor backend save, repository synchronisatie en frontend uitlezing van status en volgende orderdatum. De logs maken per stap zichtbaar welke order-id, legacy-id, status en datum gebruikt worden en waar een mismatch ontstaat.
+
+## [0.3.22] — 2026-03-23
+### Fixed
+- Abonnementen: de repository bewaart de legacy-koppeling van ordertype-abonnementen nu correct tijdens self-sync en kopieert ook legacy schema- en datumvelden terug naar het orderrecord. Daardoor blijven backend statuswijzigingen niet meer hangen aan een los record en toont de frontend weer dezelfde status en volgende orderdatum als de backend.
+
+## [0.3.21] — 2026-03-23
+### Fixed
+- Abonnementen: backend synchronisatie laadt het abonnement-orderobject na opslaan niet meer opnieuw in vóór de legacy/frontend sync, omdat het custom data-store zo'n reload vanuit de oude legacy-data hydrateerde en daarmee handmatige status- en datumwijzigingen weer terugdraaide.
+
 ## [0.3.20] — 2026-03-23
 ### Fixed
 - Abonnementen: backend statusacties en handmatige status-/planningswijzigingen forceren nu ook de onderliggende subscription-meta en Woo-orderstatus naar de database voordat de frontend/legacy sync draait, zodat statussen zoals `gepauzeerd` niet meer direct terugvallen naar de oude waarde.

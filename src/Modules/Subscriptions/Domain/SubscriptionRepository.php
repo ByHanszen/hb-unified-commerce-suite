@@ -3,6 +3,7 @@
 namespace HB\UCS\Modules\Subscriptions\Domain;
 
 use HB\UCS\Modules\Subscriptions\OrderTypes\SubscriptionOrderType;
+use HB\UCS\Modules\Subscriptions\Support\SubscriptionSyncLogger;
 
 if (!defined('ABSPATH')) exit;
 
@@ -271,8 +272,16 @@ class SubscriptionRepository {
 
         $legacyPostId = $this->ensure_legacy_record_for_order($order);
         if ($legacyPostId <= 0) {
+            $this->log_sync_debug('repository.sync_legacy_from_order.missing_legacy', [
+                'order' => $this->build_order_debug_snapshot($order),
+            ]);
             return null;
         }
+
+        $this->log_sync_debug('repository.sync_legacy_from_order.start', [
+            'order' => $this->build_order_debug_snapshot($order),
+            'legacy_before' => $this->build_legacy_debug_snapshot($legacyPostId),
+        ]);
 
         $legacyData = $this->build_legacy_data_from_order($order, $legacyPostId);
 
@@ -322,7 +331,15 @@ class SubscriptionRepository {
         update_post_meta($order->get_id(), SubscriptionOrderType::LEGACY_POST_ID_META, $legacyPostId);
         update_post_meta($order->get_id(), SubscriptionOrderType::STORAGE_VERSION_META, SubscriptionOrderType::PHASE2_STORAGE_VERSION);
 
-        return $this->sync_order_type_record($legacyPostId, (int) $order->get_id());
+        $result = $this->sync_order_type_record($legacyPostId, (int) $order->get_id());
+
+        $this->log_sync_debug('repository.sync_legacy_from_order.end', [
+            'order' => $this->build_order_debug_snapshot($order),
+            'legacy_after' => $this->build_legacy_debug_snapshot($legacyPostId),
+            'result' => is_array($result) ? $result : [],
+        ]);
+
+        return $result;
     }
 
     public function ensure_order_type_record(int $legacyPostId, bool $sync = true): ?array {
@@ -352,6 +369,10 @@ class SubscriptionRepository {
     public function sync_order_type_record(int $legacyPostId, int $orderId = 0, array $legacy = []): ?array {
         $legacy = !empty($legacy) ? $legacy : $this->get_legacy_subscription_data($legacyPostId);
         if (empty($legacy)) {
+            $this->log_sync_debug('repository.sync_order_type_record.empty_legacy', [
+                'legacy_post_id' => $legacyPostId,
+                'order_id' => $orderId,
+            ]);
             return null;
         }
 
@@ -364,10 +385,26 @@ class SubscriptionRepository {
             return $this->ensure_order_type_record($legacyPostId, true);
         }
 
+        $this->log_sync_debug('repository.sync_order_type_record.start', [
+            'legacy_post_id' => $legacyPostId,
+            'order_id' => $orderId,
+            'legacy' => $this->build_legacy_debug_snapshot($legacyPostId, $legacy),
+            'order_before' => $this->build_order_debug_snapshot($orderId),
+        ]);
+
         wp_update_post($this->build_shadow_order_postarr($legacy, $orderId));
         $this->sync_shadow_order_meta($orderId, $legacy);
 
-        return $this->find($orderId);
+        $result = $this->find($orderId);
+
+        $this->log_sync_debug('repository.sync_order_type_record.end', [
+            'legacy_post_id' => $legacyPostId,
+            'order_id' => $orderId,
+            'order_after' => $this->build_order_debug_snapshot($orderId),
+            'result' => is_array($result) ? $result : [],
+        ]);
+
+        return $result;
     }
 
     public function sync_order_type_self(int $orderId): ?array {
@@ -382,14 +419,39 @@ class SubscriptionRepository {
 
         $data = $this->get_order_type_subscription_data($order);
         if (empty($data)) {
+            $this->log_sync_debug('repository.sync_order_type_self.empty_data', [
+                'order' => $this->build_order_debug_snapshot($order),
+            ]);
             return null;
         }
 
+        $this->log_sync_debug('repository.sync_order_type_self.start', [
+            'order' => $this->build_order_debug_snapshot($order),
+            'linked_legacy_before' => $this->build_legacy_debug_snapshot((int) ($data['legacy_post_id'] ?? 0)),
+            'data' => $data,
+        ]);
+
         wp_update_post($this->build_shadow_order_postarr($data, $orderId));
         $this->sync_shadow_order_meta($orderId, $data);
-        delete_post_meta($orderId, SubscriptionOrderType::LEGACY_POST_ID_META);
 
-        return $this->find($orderId);
+        $synced = $this->sync_legacy_from_order($order);
+        if (is_array($synced)) {
+            $this->log_sync_debug('repository.sync_order_type_self.end', [
+                'order' => $this->build_order_debug_snapshot($order),
+                'linked_legacy_after' => $this->build_legacy_debug_snapshot($this->get_linked_legacy_post_id($order)),
+                'result' => $synced,
+            ]);
+            return $synced;
+        }
+
+        $result = $this->find($orderId);
+
+        $this->log_sync_debug('repository.sync_order_type_self.end_without_sync_result', [
+            'order' => $this->build_order_debug_snapshot($order),
+            'result' => is_array($result) ? $result : [],
+        ]);
+
+        return $result;
     }
 
     public function exists(int $subscriptionId): bool {
@@ -836,7 +898,7 @@ class SubscriptionRepository {
         }
 
         $metaMap = [
-            SubscriptionOrderType::LEGACY_POST_ID_META => (int) ($legacy['id'] ?? 0),
+            SubscriptionOrderType::LEGACY_POST_ID_META => (int) ($legacy['legacy_post_id'] ?? ($legacy['id'] ?? 0)),
             SubscriptionOrderType::STORAGE_VERSION_META => SubscriptionOrderType::PHASE2_STORAGE_VERSION,
             '_order_key' => $orderKey,
             '_customer_user' => (int) ($legacy['customer_id'] ?? 0),
@@ -850,6 +912,12 @@ class SubscriptionRepository {
             '_order_tax' => $this->format_decimal($totals['tax'] ?? 0.0),
             '_order_total' => $this->format_decimal($totals['total'] ?? 0.0),
             self::LEGACY_STATUS_META => (string) ($legacy['status'] ?? ''),
+            self::LEGACY_SCHEME_META => (string) ($legacy['scheme'] ?? ''),
+            self::LEGACY_INTERVAL_META => (int) ($legacy['interval'] ?? 0),
+            self::LEGACY_PERIOD_META => (string) ($legacy['period'] ?? ''),
+            self::LEGACY_NEXT_PAYMENT_META => (int) ($legacy['next_payment'] ?? 0),
+            self::LEGACY_TRIAL_END_META => (int) ($legacy['trial_end'] ?? 0),
+            self::LEGACY_END_DATE_META => (int) ($legacy['end_date'] ?? 0),
             '_hb_ucs_subscription_status' => (string) ($legacy['status'] ?? ''),
             '_hb_ucs_subscription_scheme' => (string) ($legacy['scheme'] ?? ''),
             '_hb_ucs_subscription_interval' => (int) ($legacy['interval'] ?? 0),
@@ -872,6 +940,16 @@ class SubscriptionRepository {
 
             update_post_meta($orderId, $metaKey, $metaValue);
         }
+
+        $this->log_sync_debug('repository.sync_shadow_order_meta', [
+            'order_id' => $orderId,
+            'legacy_post_id' => (int) ($legacy['legacy_post_id'] ?? ($legacy['id'] ?? 0)),
+            'status' => (string) ($legacy['status'] ?? ''),
+            'scheme' => (string) ($legacy['scheme'] ?? ''),
+            'next_payment' => (int) ($legacy['next_payment'] ?? 0),
+            'trial_end' => (int) ($legacy['trial_end'] ?? 0),
+            'end_date' => (int) ($legacy['end_date'] ?? 0),
+        ]);
 
         foreach (['first_name', 'last_name', 'company', 'address_1', 'address_2', 'city', 'state', 'postcode', 'country', 'email', 'phone'] as $field) {
             $billingValue = (string) ($billing[$field] ?? '');
@@ -1177,5 +1255,56 @@ class SubscriptionRepository {
         return function_exists('wc_format_decimal')
             ? (float) wc_format_decimal((string) $value, wc_get_price_decimals())
             : round((float) $value, 2);
+    }
+
+    private function log_sync_debug(string $event, array $context = []): void {
+        SubscriptionSyncLogger::debug($event, $context);
+    }
+
+    private function build_order_debug_snapshot($order): array {
+        if (is_numeric($order)) {
+            $order = function_exists('wc_get_order') ? wc_get_order((int) $order) : null;
+        }
+
+        if (!$order || !is_object($order)) {
+            return [];
+        }
+
+        return [
+            'order_id' => method_exists($order, 'get_id') ? (int) $order->get_id() : 0,
+            'order_type' => method_exists($order, 'get_type') ? (string) $order->get_type() : '',
+            'post_status' => method_exists($order, 'get_status') ? (string) $order->get_status() : '',
+            'legacy_post_id' => $this->get_linked_legacy_post_id($order),
+            'subscription_status' => method_exists($order, 'get_meta') ? (string) $order->get_meta('_hb_ucs_subscription_status', true) : '',
+            'legacy_status_meta_on_order' => method_exists($order, 'get_meta') ? (string) $order->get_meta(self::LEGACY_STATUS_META, true) : '',
+            'scheme' => method_exists($order, 'get_meta') ? (string) $order->get_meta('_hb_ucs_subscription_scheme', true) : '',
+            'legacy_scheme_meta_on_order' => method_exists($order, 'get_meta') ? (string) $order->get_meta(self::LEGACY_SCHEME_META, true) : '',
+            'next_payment' => method_exists($order, 'get_meta') ? (int) $order->get_meta('_hb_ucs_subscription_next_payment', true) : 0,
+            'legacy_next_payment_meta_on_order' => method_exists($order, 'get_meta') ? (int) $order->get_meta(self::LEGACY_NEXT_PAYMENT_META, true) : 0,
+        ];
+    }
+
+    private function build_legacy_debug_snapshot(int $legacyPostId, array $legacy = []): array {
+        if ($legacyPostId <= 0 && empty($legacy)) {
+            return [];
+        }
+
+        $legacy = !empty($legacy) ? $legacy : $this->get_legacy_subscription_data($legacyPostId);
+        if (empty($legacy)) {
+            return [
+                'legacy_post_id' => $legacyPostId,
+                'exists' => false,
+            ];
+        }
+
+        return [
+            'legacy_post_id' => (int) ($legacy['legacy_post_id'] ?? ($legacy['id'] ?? $legacyPostId)),
+            'status' => (string) ($legacy['status'] ?? ''),
+            'scheme' => (string) ($legacy['scheme'] ?? ''),
+            'next_payment' => (int) ($legacy['next_payment'] ?? 0),
+            'trial_end' => (int) ($legacy['trial_end'] ?? 0),
+            'end_date' => (int) ($legacy['end_date'] ?? 0),
+            'customer_id' => (int) ($legacy['customer_id'] ?? 0),
+        ];
     }
 }

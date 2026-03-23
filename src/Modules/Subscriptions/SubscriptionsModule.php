@@ -5,6 +5,7 @@
 namespace HB\UCS\Modules\Subscriptions;
 
 use HB\UCS\Core\Settings;
+use HB\UCS\Modules\Subscriptions\Support\SubscriptionSyncLogger;
 
 if (!defined('ABSPATH')) exit;
 
@@ -238,6 +239,54 @@ class SubscriptionsModule {
         }
 
         $this->get_subscription_repository()->ensure_order_type_record($subId, true);
+    }
+
+    private function apply_account_subscription_status_to_order($subscription, string $status): void {
+        $status = sanitize_key($status);
+
+        if (method_exists($subscription, 'set_subscription_status')) {
+            $subscription->set_subscription_status($status);
+        } elseif (method_exists($subscription, 'update_meta_data')) {
+            $subscription->update_meta_data('_hb_ucs_subscription_status', $status);
+        }
+
+        if (method_exists($subscription, 'update_meta_data')) {
+            $subscription->update_meta_data(self::SUB_META_STATUS, $status);
+        }
+
+        $mappedOrderStatus = $this->map_account_subscription_status_to_order_status($status);
+        if ($mappedOrderStatus !== '' && method_exists($subscription, 'set_status')) {
+            $subscription->set_status($mappedOrderStatus, '', true);
+        }
+    }
+
+    private function map_account_subscription_status_to_order_status(string $status): string {
+        $map = [
+            'active' => 'processing',
+            'pending_mandate' => 'pending',
+            'payment_pending' => 'pending',
+            'on-hold' => 'on-hold',
+            'paused' => 'on-hold',
+            'cancelled' => 'cancelled',
+            'expired' => 'cancelled',
+        ];
+
+        return $map[sanitize_key($status)] ?? 'pending';
+    }
+
+    private function persist_account_subscription_shadow_meta(int $subId, array $metaMap): void {
+        if ($subId <= 0) {
+            return;
+        }
+
+        foreach ($metaMap as $metaKey => $metaValue) {
+            if ($metaValue === '' || $metaValue === null || $metaValue === []) {
+                delete_post_meta($subId, (string) $metaKey);
+                continue;
+            }
+
+            update_post_meta($subId, (string) $metaKey, $metaValue);
+        }
     }
 
     private function order_contains_subscription($order): bool {
@@ -2096,6 +2145,13 @@ class SubscriptionsModule {
             $nextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
             $locked = $this->subscription_has_locked_orders($subId);
 
+            SubscriptionSyncLogger::debug('frontend.render_account_subscription_list.item', [
+                'subscription_id' => $subId,
+                'status' => $status,
+                'next_payment' => $nextPayment,
+                'scheme' => (string) get_post_meta($subId, self::SUB_META_SCHEME, true),
+            ]);
+
             $itemSummary = [];
             foreach ($items as $item) {
                 $label = $this->get_subscription_item_label($item);
@@ -2147,6 +2203,15 @@ class SubscriptionsModule {
         $paymentMethodTitle = (string) get_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, true);
         $mollieMeta = $this->get_subscription_mollie_meta_context($subId);
         $nextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
+
+        SubscriptionSyncLogger::debug('frontend.render_account_subscription_detail', [
+            'subscription_id' => $subId,
+            'user_id' => $userId,
+            'status' => $status,
+            'next_payment' => $nextPayment,
+            'scheme' => $scheme,
+        ]);
+
         $locked = $this->subscription_has_locked_orders($subId);
         $items = $this->get_subscription_items($subId);
         $productOptions = $this->get_manageable_subscription_product_options($scheme);
@@ -2423,6 +2488,17 @@ class SubscriptionsModule {
             : (string) get_post_meta($subId, self::SUB_META_STATUS, true);
         $manageDisabled = in_array($status, ['cancelled', 'expired'], true);
         $didUpdateSubscription = false;
+        $syncViaOrderObject = false;
+        $shadowMetaUpdates = [];
+
+        SubscriptionSyncLogger::debug('frontend.account_action.start', [
+            'subscription_id' => $subId,
+            'action' => $action,
+            'current_status' => $status,
+            'current_next_payment' => method_exists($subscription, 'get_next_payment_timestamp')
+                ? (int) $subscription->get_next_payment_timestamp()
+                : (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true),
+        ]);
 
         switch ($action) {
             case 'pause':
@@ -2430,16 +2506,14 @@ class SubscriptionsModule {
                     wc_add_notice(__('Dit abonnement kan nu niet gepauzeerd worden.', 'hb-ucs'), 'error');
                     break;
                 }
-                if (method_exists($subscription, 'set_subscription_status')) {
-                    $subscription->set_subscription_status('paused');
-                } elseif (method_exists($subscription, 'update_meta_data')) {
-                    $subscription->update_meta_data('_hb_ucs_subscription_status', 'paused');
-                }
-                if (method_exists($subscription, 'update_meta_data')) {
-                    $subscription->update_meta_data(self::SUB_META_STATUS, 'paused');
-                }
+                $this->apply_account_subscription_status_to_order($subscription, 'paused');
+                $shadowMetaUpdates = [
+                    '_hb_ucs_subscription_status' => 'paused',
+                    self::SUB_META_STATUS => 'paused',
+                ];
                 $this->add_subscription_admin_note($subId, __('Klant heeft het abonnement gepauzeerd via Mijn Account.', 'hb-ucs'));
                 $didUpdateSubscription = true;
+                $syncViaOrderObject = true;
                 wc_add_notice(__('Het abonnement is gepauzeerd.', 'hb-ucs'));
                 break;
 
@@ -2448,14 +2522,7 @@ class SubscriptionsModule {
                     wc_add_notice(__('Dit abonnement kan nu niet hervat worden.', 'hb-ucs'), 'error');
                     break;
                 }
-                if (method_exists($subscription, 'set_subscription_status')) {
-                    $subscription->set_subscription_status('active');
-                } elseif (method_exists($subscription, 'update_meta_data')) {
-                    $subscription->update_meta_data('_hb_ucs_subscription_status', 'active');
-                }
-                if (method_exists($subscription, 'update_meta_data')) {
-                    $subscription->update_meta_data(self::SUB_META_STATUS, 'active');
-                }
+                $this->apply_account_subscription_status_to_order($subscription, 'active');
                 $nextPayment = method_exists($subscription, 'get_next_payment_timestamp')
                     ? (int) $subscription->get_next_payment_timestamp()
                     : (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
@@ -2470,8 +2537,15 @@ class SubscriptionsModule {
                 if (method_exists($subscription, 'update_meta_data')) {
                     $subscription->update_meta_data(self::SUB_META_NEXT_PAYMENT, $nextPayment);
                 }
+                $shadowMetaUpdates = [
+                    '_hb_ucs_subscription_status' => 'active',
+                    self::SUB_META_STATUS => 'active',
+                    '_hb_ucs_subscription_next_payment' => $nextPayment,
+                    self::SUB_META_NEXT_PAYMENT => $nextPayment,
+                ];
                 $this->add_subscription_admin_note($subId, __('Klant heeft het abonnement hervat via Mijn Account.', 'hb-ucs'));
                 $didUpdateSubscription = true;
+                $syncViaOrderObject = true;
                 wc_add_notice(__('Het abonnement is hervat.', 'hb-ucs'));
                 break;
 
@@ -2480,21 +2554,21 @@ class SubscriptionsModule {
                     wc_add_notice(__('Dit abonnement kan nu niet geannuleerd worden.', 'hb-ucs'), 'error');
                     break;
                 }
-                if (method_exists($subscription, 'set_subscription_status')) {
-                    $subscription->set_subscription_status('cancelled');
-                } elseif (method_exists($subscription, 'update_meta_data')) {
-                    $subscription->update_meta_data('_hb_ucs_subscription_status', 'cancelled');
-                }
-                if (method_exists($subscription, 'update_meta_data')) {
-                    $subscription->update_meta_data(self::SUB_META_STATUS, 'cancelled');
-                }
+                $this->apply_account_subscription_status_to_order($subscription, 'cancelled');
                 $endTimestamp = time();
                 if (method_exists($subscription, 'update_meta_data')) {
                     $subscription->update_meta_data(self::SUB_META_END_DATE, $endTimestamp);
                     $subscription->update_meta_data('_hb_ucs_subscription_end_date', $endTimestamp);
                 }
+                $shadowMetaUpdates = [
+                    '_hb_ucs_subscription_status' => 'cancelled',
+                    self::SUB_META_STATUS => 'cancelled',
+                    '_hb_ucs_subscription_end_date' => $endTimestamp,
+                    self::SUB_META_END_DATE => $endTimestamp,
+                ];
                 $this->add_subscription_admin_note($subId, __('Klant heeft het abonnement geannuleerd via Mijn Account.', 'hb-ucs'));
                 $didUpdateSubscription = true;
+                $syncViaOrderObject = true;
                 wc_add_notice(__('Het abonnement is geannuleerd.', 'hb-ucs'));
                 break;
 
@@ -2537,11 +2611,22 @@ class SubscriptionsModule {
                     $subscription->update_meta_data('_hb_ucs_subscription_interval', $interval);
                     $subscription->update_meta_data('_hb_ucs_subscription_period', $period);
                 }
+                $shadowMetaUpdates = [
+                    '_hb_ucs_subscription_scheme' => $scheme,
+                    self::SUB_META_SCHEME => $scheme,
+                    '_hb_ucs_subscription_interval' => $interval,
+                    self::SUB_META_INTERVAL => $interval,
+                    '_hb_ucs_subscription_period' => $period,
+                    self::SUB_META_PERIOD => $period,
+                    '_hb_ucs_subscription_next_payment' => $nextPayment,
+                    self::SUB_META_NEXT_PAYMENT => $nextPayment,
+                ];
                 $scheduleNote = $this->build_account_subscription_schedule_update_note($existingScheme, $existingNextPayment, $scheme, $nextPayment);
                 if ($scheduleNote !== '') {
                     $this->add_subscription_admin_note($subId, $scheduleNote);
                 }
                 $didUpdateSubscription = true;
+                $syncViaOrderObject = true;
                 wc_add_notice(__('De planning van het abonnement is bijgewerkt.', 'hb-ucs'));
                 break;
 
@@ -2612,7 +2697,24 @@ class SubscriptionsModule {
             if (method_exists($subscription, 'save')) {
                 $subscription->save();
             }
-            $this->sync_subscription_order_type_record($subId);
+
+            if (!empty($shadowMetaUpdates)) {
+                $this->persist_account_subscription_shadow_meta($subId, $shadowMetaUpdates);
+            }
+
+            if ($syncViaOrderObject) {
+                $this->get_subscription_repository()->sync_legacy_from_order($subscription);
+            } else {
+                $this->sync_subscription_order_type_record($subId);
+            }
+
+            SubscriptionSyncLogger::debug('frontend.account_action.end', [
+                'subscription_id' => $subId,
+                'action' => $action,
+                'sync_via_order_object' => $syncViaOrderObject,
+                'status_after' => (string) get_post_meta($subId, self::SUB_META_STATUS, true),
+                'next_payment_after' => (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true),
+            ]);
         }
 
         wp_safe_redirect($this->get_account_subscription_url($subId));
@@ -2678,6 +2780,11 @@ class SubscriptionsModule {
                 return strcmp($rightDate, $leftDate);
             });
         }
+
+        SubscriptionSyncLogger::debug('frontend.get_user_subscription_ids', [
+            'user_id' => $userId,
+            'subscription_ids' => $subscriptionIds,
+        ]);
 
         return $subscriptionIds;
     }

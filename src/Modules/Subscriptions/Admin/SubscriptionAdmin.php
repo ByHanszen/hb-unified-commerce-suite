@@ -5,6 +5,7 @@ namespace HB\UCS\Modules\Subscriptions\Admin;
 use HB\UCS\Modules\Subscriptions\Domain\SubscriptionRepository;
 use HB\UCS\Modules\Subscriptions\Domain\SubscriptionService;
 use HB\UCS\Modules\Subscriptions\OrderTypes\SubscriptionOrderType;
+use HB\UCS\Modules\Subscriptions\Support\SubscriptionSyncLogger;
 
 if (!defined('ABSPATH')) exit;
 
@@ -128,6 +129,14 @@ class SubscriptionAdmin {
         $nextPayment = $this->get_subscription_timestamp_for_order($order, '_hb_ucs_subscription_next_payment', SubscriptionRepository::LEGACY_NEXT_PAYMENT_META);
         $trialEnd = $this->get_subscription_timestamp_for_order($order, '_hb_ucs_subscription_trial_end', SubscriptionRepository::LEGACY_TRIAL_END_META);
         $endDate = $this->get_subscription_timestamp_for_order($order, '_hb_ucs_subscription_end_date', SubscriptionRepository::LEGACY_END_DATE_META);
+
+        $this->log_subscription_sync('admin.render_schedule_meta_box', $order, [
+            'rendered_status' => $status,
+            'rendered_scheme' => $scheme,
+            'rendered_next_payment' => $nextPayment,
+            'rendered_trial_end' => $trialEnd,
+            'rendered_end_date' => $endDate,
+        ]);
 
         echo '<p><label for="hb_ucs_sub_status"><strong>' . esc_html__('Status', 'hb-ucs') . '</strong></label><br/>';
         echo '<select name="hb_ucs_sub_status" id="hb_ucs_sub_status" style="width:100%;">';
@@ -579,10 +588,7 @@ class SubscriptionAdmin {
                 SubscriptionRepository::LEGACY_STATUS_META => $statusMap[$action],
             ]);
 
-            $freshOrder = $this->get_subscription_order((int) $order->get_id());
-            if ($freshOrder) {
-                $this->service->get_repository()->sync_legacy_from_order($freshOrder);
-            }
+            $this->service->get_repository()->sync_legacy_from_order($order);
             $updated++;
         }
 
@@ -680,7 +686,8 @@ class SubscriptionAdmin {
         echo 'var mainOrderStatusSelect=document.querySelector("#order_status");';
         echo 'if(mainOrderStatusSelect){';
         echo 'var currentSubscriptionStatus="";';
-        echo 'var mirroredSubscriptionSelect=document.querySelector("select[name=\"hb_ucs_sub_status\"]");';
+        echo 'var mirroredSubscriptionSelects=Array.prototype.slice.call(document.querySelectorAll("select[name=\"hb_ucs_sub_status\"]"));';
+        echo 'var mirroredSubscriptionSelect=mirroredSubscriptionSelects.length?mirroredSubscriptionSelects[0]:null;';
         echo 'if(mirroredSubscriptionSelect){currentSubscriptionStatus=mirroredSubscriptionSelect.value||"";}';
         echo 'if(!currentSubscriptionStatus&&mainOrderStatusSelect.dataset.hbUcsCurrentSubscriptionStatus){currentSubscriptionStatus=mainOrderStatusSelect.dataset.hbUcsCurrentSubscriptionStatus;}';
         echo 'if(!mainOrderStatusSelect.dataset.hbUcsProxyInitialized){';
@@ -705,11 +712,16 @@ class SubscriptionAdmin {
         echo 'if(!mainOrderStatusSelect.value&&subscriptionStatuses.length){mainOrderStatusSelect.value=currentSubscriptionStatus||subscriptionStatuses[0].value;}';
         echo 'var syncSubscriptionStatus=function(){';
         echo 'var selectedSubscriptionStatus=mainOrderStatusSelect.value||"";';
-        echo 'if(mirroredSubscriptionSelect){mirroredSubscriptionSelect.value=selectedSubscriptionStatus;}';
+        echo 'mirroredSubscriptionSelects.forEach(function(select){select.value=selectedSubscriptionStatus;});';
         echo 'mappedOrderStatusInput.value=subscriptionStatusOrderMap[selectedSubscriptionStatus]||"wc-pending";';
         echo '};';
         echo 'syncSubscriptionStatus();';
         echo 'mainOrderStatusSelect.addEventListener("change", syncSubscriptionStatus);';
+        echo 'var mainOrderForm=mainOrderStatusSelect.closest("form");';
+        echo 'if(mainOrderForm&&!mainOrderForm.dataset.hbUcsStatusSyncBound){';
+        echo 'mainOrderForm.dataset.hbUcsStatusSyncBound="1";';
+        echo 'mainOrderForm.addEventListener("submit", syncSubscriptionStatus);';
+        echo '}';
         echo 'if(window.jQuery){';
         echo 'var $mainOrderStatusSelect=window.jQuery(mainOrderStatusSelect);';
         echo 'if($mainOrderStatusSelect.hasClass("select2-hidden-accessible")||$mainOrderStatusSelect.hasClass("enhanced")){';
@@ -845,15 +857,15 @@ class SubscriptionAdmin {
         $allowedStatuses = array_keys($this->get_subscription_statuses());
         $subscriptionStatus = '';
 
-        if (isset($_POST['hb_ucs_sub_status'])) {
-            $candidate = sanitize_key((string) wp_unslash($_POST['hb_ucs_sub_status']));
+        if (isset($_POST['hb_ucs_sub_status_proxy'])) {
+            $candidate = sanitize_key((string) wp_unslash($_POST['hb_ucs_sub_status_proxy']));
             if (in_array($candidate, $allowedStatuses, true)) {
                 $subscriptionStatus = $candidate;
             }
         }
 
-        if ($subscriptionStatus === '' && isset($_POST['hb_ucs_sub_status_proxy'])) {
-            $candidate = sanitize_key((string) wp_unslash($_POST['hb_ucs_sub_status_proxy']));
+        if ($subscriptionStatus === '' && isset($_POST['hb_ucs_sub_status'])) {
+            $candidate = sanitize_key((string) wp_unslash($_POST['hb_ucs_sub_status']));
             if (in_array($candidate, $allowedStatuses, true)) {
                 $subscriptionStatus = $candidate;
             }
@@ -883,6 +895,15 @@ class SubscriptionAdmin {
             '_hb_ucs_subscription_trial_end' => $this->get_subscription_timestamp_for_order($order, '_hb_ucs_subscription_trial_end', SubscriptionRepository::LEGACY_TRIAL_END_META),
             '_hb_ucs_subscription_end_date' => $this->get_subscription_timestamp_for_order($order, '_hb_ucs_subscription_end_date', SubscriptionRepository::LEGACY_END_DATE_META),
         ];
+
+        $this->log_subscription_sync('admin.save.start', $order, [
+            'previous_status' => $previousStatus,
+            'previous_scheme' => $previousScheme,
+            'previous_dates' => $previousDates,
+            'posted_status' => isset($_POST['hb_ucs_sub_status']) ? sanitize_key((string) wp_unslash($_POST['hb_ucs_sub_status'])) : '',
+            'posted_scheme' => isset($_POST['hb_ucs_sub_scheme']) ? sanitize_key((string) wp_unslash($_POST['hb_ucs_sub_scheme'])) : '',
+            'posted_next_payment' => isset($_POST['hb_ucs_sub_next_payment']) ? (string) wp_unslash($_POST['hb_ucs_sub_next_payment']) : '',
+        ]);
 
         $allowedStatuses = array_keys($this->get_subscription_statuses());
         $savedStatus = $previousStatus;
@@ -1030,6 +1051,12 @@ class SubscriptionAdmin {
             $order->save();
         }
 
+        $this->log_subscription_sync('admin.save.after_order_save', $order, [
+            'saved_status' => $savedStatus,
+            'saved_scheme' => $savedScheme,
+            'saved_dates' => $savedDates,
+        ]);
+
         $shadowMetaUpdates = [
             '_hb_ucs_subscription_status' => $savedStatus,
             SubscriptionRepository::LEGACY_STATUS_META => $savedStatus,
@@ -1041,10 +1068,15 @@ class SubscriptionAdmin {
 
         $this->persist_subscription_shadow_meta($orderId, $shadowMetaUpdates);
 
-        $freshOrder = $this->get_subscription_order($orderId);
-        if ($freshOrder) {
-            $this->service->get_repository()->sync_legacy_from_order($freshOrder);
-        }
+        $this->log_subscription_sync('admin.save.after_shadow_meta', $order, [
+            'shadow_meta_updates' => $shadowMetaUpdates,
+        ]);
+
+        $syncResult = $this->service->get_repository()->sync_legacy_from_order($order);
+
+        $this->log_subscription_sync('admin.save.after_sync_legacy', $order, [
+            'sync_result' => is_array($syncResult) ? $syncResult : [],
+        ]);
 
         $changes = [];
 
@@ -1285,10 +1317,7 @@ class SubscriptionAdmin {
             SubscriptionRepository::LEGACY_STATUS_META => $status,
         ]);
 
-        $freshOrder = $this->get_subscription_order((int) $order->get_id());
-        if ($freshOrder) {
-            $this->service->get_repository()->sync_legacy_from_order($freshOrder);
-        }
+        $this->service->get_repository()->sync_legacy_from_order($order);
 
         if (method_exists($order, 'add_order_note')) {
             $order->add_order_note($note);
@@ -1327,6 +1356,30 @@ class SubscriptionAdmin {
 
             update_post_meta($orderId, (string) $metaKey, $metaValue);
         }
+    }
+
+    private function log_subscription_sync(string $event, $order, array $context = []): void {
+        $orderId = ($order && is_object($order) && method_exists($order, 'get_id')) ? (int) $order->get_id() : 0;
+        $legacyPostId = $orderId > 0 ? $this->service->get_repository()->get_linked_legacy_post_id($order) : 0;
+
+        $orderStatus = ($order && is_object($order) && method_exists($order, 'get_status')) ? (string) $order->get_status() : '';
+        $orderSubscriptionStatus = ($order && is_object($order) && method_exists($order, 'get_meta')) ? (string) $order->get_meta('_hb_ucs_subscription_status', true) : '';
+        $orderNextPayment = ($order && is_object($order) && method_exists($order, 'get_meta')) ? (int) $order->get_meta('_hb_ucs_subscription_next_payment', true) : 0;
+
+        $legacyStatus = $legacyPostId > 0 ? (string) get_post_meta($legacyPostId, SubscriptionRepository::LEGACY_STATUS_META, true) : '';
+        $legacyNextPayment = $legacyPostId > 0 ? (int) get_post_meta($legacyPostId, SubscriptionRepository::LEGACY_NEXT_PAYMENT_META, true) : 0;
+
+        SubscriptionSyncLogger::debug($event, array_merge([
+            'order_id' => $orderId,
+            'legacy_post_id' => $legacyPostId,
+            'order_status' => $orderStatus,
+            'order_subscription_status' => $orderSubscriptionStatus,
+            'order_next_payment' => $orderNextPayment,
+            'legacy_status' => $legacyStatus,
+            'legacy_next_payment' => $legacyNextPayment,
+            'status_mismatch' => $orderSubscriptionStatus !== $legacyStatus,
+            'next_payment_mismatch' => $orderNextPayment !== $legacyNextPayment,
+        ], $context));
     }
 
     private function build_user_address_snapshot(int $userId, string $type): array {

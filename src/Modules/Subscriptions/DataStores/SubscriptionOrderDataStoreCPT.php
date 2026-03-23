@@ -5,6 +5,7 @@ namespace HB\UCS\Modules\Subscriptions\DataStores;
 use HB\UCS\Modules\Subscriptions\Domain\SubscriptionRepository;
 use HB\UCS\Modules\Subscriptions\OrderTypes\SubscriptionOrderType;
 use HB\UCS\Modules\Subscriptions\Orders\HB_UCS_Subscription_Order;
+use HB\UCS\Modules\Subscriptions\Support\SubscriptionSyncLogger;
 
 if (!defined('ABSPATH')) exit;
 
@@ -66,8 +67,22 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
             : $this->repository->get_order_type_subscription_data($order);
 
         if (empty($legacy)) {
+            SubscriptionSyncLogger::debug('datastore.hydrate_legacy_overlay.empty_legacy', [
+                'order_id' => (int) $order->get_id(),
+                'legacy_post_id' => $legacyPostId,
+            ]);
             return;
         }
+
+        SubscriptionSyncLogger::debug('datastore.hydrate_legacy_overlay.start', [
+            'order_id' => (int) $order->get_id(),
+            'legacy_post_id' => $legacyPostId,
+            'order_meta_status_before' => (string) $order->get_meta('_hb_ucs_subscription_status', true, 'edit'),
+            'order_meta_next_payment_before' => (int) $order->get_meta('_hb_ucs_subscription_next_payment', true, 'edit'),
+            'legacy_status' => (string) ($legacy['status'] ?? ''),
+            'legacy_scheme' => (string) ($legacy['scheme'] ?? ''),
+            'legacy_next_payment' => (int) ($legacy['next_payment'] ?? 0),
+        ]);
 
         $billing = isset($legacy['billing']) && is_array($legacy['billing']) ? $legacy['billing'] : [];
         $shipping = isset($legacy['shipping']) && is_array($legacy['shipping']) ? $legacy['shipping'] : [];
@@ -120,6 +135,15 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
         if (!empty($legacy['date_modified_gmt'])) {
             $order->set_date_modified($legacy['date_modified_gmt']);
         }
+
+        SubscriptionSyncLogger::debug('datastore.hydrate_legacy_overlay.end', [
+            'order_id' => (int) $order->get_id(),
+            'legacy_post_id' => $legacyPostId,
+            'order_meta_status_after' => (string) $order->get_meta('_hb_ucs_subscription_status', true, 'edit'),
+            'order_meta_next_payment_after' => (int) $order->get_meta('_hb_ucs_subscription_next_payment', true, 'edit'),
+            'applied_status' => (string) ($legacy['status'] ?? ''),
+            'applied_next_payment' => (int) ($legacy['next_payment'] ?? 0),
+        ]);
     }
 
     private function build_legacy_line_items(HB_UCS_Subscription_Order $order, array $legacy): array {
