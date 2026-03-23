@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.31] — 2026-03-23
+### Fixed
+- Abonnementen: product-, variatie-, attribuut- en prijswijzigingen vanuit Mijn Account verversen nu ook de echte orderregels van het backend abonnementrecord. Daardoor tonen frontend en backend na itemwijzigingen weer dezelfde producten en bedragen.
+
 ## [0.3.30] — 2026-03-23
 ### Fixed
 - Abonnementen: frontend wijzigingen vanuit Mijn Account gebruiken vaste abonnementsprijzen nu weer als exclusief-btw opslagprijs. De prijsconfiguratie uit product- en variatie-instellingen wordt bij uitlezen en opslaan correct omgerekend vanuit de beheer-UI (incl. btw), zodat abonnement-items na frontend wijzigingen niet opnieuw extra btw krijgen.

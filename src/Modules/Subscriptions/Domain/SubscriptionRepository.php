@@ -394,6 +394,7 @@ class SubscriptionRepository {
 
         wp_update_post($this->build_shadow_order_postarr($legacy, $orderId));
         $this->sync_shadow_order_meta($orderId, $legacy);
+        $this->sync_shadow_order_items($orderId, $legacy);
 
         $result = $this->find($orderId);
 
@@ -966,6 +967,127 @@ class SubscriptionRepository {
             } else {
                 delete_post_meta($orderId, '_shipping_' . $field);
             }
+        }
+    }
+
+    private function sync_shadow_order_items(int $orderId, array $legacy): void {
+        if ($orderId <= 0 || !function_exists('wc_get_order')) {
+            return;
+        }
+
+        $order = wc_get_order($orderId);
+        if (!$order || !is_object($order) || !method_exists($order, 'get_items') || !method_exists($order, 'add_item')) {
+            return;
+        }
+
+        foreach (['line_item', 'fee', 'shipping', 'tax'] as $itemType) {
+            foreach ((array) $order->get_items($itemType) as $itemId => $item) {
+                if (method_exists($order, 'remove_item')) {
+                    $order->remove_item($itemId);
+                }
+            }
+        }
+
+        foreach ((array) ($legacy['items'] ?? []) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $productId = (int) ($row['base_product_id'] ?? 0);
+            $variationId = (int) ($row['base_variation_id'] ?? 0);
+            $targetId = $variationId > 0 ? $variationId : $productId;
+            $product = $targetId > 0 ? wc_get_product($targetId) : false;
+            $qty = max(1, (int) ($row['qty'] ?? 1));
+            $unitPrice = $this->normalize_decimal($row['unit_price'] ?? 0.0);
+            $lineSubtotal = $this->normalize_decimal($unitPrice * $qty);
+            $taxes = $this->normalize_item_taxes($row['taxes'] ?? []);
+            $subtotalTax = array_sum($this->normalize_tax_group($taxes['subtotal'] ?? []));
+            $lineTax = array_sum($this->normalize_tax_group($taxes['total'] ?? []));
+
+            $item = new \WC_Order_Item_Product();
+            if ($product && is_object($product) && method_exists($item, 'set_product')) {
+                $item->set_product($product);
+            } else {
+                $item->set_product_id($productId);
+                $item->set_variation_id($variationId);
+            }
+            $item->set_quantity($qty);
+            $item->set_subtotal($lineSubtotal);
+            $item->set_total($lineSubtotal);
+            if (method_exists($item, 'set_subtotal_tax')) {
+                $item->set_subtotal_tax($this->normalize_decimal($subtotalTax));
+            }
+            if (method_exists($item, 'set_total_tax')) {
+                $item->set_total_tax($this->normalize_decimal($lineTax));
+            }
+            if (method_exists($item, 'set_taxes')) {
+                $item->set_taxes($taxes);
+            }
+
+            $item->add_meta_data('_hb_ucs_subscription_base_product_id', $productId, true);
+            if ($variationId > 0) {
+                $item->add_meta_data('_hb_ucs_subscription_base_variation_id', $variationId, true);
+            }
+            if (!empty($legacy['scheme'])) {
+                $item->add_meta_data('_hb_ucs_subscription_scheme', (string) $legacy['scheme'], true);
+            }
+
+            foreach ((array) ($row['selected_attributes'] ?? []) as $attributeKey => $attributeValue) {
+                $attributeKey = sanitize_key((string) $attributeKey);
+                if ($attributeKey === '') {
+                    continue;
+                }
+
+                $item->add_meta_data($attributeKey, sanitize_text_field((string) $attributeValue), true);
+            }
+
+            $order->add_item($item);
+        }
+
+        foreach ((array) ($legacy['fee_lines'] ?? []) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $item = new \WC_Order_Item_Fee();
+            $item->set_name((string) ($row['name'] ?? __('Toeslag', 'hb-ucs')));
+            $item->set_total($this->normalize_decimal($row['total'] ?? 0.0));
+            if (method_exists($item, 'set_taxes')) {
+                $item->set_taxes($this->normalize_item_taxes($row['taxes'] ?? []));
+            }
+            $order->add_item($item);
+        }
+
+        foreach ((array) ($legacy['shipping_lines'] ?? []) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $item = new \WC_Order_Item_Shipping();
+            if (method_exists($item, 'set_method_title')) {
+                $item->set_method_title((string) ($row['method_title'] ?? __('Verzending', 'hb-ucs')));
+            }
+            if (method_exists($item, 'set_method_id')) {
+                $item->set_method_id((string) ($row['method_id'] ?? ''));
+            }
+            if (method_exists($item, 'set_instance_id')) {
+                $item->set_instance_id((int) ($row['instance_id'] ?? 0));
+            }
+            $item->set_total($this->normalize_decimal($row['total'] ?? 0.0));
+            if (method_exists($item, 'set_taxes')) {
+                $item->set_taxes($this->normalize_item_taxes($row['taxes'] ?? []));
+            }
+            $order->add_item($item);
+        }
+
+        if (method_exists($order, 'update_taxes')) {
+            $order->update_taxes();
+        }
+        if (method_exists($order, 'calculate_totals')) {
+            $order->calculate_totals(false);
+        }
+        if (method_exists($order, 'save')) {
+            $order->save();
         }
     }
 
