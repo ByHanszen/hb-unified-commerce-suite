@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.47] — 2026-03-23
+### Changed
+- Abonnementen: de melding over een gekoppelde open bestelling op Mijn Account gebruikt nu de frontend WooCommerce-statusnamen in plaats van de interne statussleutels `on-hold` en `processing`.
+
 ## [0.3.46] — 2026-03-23
 ### Fixed
 - Abonnementen: attribuut-selectievelden van variabele producten op Mijn Account blijven nu binnen de productkaart en het scherm zichtbaar. De attribute-grid en selects schalen voortaan responsief mee met de beschikbare breedte, zonder horizontale overflow op kleine schermen.

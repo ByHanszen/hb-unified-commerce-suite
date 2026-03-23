@@ -1898,6 +1898,18 @@ class SubscriptionsModule {
         ];
     }
 
+    private function get_frontend_order_status_label(string $status): string {
+        $normalizedStatus = strpos($status, 'wc-') === 0 ? $status : 'wc-' . $status;
+
+        if (function_exists('wc_get_order_status_name')) {
+            return (string) wc_get_order_status_name($normalizedStatus);
+        }
+
+        $statuses = function_exists('wc_get_order_statuses') ? (array) wc_get_order_statuses() : [];
+
+        return (string) ($statuses[$normalizedStatus] ?? ucfirst(str_replace(['wc-', '-'], ['', ' '], $normalizedStatus)));
+    }
+
     private function get_available_subscription_admin_actions(int $subId): array {
         $status = (string) get_post_meta($subId, self::SUB_META_STATUS, true);
         $actions = [
@@ -2319,7 +2331,10 @@ class SubscriptionsModule {
         echo '</section>';
 
         if ($locked) {
-            echo '<div class="woocommerce-info hb-ucs-inline-notice" role="status">' . esc_html__('Er staat al een gekoppelde bestelling op on-hold of processing. Wijzigingen aan dit abonnement passen die open bestelling niet meer aan en annuleren die ook niet.', 'hb-ucs') . '</div>';
+            $onHoldLabel = $this->get_frontend_order_status_label('on-hold');
+            $processingLabel = $this->get_frontend_order_status_label('processing');
+
+            echo '<div class="woocommerce-info hb-ucs-inline-notice" role="status">' . esc_html(sprintf(__('Er staat al een gekoppelde bestelling met status "%1$s" of "%2$s". Wijzigingen aan dit abonnement passen die open bestelling niet meer aan en annuleren die ook niet.', 'hb-ucs'), $onHoldLabel, $processingLabel)) . '</div>';
         }
 
         echo '<section class="hb-ucs-panel hb-ucs-panel--secondary woocommerce-MyAccount-content-wrapper">';
