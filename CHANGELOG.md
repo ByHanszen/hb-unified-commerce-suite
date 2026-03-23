@@ -4,6 +4,12 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.15] — 2026-03-23
+### Fixed
+- Abonnementen: wijzigingen vanuit Mijn Account synchroniseren nu weer correct naar het backend abonnement-record, zodat statussen zoals gepauzeerd en geannuleerd overal gelijk blijven.
+- Abonnementen: klant- en backend-acties op abonnementen worden nu gelogd in de abonnementsnotities, inclusief statuswijzigingen, planningswijzigingen en artikelupdates.
+- Abonnementen: statusbadges op frontend en backend gebruiken nu consistente kleuren voor actief, gepauzeerd/in behandeling en geannuleerd/verlopen.
+
 ## [0.3.14] — 2026-03-20
 ### Added
 - Abonnementen: de WCS-exporttool voor handmatige migratie bevat nu ook gestructureerde JSON-snapshots van artikelen, fees, verzending, totalen en adresdata, plus extra kolommen zoals HB-statusmapping, mandate-indicatie en parent-order context.
