@@ -853,32 +853,49 @@ class SubscriptionAdmin {
             return;
         }
 
+        $previousStatus = $this->get_subscription_status_for_order($order);
+        $previousScheme = (string) $order->get_meta('_hb_ucs_subscription_scheme', true);
+        $previousUserId = method_exists($order, 'get_customer_id') ? (int) $order->get_customer_id() : 0;
+        $previousPaymentMethod = method_exists($order, 'get_payment_method') ? (string) $order->get_payment_method() : '';
+        $previousPaymentMethodTitle = method_exists($order, 'get_payment_method_title') ? (string) $order->get_payment_method_title() : '';
+        $previousDates = [
+            '_hb_ucs_subscription_next_payment' => $this->get_subscription_timestamp_for_order($order, '_hb_ucs_subscription_next_payment', SubscriptionRepository::LEGACY_NEXT_PAYMENT_META),
+            '_hb_ucs_subscription_trial_end' => $this->get_subscription_timestamp_for_order($order, '_hb_ucs_subscription_trial_end', SubscriptionRepository::LEGACY_TRIAL_END_META),
+            '_hb_ucs_subscription_end_date' => $this->get_subscription_timestamp_for_order($order, '_hb_ucs_subscription_end_date', SubscriptionRepository::LEGACY_END_DATE_META),
+        ];
+
         $allowedStatuses = array_keys($this->get_subscription_statuses());
+        $savedStatus = $previousStatus;
         if (isset($_POST['hb_ucs_sub_status'])) {
             $status = sanitize_key((string) wp_unslash($_POST['hb_ucs_sub_status']));
             if (in_array($status, $allowedStatuses, true)) {
                 update_post_meta($orderId, '_hb_ucs_subscription_status', $status);
+                $savedStatus = $status;
             }
         }
 
+        $savedScheme = $previousScheme;
         if (isset($_POST['hb_ucs_sub_scheme'])) {
             $scheme = sanitize_key((string) wp_unslash($_POST['hb_ucs_sub_scheme']));
             $options = $this->get_schedule_options();
             if (isset($options[$scheme])) {
                 update_post_meta($orderId, '_hb_ucs_subscription_scheme', $scheme);
+                $savedScheme = $scheme;
             }
         }
 
+        $savedUserId = $previousUserId;
         if (isset($_POST['hb_ucs_sub_user_id'])) {
             $userId = (int) absint((string) wp_unslash($_POST['hb_ucs_sub_user_id']));
             update_post_meta($orderId, SubscriptionRepository::LEGACY_USER_ID_META, (string) $userId);
+            $savedUserId = $userId;
 
             if (method_exists($order, 'set_customer_id')) {
                 $order->set_customer_id($userId);
             }
         }
 
-        $paymentMethod = '';
+        $paymentMethod = $previousPaymentMethod;
         if (isset($_POST['hb_ucs_sub_payment_method'])) {
             $paymentMethod = sanitize_text_field((string) wp_unslash($_POST['hb_ucs_sub_payment_method']));
             update_post_meta($orderId, SubscriptionRepository::LEGACY_PAYMENT_METHOD_META, $paymentMethod);
@@ -888,6 +905,7 @@ class SubscriptionAdmin {
             }
         }
 
+        $savedPaymentMethodTitle = $previousPaymentMethodTitle;
         if (isset($_POST['hb_ucs_sub_payment_method_title'])) {
             $paymentMethodTitle = sanitize_text_field((string) wp_unslash($_POST['hb_ucs_sub_payment_method_title']));
             if ($paymentMethodTitle === '' && $paymentMethod !== '') {
@@ -895,6 +913,7 @@ class SubscriptionAdmin {
             }
 
             update_post_meta($orderId, SubscriptionRepository::LEGACY_PAYMENT_METHOD_TITLE_META, $paymentMethodTitle);
+            $savedPaymentMethodTitle = $paymentMethodTitle;
             if (method_exists($order, 'set_payment_method_title')) {
                 $order->set_payment_method_title($paymentMethodTitle);
             }
@@ -949,6 +968,7 @@ class SubscriptionAdmin {
             }
         }
 
+        $savedDates = $previousDates;
         foreach ([
             'hb_ucs_sub_next_payment' => '_hb_ucs_subscription_next_payment',
             'hb_ucs_sub_trial_end' => '_hb_ucs_subscription_trial_end',
@@ -961,8 +981,10 @@ class SubscriptionAdmin {
             $timestamp = $this->parse_datetime_local((string) wp_unslash($_POST[$inputKey]));
             if ($timestamp > 0) {
                 update_post_meta($orderId, $metaKey, $timestamp);
+                $savedDates[$metaKey] = $timestamp;
             } else {
                 delete_post_meta($orderId, $metaKey);
+                $savedDates[$metaKey] = 0;
             }
         }
 
@@ -971,6 +993,70 @@ class SubscriptionAdmin {
         }
 
         $this->service->get_repository()->sync_order_type_self($orderId);
+
+        $changes = [];
+
+        if ($previousStatus !== $savedStatus) {
+            $statuses = $this->get_subscription_statuses();
+            $changes[] = sprintf(
+                __('Status: %1$s → %2$s.', 'hb-ucs'),
+                $statuses[$previousStatus] ?? ($previousStatus !== '' ? $previousStatus : '—'),
+                $statuses[$savedStatus] ?? ($savedStatus !== '' ? $savedStatus : '—')
+            );
+        }
+
+        if ($previousScheme !== $savedScheme) {
+            $schemes = $this->get_schedule_options();
+            $changes[] = sprintf(
+                __('Frequentie: %1$s → %2$s.', 'hb-ucs'),
+                $schemes[$previousScheme] ?? ($previousScheme !== '' ? $previousScheme : '—'),
+                $schemes[$savedScheme] ?? ($savedScheme !== '' ? $savedScheme : '—')
+            );
+        }
+
+        foreach ([
+            '_hb_ucs_subscription_next_payment' => __('Volgende betaling', 'hb-ucs'),
+            '_hb_ucs_subscription_trial_end' => __('Einde proefabonnement', 'hb-ucs'),
+            '_hb_ucs_subscription_end_date' => __('Einddatum', 'hb-ucs'),
+        ] as $metaKey => $label) {
+            $oldValue = (int) ($previousDates[$metaKey] ?? 0);
+            $newValue = (int) ($savedDates[$metaKey] ?? 0);
+            if ($oldValue === $newValue) {
+                continue;
+            }
+
+            $changes[] = sprintf(
+                __('%1$s: %2$s → %3$s.', 'hb-ucs'),
+                $label,
+                $oldValue > 0 ? $this->format_datetime_for_site($oldValue) : '—',
+                $newValue > 0 ? $this->format_datetime_for_site($newValue) : '—'
+            );
+        }
+
+        if ($previousUserId !== $savedUserId) {
+            $changes[] = sprintf(
+                __('Klant: %1$s → %2$s.', 'hb-ucs'),
+                $this->get_customer_label_for_note($previousUserId),
+                $this->get_customer_label_for_note($savedUserId)
+            );
+        }
+
+        $previousPaymentLabel = $previousPaymentMethodTitle !== '' ? $previousPaymentMethodTitle : $previousPaymentMethod;
+        $newPaymentLabel = $savedPaymentMethodTitle !== '' ? $savedPaymentMethodTitle : $paymentMethod;
+        if ($previousPaymentLabel !== $newPaymentLabel) {
+            $changes[] = sprintf(
+                __('Betaalmethode: %1$s → %2$s.', 'hb-ucs'),
+                $previousPaymentLabel !== '' ? $previousPaymentLabel : '—',
+                $newPaymentLabel !== '' ? $newPaymentLabel : '—'
+            );
+        }
+
+        if (!empty($changes) && method_exists($order, 'add_order_note')) {
+            $order->add_order_note(sprintf(
+                __('Abonnement bijgewerkt via de backend. %s', 'hb-ucs'),
+                implode(' ', $changes)
+            ));
+        }
     }
 
     public function get_service(): SubscriptionService {
@@ -1248,6 +1334,34 @@ class SubscriptionAdmin {
         } catch (\Throwable $e) {
             return '';
         }
+    }
+
+    private function get_customer_label_for_note(int $userId): string {
+        if ($userId <= 0) {
+            return __('Gast', 'hb-ucs');
+        }
+
+        $user = get_user_by('id', $userId);
+        if (!$user instanceof \WP_User) {
+            return sprintf(__('Klant #%d', 'hb-ucs'), $userId);
+        }
+
+        $name = trim((string) $user->display_name);
+        $email = trim((string) $user->user_email);
+
+        if ($name !== '' && $email !== '') {
+            return sprintf('%1$s (%2$s)', $name, $email);
+        }
+
+        if ($name !== '') {
+            return $name;
+        }
+
+        if ($email !== '') {
+            return $email;
+        }
+
+        return sprintf(__('Klant #%d', 'hb-ucs'), $userId);
     }
 
     private function get_payment_method_title_for_admin(string $paymentMethod): string {

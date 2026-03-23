@@ -2414,6 +2414,7 @@ class SubscriptionsModule {
         $locked = $this->subscription_has_locked_orders($subId);
         $status = (string) get_post_meta($subId, self::SUB_META_STATUS, true);
         $manageDisabled = in_array($status, ['cancelled', 'expired'], true);
+        $didUpdateSubscription = false;
 
         switch ($action) {
             case 'pause':
@@ -2423,6 +2424,7 @@ class SubscriptionsModule {
                 }
                 update_post_meta($subId, self::SUB_META_STATUS, 'paused');
                 $this->add_subscription_admin_note($subId, __('Klant heeft het abonnement gepauzeerd via Mijn Account.', 'hb-ucs'));
+                $didUpdateSubscription = true;
                 wc_add_notice(__('Het abonnement is gepauzeerd.', 'hb-ucs'));
                 break;
 
@@ -2437,6 +2439,7 @@ class SubscriptionsModule {
                     update_post_meta($subId, self::SUB_META_NEXT_PAYMENT, (string) $this->calculate_next_payment_timestamp($subId));
                 }
                 $this->add_subscription_admin_note($subId, __('Klant heeft het abonnement hervat via Mijn Account.', 'hb-ucs'));
+                $didUpdateSubscription = true;
                 wc_add_notice(__('Het abonnement is hervat.', 'hb-ucs'));
                 break;
 
@@ -2448,6 +2451,7 @@ class SubscriptionsModule {
                 update_post_meta($subId, self::SUB_META_STATUS, 'cancelled');
                 update_post_meta($subId, self::SUB_META_END_DATE, (string) time());
                 $this->add_subscription_admin_note($subId, __('Klant heeft het abonnement geannuleerd via Mijn Account.', 'hb-ucs'));
+                $didUpdateSubscription = true;
                 wc_add_notice(__('Het abonnement is geannuleerd.', 'hb-ucs'));
                 break;
 
@@ -2478,6 +2482,7 @@ class SubscriptionsModule {
                 if ($scheduleNote !== '') {
                     $this->add_subscription_admin_note($subId, $scheduleNote);
                 }
+                $didUpdateSubscription = true;
                 wc_add_notice(__('De planning van het abonnement is bijgewerkt.', 'hb-ucs'));
                 break;
 
@@ -2539,8 +2544,13 @@ class SubscriptionsModule {
                 if ($itemsNote !== '') {
                     $this->add_subscription_admin_note($subId, $itemsNote);
                 }
+                $didUpdateSubscription = true;
                 wc_add_notice(__('De abonnementartikelen zijn bijgewerkt.', 'hb-ucs'));
                 break;
+        }
+
+        if ($didUpdateSubscription) {
+            $this->sync_subscription_order_type_record($subId);
         }
 
         wp_safe_redirect($this->get_account_subscription_url($subId));
