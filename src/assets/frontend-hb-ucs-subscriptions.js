@@ -250,6 +250,56 @@
     return null;
   }
 
+  function buildSelectedAttributesSummary(productId, selectedAttributes) {
+    var config = getProductPickerConfig();
+    var variableConfigs = config && config.variableConfigs ? config.variableConfigs : {};
+    var attributes = variableConfigs[String(productId)] || variableConfigs[productId] || [];
+    var parts = [];
+
+    attributes.forEach(function (attribute) {
+      var key = String(attribute && attribute.key ? attribute.key : '');
+      var label = String(attribute && attribute.label ? attribute.label : key);
+      var value = key ? String(selectedAttributes[key] || '') : '';
+
+      if (!key || !value) {
+        return;
+      }
+
+      (attribute.options || []).forEach(function (option) {
+        if (String(option && option.value ? option.value : '') === value) {
+          value = String(option && option.label ? option.label : value);
+        }
+      });
+
+      if (value) {
+        parts.push(label + ': ' + value);
+      }
+    });
+
+    return parts.join(' | ');
+  }
+
+  function updateProductPickerLabel($field, summary) {
+    if (!$field || !$field.length) {
+      return;
+    }
+
+    var $label = $field.find('.hb-ucs-product-picker-label').first();
+    if (!$label.length) {
+      return;
+    }
+
+    var emptyLabel = String($label.data('emptyLabel') || '');
+    var baseLabel = String($label.attr('data-base-label') || $label.text() || emptyLabel);
+
+    if (!baseLabel || baseLabel === emptyLabel) {
+      $label.text(emptyLabel);
+      return;
+    }
+
+    $label.text(summary ? (baseLabel + ' — ' + summary) : baseLabel);
+  }
+
   function updateRowVariationPreview($field) {
     if (!$field || !$field.length) {
       return;
@@ -262,19 +312,23 @@
     }
 
     var selectedAttributes = collectSelectedAttributeValues($field);
+    var selectedSummary = buildSelectedAttributesSummary(productId, selectedAttributes);
     var variation = findMatchingVariationData(productId, selectedAttributes);
     if (variation) {
       setSubscriptionRowPrice($row, String(variation.price_html || ''));
       if (variation.image_html) {
         $row.find('.hb-ucs-subscription-item-card__media').first().html(String(variation.image_html));
       }
-      $row.find('.hb-ucs-product-card__variation-summary').first().text(String(variation.summary || ''));
+      var variationSummary = String(variation.summary || selectedSummary || '');
+      $row.find('.hb-ucs-product-card__variation-summary').first().text(variationSummary);
+      updateProductPickerLabel($field, variationSummary);
       return;
     }
 
     if ($field.find('.hb-ucs-product-picker-attributes select').length) {
       setSubscriptionRowPrice($row, '');
-      $row.find('.hb-ucs-product-card__variation-summary').first().text('');
+      $row.find('.hb-ucs-product-card__variation-summary').first().text(selectedSummary);
+      updateProductPickerLabel($field, selectedSummary);
     }
   }
 
@@ -439,8 +493,7 @@
       }
 
       $input.val(targetProductId);
-      $field.find('.hb-ucs-product-picker-label').text(String($item.data('productLabel') || ''));
-      $field.find('.hb-ucs-open-product-modal').html('<span aria-hidden="true">＋</span> Wijzig');
+      $field.find('.hb-ucs-product-picker-label').attr('data-base-label', String($item.data('productLabel') || '')).text(String($item.data('productLabel') || ''));
       renderAttributeSelectors($field, targetProductId, selectedAttributes);
       updateSubscriptionRowPreview(($pendingRow && $pendingRow.length) ? $pendingRow : $field.closest('.hb-ucs-subscription-item-card'), $item);
       updateRowVariationPreview($field);
@@ -600,19 +653,15 @@
       }
 
       var $card = $(this).closest('.hb-ucs-subscription-item-card');
-      var $checkbox = $card.find('input[type="checkbox"][name="' + fieldName.replace(/"/g, '\\"') + '"]');
-      if (!$checkbox.length || $checkbox.is(':disabled')) {
+      var $input = $card.find('input.hb-ucs-remove-input[name="' + fieldName.replace(/"/g, '\\"') + '"]');
+      if (!$input.length || $input.is(':disabled')) {
         return;
       }
 
-      var isChecked = !$checkbox.prop('checked');
-      $checkbox.prop('checked', isChecked).trigger('change');
+      var isChecked = String($input.val() || '0') === '1' ? false : true;
+      $input.val(isChecked ? '1' : '0');
+      $(this).attr('aria-pressed', isChecked ? 'true' : 'false');
       $card.toggleClass('is-marked-remove', isChecked);
-    });
-
-    $(document).off('change.hbUcsRemoveCheckbox', '.hb-ucs-remove-toggle input[type="checkbox"]');
-    $(document).on('change.hbUcsRemoveCheckbox', '.hb-ucs-remove-toggle input[type="checkbox"]', function () {
-      $(this).closest('.hb-ucs-subscription-item-card').toggleClass('is-marked-remove', $(this).is(':checked'));
     });
 
     $(document).off('keydown.hbUcsSimpleModalEsc');

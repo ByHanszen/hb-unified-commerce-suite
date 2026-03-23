@@ -2720,7 +2720,7 @@ class SubscriptionsModule {
                     if (!is_array($row)) {
                         continue;
                     }
-                    if (!empty($row['remove'])) {
+                    if (!empty($row['_hb_ucs_remove']) || !empty($row['remove'])) {
                         continue;
                     }
 
@@ -3183,37 +3183,103 @@ class SubscriptionsModule {
 
     private function render_manageable_product_select(string $name, int $selectedId, bool $disabled, array $productOptions, string $placeholder = '', string $selectedLabel = '', string $attributesName = '', array $selectedAttributes = []): void {
         $fieldId = 'hb_ucs_product_picker_' . trim((string) preg_replace('/[^a-zA-Z0-9_]+/', '_', $name), '_');
-        $displayLabel = $selectedLabel !== '' ? $selectedLabel : ($placeholder !== '' ? $placeholder : __('Nog geen product gekozen', 'hb-ucs'));
-        if ($selectedLabel === '' && $selectedId > 0) {
-            $lookup = isset($productOptions['lookup']) && is_array($productOptions['lookup']) ? $productOptions['lookup'] : [];
-            if (isset($lookup[$selectedId]['label'])) {
-                $displayLabel = (string) $lookup[$selectedId]['label'];
-            } else {
-                $displayLabel = $this->get_subscription_item_label([
-                    'base_product_id' => $selectedId,
-                    'base_variation_id' => 0,
-                ]);
-            }
+        $emptyLabel = $placeholder !== '' ? $placeholder : __('Nog geen product gekozen', 'hb-ucs');
+        $baseLabel = $selectedId > 0 ? $this->get_manageable_product_base_label($selectedId, $productOptions) : $emptyLabel;
+        $displayLabel = $baseLabel;
+
+        if ($selectedId > 0) {
+            $displayLabel = $this->get_manageable_product_picker_label($selectedId, $selectedAttributes, $productOptions, $selectedLabel);
+        } elseif ($selectedLabel !== '') {
+            $displayLabel = $selectedLabel;
         }
 
         echo '<div class="hb-ucs-product-picker-field">';
-        echo '<div class="hb-ucs-product-picker-field__header">';
-        echo '<span class="hb-ucs-product-picker-field__label">' . esc_html__('Product', 'hb-ucs') . '</span>';
-        echo '</div>';
         echo '<input type="hidden" name="' . esc_attr($name) . '" id="' . esc_attr($fieldId) . '" class="hb-ucs-product-picker-value" value="' . esc_attr((string) $selectedId) . '" />';
         echo '<div class="hb-ucs-product-picker-summary">';
-        echo '<span class="hb-ucs-product-picker-label" data-empty-label="' . esc_attr($placeholder !== '' ? $placeholder : __('Nog geen product gekozen', 'hb-ucs')) . '">' . esc_html($displayLabel) . '</span>';
-        echo '<button type="button" class="button hb-ucs-button hb-ucs-button--secondary hb-ucs-open-product-modal" data-picker-input="' . esc_attr($fieldId) . '" data-picker-title="' . esc_attr__('Kies een product', 'hb-ucs') . '" ' . disabled($disabled, true, false) . '><span aria-hidden="true">＋</span> ' . esc_html($selectedId > 0 ? __('Selectie wijzigen', 'hb-ucs') : __('Kies product', 'hb-ucs')) . '</button>';
+        echo '<span class="hb-ucs-product-picker-label" data-empty-label="' . esc_attr($emptyLabel) . '" data-base-label="' . esc_attr($selectedId > 0 ? $baseLabel : $emptyLabel) . '">' . esc_html($displayLabel) . '</span>';
         echo '</div>';
         if ($attributesName !== '') {
             echo '<div class="hb-ucs-product-picker-attributes" data-attributes-name="' . esc_attr($attributesName) . '">';
-            echo '<div class="hb-ucs-product-picker-field__header">';
-            echo '<span class="hb-ucs-product-picker-field__label">' . esc_html__('Variaties', 'hb-ucs') . '</span>';
-            echo '</div>';
             $this->render_manageable_product_attribute_fields($selectedId, $selectedAttributes, $attributesName, $disabled, $productOptions);
             echo '</div>';
         }
         echo '</div>';
+    }
+
+    private function get_manageable_product_base_label(int $selectedId, array $productOptions): string {
+        if ($selectedId <= 0) {
+            return '';
+        }
+
+        $lookup = isset($productOptions['lookup']) && is_array($productOptions['lookup']) ? $productOptions['lookup'] : [];
+        if (isset($lookup[$selectedId]['label']) && (string) $lookup[$selectedId]['label'] !== '') {
+            return (string) $lookup[$selectedId]['label'];
+        }
+
+        $product = wc_get_product($selectedId);
+        if ($product && is_object($product) && method_exists($product, 'get_name')) {
+            return wp_strip_all_tags((string) $product->get_name(), true);
+        }
+
+        return '#'. $selectedId;
+    }
+
+    private function format_manageable_product_selected_attributes(int $selectedId, array $selectedAttributes): string {
+        if ($selectedId <= 0 || empty($selectedAttributes)) {
+            return '';
+        }
+
+        $product = wc_get_product($selectedId);
+        if (!$product || !is_object($product)) {
+            return '';
+        }
+
+        $config = $this->get_variable_product_attribute_config($product);
+        if (empty($config)) {
+            return '';
+        }
+
+        $parts = [];
+        foreach ($config as $attribute) {
+            $key = (string) ($attribute['key'] ?? '');
+            if ($key === '' || empty($selectedAttributes[$key])) {
+                continue;
+            }
+
+            $label = (string) ($attribute['label'] ?? $key);
+            $value = (string) $selectedAttributes[$key];
+            foreach ((array) ($attribute['options'] ?? []) as $option) {
+                if ((string) ($option['value'] ?? '') === $value) {
+                    $value = (string) ($option['label'] ?? $value);
+                    break;
+                }
+            }
+
+            if ($value !== '') {
+                $parts[] = sprintf('%s: %s', $label, $value);
+            }
+        }
+
+        return implode(' | ', $parts);
+    }
+
+    private function get_manageable_product_picker_label(int $selectedId, array $selectedAttributes, array $productOptions, string $selectedLabel = ''): string {
+        $baseLabel = $this->get_manageable_product_base_label($selectedId, $productOptions);
+        $summary = $this->format_manageable_product_selected_attributes($selectedId, $selectedAttributes);
+
+        if ($summary !== '') {
+            return $baseLabel . ' — ' . $summary;
+        }
+
+        return $selectedLabel !== '' ? $selectedLabel : $baseLabel;
+    }
+
+    private function get_subscription_action_icon_markup(string $icon): string {
+        if ($icon === 'trash') {
+            return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4.8c0-.66.54-1.2 1.2-1.2h5.6c.66 0 1.2.54 1.2 1.2V6"/><path d="M6.2 6l.9 12.02c.05.73.66 1.29 1.39 1.29h7.02c.73 0 1.34-.56 1.39-1.29L17.8 6"/><path d="M10 10.2v5.6"/><path d="M14 10.2v5.6"/></svg>';
+        }
+
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"/></svg>';
     }
 
     private function render_account_subscription_item_editor_row(string $rowKey, array $item, bool $manageDisabled, array $productOptions): void {
@@ -3224,8 +3290,15 @@ class SubscriptionsModule {
         $deliveryPrice = $this->get_subscription_item_display_amount($item, $qty, $this->should_display_subscription_prices_including_tax());
         $deliveryPriceHtml = $deliveryPrice > 0 ? (function_exists('wc_price') ? wc_price($deliveryPrice) : number_format($deliveryPrice, 2, '.', '')) : '';
         $itemLabel = isset($item['display_label']) && (string) $item['display_label'] !== '' ? (string) $item['display_label'] : ($selectedId > 0 ? $this->get_subscription_item_label($item) : __('Nieuw product', 'hb-ucs'));
+        $productFieldName = 'items[' . $rowKey . '][product_id]';
+        $productFieldId = 'hb_ucs_product_picker_' . trim((string) preg_replace('/[^a-zA-Z0-9_]+/', '_', $productFieldName), '_');
+        $editLabel = $selectedId > 0 ? __('Product wijzigen', 'hb-ucs') : __('Product kiezen', 'hb-ucs');
+        $removeFieldName = 'items[' . $rowKey . '][_hb_ucs_remove]';
+        $trashIcon = $this->get_subscription_action_icon_markup('trash');
+        $pencilIcon = $this->get_subscription_action_icon_markup('pencil');
 
         echo '<article class="hb-ucs-subscription-item-card hb-ucs-subscription-item-card--compact hb-ucs-subscription-item-card--dashboard woocommerce-MyAccount-content-wrapper woocommerce-EditAccountForm" data-hb-ucs-item-row="1">';
+        echo '<input type="hidden" class="hb-ucs-remove-input" name="' . esc_attr($removeFieldName) . '" value="0" />';
         echo '<div class="hb-ucs-subscription-item-card__media">' . wp_kses_post($this->get_account_subscription_item_image_html($item)) . '</div>';
         echo '<div class="hb-ucs-subscription-item-card__content">';
         echo '<div class="hb-ucs-subscription-item-card__top hb-ucs-subscription-item-card__top--compact">';
@@ -3236,28 +3309,24 @@ class SubscriptionsModule {
         }
         echo '<p class="hb-ucs-product-card__variation-summary">' . esc_html($variationSummary) . '</p>';
         echo '</div>';
-        echo '<button type="button" class="hb-ucs-product-card__dismiss" data-hb-ucs-remove-toggle="items[' . esc_attr($rowKey) . '][remove]" aria-label="' . esc_attr__('Product verwijderen', 'hb-ucs') . '" ' . disabled($manageDisabled, true, false) . '>&times;</button>';
-        echo '</div>';
-        echo '<div class="hb-ucs-product-card__editor">';
-        echo '<div class="hb-ucs-product-card__controls">';
+        echo '<div class="hb-ucs-product-card__inline-actions">';
         echo '<div class="hb-ucs-product-card__qty">';
         echo '<span class="hb-ucs-product-card__meta-label">' . esc_html__('Aantal', 'hb-ucs') . '</span>';
         echo '<div class="quantity hb-ucs-quantity-field hb-ucs-quantity-field--compact hb-ucs-quantity-field--stepper">';
         echo '<button type="button" class="hb-ucs-qty-stepper__button minus" data-hb-ucs-qty-step="-1" ' . disabled($manageDisabled, true, false) . '>&minus;</button>';
-        echo '<input type="number" class="input-text qty text" min="1" step="1" inputmode="numeric" name="items[' . esc_attr($rowKey) . '][qty]" value="' . esc_attr((string) ((int) ($item['qty'] ?? 1))) . '" ' . disabled($manageDisabled, true, false) . ' />';
+        echo '<input type="number" class="input-text qty text" min="1" step="1" inputmode="numeric" name="items[' . esc_attr($rowKey) . '][qty]" value="' . esc_attr((string) $qty) . '" ' . disabled($manageDisabled, true, false) . ' />';
         echo '<button type="button" class="hb-ucs-qty-stepper__button plus" data-hb-ucs-qty-step="1" ' . disabled($manageDisabled, true, false) . '>+</button>';
         echo '</div>';
         echo '</div>';
-        echo '<div class="hb-ucs-product-card__links">';
-        echo '<label class="hb-ucs-remove-toggle hb-ucs-remove-toggle--inline"><input type="checkbox" name="items[' . esc_attr($rowKey) . '][remove]" value="1" ' . disabled($manageDisabled, true, false) . ' /> <span>' . esc_html__('Verwijder', 'hb-ucs') . '</span></label>';
-        echo '<span class="hb-ucs-product-card__divider" aria-hidden="true">•</span>';
-        echo '<span class="hb-ucs-product-card__help-link">' . esc_html__('Pas hieronder product en variatie aan', 'hb-ucs') . '</span>';
+        echo '<button type="button" class="hb-ucs-product-card__edit hb-ucs-product-card__icon-action hb-ucs-product-card__icon-action--edit hb-ucs-open-product-modal" data-picker-input="' . esc_attr($productFieldId) . '" data-picker-title="' . esc_attr__('Kies een product', 'hb-ucs') . '" aria-label="' . esc_attr($editLabel) . '" title="' . esc_attr($editLabel) . '" ' . disabled($manageDisabled, true, false) . '>' . $pencilIcon . '<span class="screen-reader-text">' . esc_html($editLabel) . '</span></button>';
+        echo '<button type="button" class="hb-ucs-product-card__trash hb-ucs-product-card__icon-action hb-ucs-product-card__icon-action--remove" data-hb-ucs-remove-toggle="' . esc_attr($removeFieldName) . '" aria-label="' . esc_attr__('Product verwijderen', 'hb-ucs') . '" title="' . esc_attr__('Product verwijderen', 'hb-ucs') . '" aria-pressed="false" ' . disabled($manageDisabled, true, false) . '>' . $trashIcon . '<span class="screen-reader-text">' . esc_html__('Product verwijderen', 'hb-ucs') . '</span></button>';
         echo '</div>';
         echo '</div>';
+        echo '<div class="hb-ucs-product-card__editor">';
         echo '<div class="hb-ucs-subscription-item-card__body hb-ucs-subscription-item-card__body--visible">';
         echo '<div class="hb-ucs-subscription-item-card__picker hb-ucs-subscription-item-card__picker--editor">';
         $this->render_manageable_product_select(
-            'items[' . $rowKey . '][product_id]',
+            $productFieldName,
             $selectedId,
             $manageDisabled,
             $productOptions,

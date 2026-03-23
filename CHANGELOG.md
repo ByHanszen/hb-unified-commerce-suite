@@ -4,6 +4,34 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.46] — 2026-03-23
+### Fixed
+- Abonnementen: attribuut-selectievelden van variabele producten op Mijn Account blijven nu binnen de productkaart en het scherm zichtbaar. De attribute-grid en selects schalen voortaan responsief mee met de beschikbare breedte, zonder horizontale overflow op kleine schermen.
+
+## [0.3.45] — 2026-03-23
+### Changed
+- Abonnementen: de productkaarten op Mijn Account hebben nu een lichtere volledige border voor duidelijkere scheiding, responsieve tekstgroottes die leesbaar blijven bij verschillende schermbreedtes, en verbeterde small-screen uitlijning zodat de kaart centraal staat, de beschikbare breedte beter benut en geen tekst buiten beeld valt of horizontale scroll veroorzaakt.
+
+## [0.3.44] — 2026-03-23
+### Changed
+- Abonnementen: de productpicker-label in Mijn Account toont nu niet alleen de productnaam, maar ook alle gekozen attribuutwaarden van het geselecteerde artikel. Deze labeltekst wordt zowel bij eerste render als live tijdens frontend attribuutwijzigingen bijgewerkt.
+
+## [0.3.43] — 2026-03-23
+### Changed
+- Abonnementen: de responsive productrij op Mijn Account blijft nu ook rond tablet/kleinere schermen naast de productafbeelding uitgelijnd. De naam en prijs blijven naast de afbeelding staan, de quantity-stepper staat daaronder en de pencil/trash acties blijven op de volgende rij naast elkaar in plaats van onder elkaar.
+
+## [0.3.42] — 2026-03-23
+### Changed
+- Abonnementen: vanaf tabletbreedte is de productrij op Mijn Account compacter opgebouwd. De abonnementsnaam en prijs per levering staan nu direct naast de afbeelding, daaronder volgt eerst de quantity-stepper en op de volgende rij de pencil- en trash-icon acties naast elkaar. Daarnaast zijn de overbodige `hb-ucs-product-picker-field__label` labels uit de productpicker-markup verwijderd.
+
+## [0.3.41] — 2026-03-23
+### Changed
+- Abonnementen: de laatste oude remove-sporen in Mijn Account zijn opgeschoond. De frontend gebruikt niet langer de oude `hb-ucs-product-card__dismiss` knop of het oude `items[..][remove]` veld in de productrij-markup; in plaats daarvan wordt nu alleen nog de compacte trash-knop met een interne `_hb_ucs_remove` flag gebruikt.
+
+## [0.3.40] — 2026-03-23
+### Changed
+- Abonnementen: de productlijst op Mijn Account is opgeschoond. De dubbele verwijder-checkbox is verwijderd, productregels gebruiken nu compacte trash- en pencil-icon acties, de hoeveelheid-stepper staat direct in de bovenste actiezone, en de lijst heeft een duidelijkere maar rustige scheiding tussen productrijen.
+
 ## [0.3.39] — 2026-03-23
 ### Fixed
 - Abonnementen: in Mijn Account toont de productkaart nu bij “per levering” het bedrag voor de volledige productregel inclusief het gekozen aantal, in plaats van altijd alleen de prijs voor één stuk. Daardoor blijft de frontend kaartprijs ook bij aantallen groter dan 1 gelijk aan de echte abonnementsprijs per levering.
