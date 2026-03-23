@@ -3220,8 +3220,9 @@ class SubscriptionsModule {
         $selectedId = (int) ($item['base_product_id'] ?? 0);
         $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
         $variationSummary = (string) ($item['variation_summary'] ?? '');
-        $unitPrice = $this->get_subscription_item_display_amount($item, 1, $this->should_display_subscription_prices_including_tax());
-        $unitPriceHtml = $unitPrice > 0 ? (function_exists('wc_price') ? wc_price($unitPrice) : number_format($unitPrice, 2, '.', '')) : '';
+        $qty = max(1, (int) ($item['qty'] ?? 1));
+        $deliveryPrice = $this->get_subscription_item_display_amount($item, $qty, $this->should_display_subscription_prices_including_tax());
+        $deliveryPriceHtml = $deliveryPrice > 0 ? (function_exists('wc_price') ? wc_price($deliveryPrice) : number_format($deliveryPrice, 2, '.', '')) : '';
         $itemLabel = isset($item['display_label']) && (string) $item['display_label'] !== '' ? (string) $item['display_label'] : ($selectedId > 0 ? $this->get_subscription_item_label($item) : __('Nieuw product', 'hb-ucs'));
 
         echo '<article class="hb-ucs-subscription-item-card hb-ucs-subscription-item-card--compact hb-ucs-subscription-item-card--dashboard woocommerce-MyAccount-content-wrapper woocommerce-EditAccountForm" data-hb-ucs-item-row="1">';
@@ -3230,8 +3231,8 @@ class SubscriptionsModule {
         echo '<div class="hb-ucs-subscription-item-card__top hb-ucs-subscription-item-card__top--compact">';
         echo '<div class="hb-ucs-subscription-item-card__heading">';
         echo '<h4>' . esc_html($itemLabel) . '</h4>';
-        if ($unitPriceHtml !== '') {
-            echo '<p class="hb-ucs-product-card__price">' . wp_kses_post($unitPriceHtml) . ' <span>' . esc_html__('per levering', 'hb-ucs') . '</span></p>';
+        if ($deliveryPriceHtml !== '') {
+            echo '<p class="hb-ucs-product-card__price">' . wp_kses_post($deliveryPriceHtml) . ' <span>' . esc_html__('per levering', 'hb-ucs') . '</span></p>';
         }
         echo '<p class="hb-ucs-product-card__variation-summary">' . esc_html($variationSummary) . '</p>';
         echo '</div>';

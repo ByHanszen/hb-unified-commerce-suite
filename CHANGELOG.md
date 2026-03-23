@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.39] — 2026-03-23
+### Fixed
+- Abonnementen: in Mijn Account toont de productkaart nu bij “per levering” het bedrag voor de volledige productregel inclusief het gekozen aantal, in plaats van altijd alleen de prijs voor één stuk. Daardoor blijft de frontend kaartprijs ook bij aantallen groter dan 1 gelijk aan de echte abonnementsprijs per levering.
+
 ## [0.3.38] — 2026-03-23
 ### Fixed
 - Abonnementen: nieuw toegevoegde producten vanuit Mijn Account gebruiken nu overal dezelfde exclusief-btw opslagprijs als bron voor subscription pricing, cart-data en opgeslagen itemregels, terwijl de frontend prijsweergave apart volgens de WooCommerce shop-instelling (incl./excl. btw) wordt opgebouwd. Daardoor wordt na opslaan niet langer nogmaals btw bovenop de al juiste frontend prijs gezet.
