@@ -260,25 +260,31 @@
 }
 
 .hb-ucs-status-badge--active {
-  color: var(--hb-ucs-badge-active-color);
-  background: color-mix(in srgb, var(--sections-background-color, transparent) 78%, var(--hb-ucs-badge-active-color) 22%);
+  color: #0a7a2f;
+  background: #edfaef;
+  border-color: #edfaef;
 }
 
+.hb-ucs-status-badge--pending_mandate,
+.hb-ucs-status-badge--payment_pending,
+.hb-ucs-status-badge--on-hold,
 .hb-ucs-status-badge--paused {
-  color: var(--hb-ucs-badge-paused-color);
-  background: var(--hb-ucs-badge-paused-bg);
-  border-color: var(--hb-ucs-badge-paused-bg);
+  color: #8a6100;
+  background: #fff8e5;
+  border-color: #fff8e5;
 }
 
+.hb-ucs-status-badge--expired,
 .hb-ucs-status-badge--cancelled {
-  color: var(--hb-ucs-badge-cancelled-color);
-  background: var(--hb-ucs-badge-cancelled-bg);
-  border-color: var(--hb-ucs-badge-cancelled-bg);
+  color: #50575e;
+  background: #f0f0f1;
+  border-color: #f0f0f1;
 }
 
 .hb-ucs-status-badge--neutral {
-  color: var(--hb-ucs-badge-neutral-color);
-  background: color-mix(in srgb, var(--sections-background-color, transparent) 88%, var(--hb-ucs-badge-neutral-color) 12%);
+  color: #50575e;
+  background: #f0f0f1;
+  border-color: #f0f0f1;
 }
 
 .hb-ucs-hero-meta,
@@ -1086,6 +1092,37 @@ body.hb-ucs-product-modal-open {
   gap: 10px;
   flex-wrap: wrap;
   padding-inline: 18px;
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.hb-ucs-subscription-summary-pill.hb-ucs-status-badge--active {
+  background: #edfaef;
+  border-color: #edfaef;
+  color: #0a7a2f;
+}
+
+.hb-ucs-subscription-summary-pill.hb-ucs-status-badge--paused {
+  background: #fff8e5;
+  border-color: #fff8e5;
+  color: #8a6100;
+}
+
+.hb-ucs-subscription-summary-pill.hb-ucs-status-badge--cancelled {
+  background: #f0f0f1;
+  border-color: #f0f0f1;
+  color: #50575e;
+}
+
+.hb-ucs-subscription-summary-pill.hb-ucs-status-badge--expired {
+  background: #f0f0f1;
+  border-color: #f0f0f1;
+  color: #50575e;
+}
+
+.hb-ucs-subscription-summary-pill .hb-ucs-subscription-summary-pill__status,
+.hb-ucs-subscription-summary-pill .hb-ucs-subscription-summary-pill__delivery {
+  color: inherit;
 }
 
 .hb-ucs-schedule-modal__dialog {

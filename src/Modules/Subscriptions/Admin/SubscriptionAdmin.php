@@ -621,11 +621,11 @@ class SubscriptionAdmin {
         echo '.admin_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .hb-ucs-subscription-status-badge--payment_pending,';
         echo '.admin_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .hb-ucs-subscription-status-badge--on-hold{background:#fff8e5;color:#8a6100;}';
         echo '.woocommerce_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .hb-ucs-subscription-status-badge--paused,';
-        echo '.admin_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .hb-ucs-subscription-status-badge--paused{background:#eef4ff;color:#1f4b99;}';
+        echo '.admin_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .hb-ucs-subscription-status-badge--paused{background:#fff8e5;color:#8a6100;}';
         echo '.woocommerce_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .hb-ucs-subscription-status-badge--cancelled,';
         echo '.woocommerce_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .hb-ucs-subscription-status-badge--expired,';
         echo '.admin_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .hb-ucs-subscription-status-badge--cancelled,';
-        echo '.admin_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .hb-ucs-subscription-status-badge--expired{background:#fbeaea;color:#a02222;}';
+        echo '.admin_page_wc-orders--' . esc_attr($this->orderType->get_type()) . ' .hb-ucs-subscription-status-badge--expired{background:#f0f0f1;color:#50575e;}';
         echo '</style>';
     }
 
