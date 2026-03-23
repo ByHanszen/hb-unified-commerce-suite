@@ -7824,7 +7824,10 @@ JS;
 
         $fixed = null;
         if ($fixedRaw !== '') {
-            $fixed = (float) wc_format_decimal($fixedRaw);
+            $fixedDisplay = (float) wc_format_decimal($fixedRaw);
+            $fixedProductId = $entityId > 0 ? $entityId : $fallbackEntityId;
+            $fixedProduct = $fixedProductId > 0 ? wc_get_product($fixedProductId) : false;
+            $fixed = $this->get_product_price_storage_amount($fixedProduct, $fixedDisplay, 1);
         }
 
         $discount = $this->get_discount_settings($entityId, $scheme, $fallbackEntityId);
@@ -8688,7 +8691,9 @@ JS;
                     if ($fixedRaw === '') {
                         delete_post_meta($productId, $fixedKey);
                     } else {
-                        update_post_meta($productId, $fixedKey, wc_format_decimal($fixedRaw));
+                        $fixedDisplay = (float) wc_format_decimal($fixedRaw);
+                        $fixedStorage = $this->get_product_price_storage_amount($product, $fixedDisplay, 1);
+                        update_post_meta($productId, $fixedKey, wc_format_decimal((string) $fixedStorage));
                     }
                 }
 
@@ -9410,7 +9415,10 @@ JS;
             if ($fixedRaw === '') {
                 delete_post_meta($variationId, $fixedKey);
             } else {
-                update_post_meta($variationId, $fixedKey, wc_format_decimal($fixedRaw));
+                $variationProduct = wc_get_product($variationId);
+                $fixedDisplay = (float) wc_format_decimal($fixedRaw);
+                $fixedStorage = $this->get_product_price_storage_amount($variationProduct, $fixedDisplay, 1);
+                update_post_meta($variationId, $fixedKey, wc_format_decimal((string) $fixedStorage));
             }
 
             // Discount.
