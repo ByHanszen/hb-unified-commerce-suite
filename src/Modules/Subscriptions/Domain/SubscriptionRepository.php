@@ -1615,7 +1615,9 @@ class SubscriptionRepository {
     }
 
     private function get_legacy_item_storage_unit_price(array $item, $product): float {
-        $unitPrice = $this->normalize_decimal($item['unit_price'] ?? 0.0);
+        $unitPrice = function_exists('wc_format_decimal')
+            ? (float) wc_format_decimal((string) ($item['unit_price'] ?? 0.0))
+            : (float) ($item['unit_price'] ?? 0.0);
         if ($unitPrice <= 0) {
             return 0.0;
         }
@@ -1624,10 +1626,15 @@ class SubscriptionRepository {
             return $unitPrice;
         }
 
-        return $this->normalize_decimal(wc_get_price_excluding_tax($product, [
+        return function_exists('wc_format_decimal')
+            ? (float) wc_format_decimal((string) wc_get_price_excluding_tax($product, [
+                'qty' => 1,
+                'price' => $unitPrice,
+            ]))
+            : (float) wc_get_price_excluding_tax($product, [
             'qty' => 1,
             'price' => $unitPrice,
-        ]));
+        ]);
     }
 
     private function extract_interval_from_scheme(string $scheme, int $fallback = 0): int {

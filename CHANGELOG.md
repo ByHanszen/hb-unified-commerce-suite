@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.88] — 2026-03-24
+### Fixed
+- Backend afrondingsverschillen: de repository rondde de interne exclusief-btw opslagprijs voor shadow order-items nog af op 2 decimalen voordat de backend-orderregels werden opgebouwd. Daardoor kon een frontendprijs van `11,50` incl. btw alsnog als `11,51` in het abonnement verschijnen. Die tussenafronding gebruikt nu weer interne precisie, zodat frontend en backend op hetzelfde bedrag uitkomen.
+
 ## [0.3.87] — 2026-03-24
 ### Fixed
 - Backend afronding incl. btw: de abonnement-backoffice berekende itemtotalen nog via exclusief-btw subtotalen plus apart afgeronde belasting, terwijl de frontend het incl.-btw eindbedrag direct via de display-prijshelper toonde. Bij bepaalde bedragen gaf dat nog steeds verschillen zoals `11,50` versus `11,51`. De backend gebruikt voor incl.-btw weergave nu dezelfde display-bedrag helper als de frontend, zodat beide kanten op hetzelfde afgeronde totaal uitkomen.
