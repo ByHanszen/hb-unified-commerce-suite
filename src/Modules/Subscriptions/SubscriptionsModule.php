@@ -159,10 +159,13 @@ class SubscriptionsModule {
         add_action('woocommerce_order_status_on-hold', [$this, 'maybe_trigger_on_hold_renewal_email'], 40, 1);
         add_action('woocommerce_order_status_processing', [$this, 'maybe_trigger_processing_renewal_email'], 40, 1);
         add_action('woocommerce_order_status_completed', [$this, 'maybe_trigger_completed_renewal_email'], 40, 1);
-        add_filter('woocommerce_email_enabled_customer_processing_order', [$this, 'maybe_disable_default_customer_order_email_for_renewals'], 10, 2);
-        add_filter('woocommerce_email_enabled_customer_completed_order', [$this, 'maybe_disable_default_customer_order_email_for_renewals'], 10, 2);
-        add_filter('woocommerce_email_enabled_customer_on_hold_order', [$this, 'maybe_disable_default_customer_order_email_for_renewals'], 10, 2);
-        add_filter('woocommerce_email_enabled_customer_invoice', [$this, 'maybe_disable_default_customer_order_email_for_renewals'], 10, 2);
+        add_filter('woocommerce_email_enabled_new_order', [$this, 'maybe_disable_default_order_email_for_subscription_context'], 10, 2);
+        add_filter('woocommerce_email_enabled_cancelled_order', [$this, 'maybe_disable_default_order_email_for_subscription_context'], 10, 2);
+        add_filter('woocommerce_email_enabled_failed_order', [$this, 'maybe_disable_default_order_email_for_subscription_context'], 10, 2);
+        add_filter('woocommerce_email_enabled_customer_processing_order', [$this, 'maybe_disable_default_order_email_for_subscription_context'], 10, 2);
+        add_filter('woocommerce_email_enabled_customer_completed_order', [$this, 'maybe_disable_default_order_email_for_subscription_context'], 10, 2);
+        add_filter('woocommerce_email_enabled_customer_on_hold_order', [$this, 'maybe_disable_default_order_email_for_subscription_context'], 10, 2);
+        add_filter('woocommerce_email_enabled_customer_invoice', [$this, 'maybe_disable_default_order_email_for_subscription_context'], 10, 2);
 
         add_filter('cron_schedules', [$this, 'register_cron_schedules']);
         add_action('init', [$this, 'ensure_cron_scheduled']);
@@ -6254,12 +6257,27 @@ class SubscriptionsModule {
         return $order && is_object($order) && (string) $order->get_meta(self::ORDER_META_RENEWAL, true) === '1';
     }
 
-    public function maybe_disable_default_customer_order_email_for_renewals(bool $enabled, $order): bool {
+    private function is_subscription_order_type($order): bool {
+        if (is_numeric($order)) {
+            $order = wc_get_order((int) $order);
+        }
+
+        return $order
+            && is_object($order)
+            && method_exists($order, 'get_type')
+            && (string) $order->get_type() === \HB\UCS\Modules\Subscriptions\OrderTypes\SubscriptionOrderType::TYPE;
+    }
+
+    private function should_disable_default_order_email($order): bool {
+        return $this->is_renewal_order($order) || $this->is_subscription_order_type($order);
+    }
+
+    public function maybe_disable_default_order_email_for_subscription_context(bool $enabled, $order): bool {
         if (!$enabled) {
             return false;
         }
 
-        return $this->is_renewal_order($order) ? false : $enabled;
+        return $this->should_disable_default_order_email($order) ? false : $enabled;
     }
 
     public function register_renewal_email_classes(array $emails): array {

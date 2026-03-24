@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.97] — 2026-03-24
+### Fixed
+- Backend abonnement-bewerkingen triggerden nog standaard WooCommerce ordermails, omdat het interne abonnements-ordertype bij opslaan als gewone bestelling werd behandeld voor e-mailnotificaties. Die standaard mails worden nu onderdrukt voor HB UCS abonnementen, zodat klanten en admins geen onterechte "nieuwe bestelling" of vergelijkbare ordermails meer ontvangen bij het updaten van een bestaand abonnement.
+
 ## [0.3.89] — 2026-03-24
 ### Fixed
 - Frontend verborgen meta: bestaande abonnementen konden `_reduced_stock` nog tonen wanneer die sleutel al eerder als gewone `display_meta` label/value rij in een opgeslagen snapshot terecht was gekomen. Die opgeslagen display-meta wordt nu ook tegen dezelfde uitgesloten keys gefilterd, zodat `reduced_stock` niet meer zichtbaar blijft in Mijn Account.
