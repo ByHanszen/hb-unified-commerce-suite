@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.105] — 2026-03-24
+### Fixed
+- Backend abonnementskortingen bleven bij self-sync nog fout terugvallen naar de originele regelprijs, omdat de repository de abonnementsprijs uit `line_item->get_subtotal()` haalde in plaats van uit het werkelijk opgeslagen afgeprijsde `line_item->get_total()`. Order-type abonnementen nemen handmatige backend-kortingen nu correct over vanuit het echte regel-totaal.
+
 ## [0.3.104] — 2026-03-24
 ### Fixed
 - Order-type abonnementen zonder gekoppelde legacy-post hielden hun opgeslagen `_hb_ucs_sub_items`, fee-lines en shipping-lines op het orderrecord zelf nog op oude waarden, ook wanneer de echte WooCommerce orderregels al waren bijgewerkt. Die gestructureerde order-meta wordt nu tijdens self-sync ook direct ververst, zodat backendweergave en vervolgsyncs niet meer terugvallen op verouderde prijsregels of handmatige kortingen overschrijven.

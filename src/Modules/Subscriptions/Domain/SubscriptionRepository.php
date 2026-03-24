@@ -1128,7 +1128,7 @@ class SubscriptionRepository {
             $qty = max(1, method_exists($item, 'get_quantity') ? (int) $item->get_quantity() : 1);
             $productId = method_exists($item, 'get_product_id') ? (int) $item->get_product_id() : 0;
             $variationId = method_exists($item, 'get_variation_id') ? (int) $item->get_variation_id() : 0;
-            $subtotal = method_exists($item, 'get_subtotal') ? (float) $item->get_subtotal() : 0.0;
+            $lineTotal = method_exists($item, 'get_total') ? (float) $item->get_total() : 0.0;
             $attributes = $this->extract_selected_attributes_from_order_item($item);
             $displayMetaRows = $this->extract_display_meta_rows_from_order_item($item);
             $sourceOrderItemId = $this->resolve_source_order_item_id($item, $isSubscriptionOrder);
@@ -1138,7 +1138,7 @@ class SubscriptionRepository {
                 'base_variation_id' => $variationId,
                 'source_order_item_id' => $sourceOrderItemId,
                 'qty' => $qty,
-                'unit_price' => $qty > 0 ? $this->normalize_decimal($subtotal / $qty) : 0.0,
+                'unit_price' => $qty > 0 ? $this->normalize_decimal($lineTotal / $qty) : 0.0,
                 'catalog_unit_price' => method_exists($item, 'get_meta') ? $item->get_meta(self::ORDER_ITEM_META_CATALOG_UNIT_PRICE, true) : '',
                 'scheme' => $scheme,
                 'price_includes_tax' => 0,
