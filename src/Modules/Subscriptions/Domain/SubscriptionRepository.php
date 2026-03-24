@@ -261,7 +261,7 @@ class SubscriptionRepository {
         return $legacyPostId;
     }
 
-    public function sync_legacy_from_order($order): ?array {
+    public function sync_legacy_from_order($order, bool $createIfMissing = false): ?array {
         if (is_numeric($order)) {
             $order = function_exists('wc_get_order') ? wc_get_order((int) $order) : null;
         }
@@ -270,10 +270,15 @@ class SubscriptionRepository {
             return null;
         }
 
-        $legacyPostId = $this->ensure_legacy_record_for_order($order);
+        $legacyPostId = $this->get_linked_legacy_post_id($order);
+        if ($legacyPostId <= 0 && $createIfMissing) {
+            $legacyPostId = $this->ensure_legacy_record_for_order($order);
+        }
+
         if ($legacyPostId <= 0) {
-            $this->log_sync_debug('repository.sync_legacy_from_order.missing_legacy', [
+            $this->log_sync_debug('repository.sync_legacy_from_order.skipped_missing_legacy', [
                 'order' => $this->build_order_debug_snapshot($order),
+                'create_if_missing' => $createIfMissing,
             ]);
             return null;
         }
@@ -408,7 +413,7 @@ class SubscriptionRepository {
         return $result;
     }
 
-    public function sync_order_type_self(int $orderId): ?array {
+    public function sync_order_type_self(int $orderId, bool $createMissingLegacy = false): ?array {
         if ($orderId <= 0 || !function_exists('wc_get_order')) {
             return null;
         }
@@ -435,7 +440,7 @@ class SubscriptionRepository {
         wp_update_post($this->build_shadow_order_postarr($data, $orderId));
         $this->sync_shadow_order_meta($orderId, $data);
 
-        $synced = $this->sync_legacy_from_order($order);
+        $synced = $this->sync_legacy_from_order($order, $createMissingLegacy);
         if (is_array($synced)) {
             $this->log_sync_debug('repository.sync_order_type_self.end', [
                 'order' => $this->build_order_debug_snapshot($order),

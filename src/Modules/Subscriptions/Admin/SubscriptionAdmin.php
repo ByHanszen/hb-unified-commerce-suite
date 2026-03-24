@@ -588,7 +588,7 @@ class SubscriptionAdmin {
                 SubscriptionRepository::LEGACY_STATUS_META => $statusMap[$action],
             ]);
 
-            $this->service->get_repository()->sync_legacy_from_order($order);
+            $this->service->get_repository()->sync_legacy_from_order($order, false);
             $updated++;
         }
 
@@ -794,7 +794,7 @@ class SubscriptionAdmin {
         }
 
         apply_filters('hb_ucs_subscription_admin_execute_action', null, 'create_renewal_order', (int) $order->get_id(), $order);
-        $this->service->get_repository()->sync_legacy_from_order($order);
+        $this->service->get_repository()->sync_legacy_from_order($order, false);
     }
 
     public function handle_sync_customer_addresses_action($order): void {
@@ -829,7 +829,7 @@ class SubscriptionAdmin {
             $order->save();
         }
 
-        $this->service->get_repository()->sync_legacy_from_order($order);
+        $this->service->get_repository()->sync_legacy_from_order($order, false);
 
         if (method_exists($order, 'add_order_note')) {
             $order->add_order_note(__('Factuur- en verzendadres opnieuw geladen vanaf het klantprofiel.', 'hb-ucs'));
@@ -1077,7 +1077,7 @@ class SubscriptionAdmin {
         $syncResult = null;
 
         if ($linkedLegacyPostId > 0) {
-            $syncResult = $repository->sync_legacy_from_order($order);
+            $syncResult = $repository->sync_legacy_from_order($order, false);
         }
 
         $this->log_subscription_sync('admin.save.after_sync_legacy', $order, [
@@ -1324,7 +1324,7 @@ class SubscriptionAdmin {
             SubscriptionRepository::LEGACY_STATUS_META => $status,
         ]);
 
-        $this->service->get_repository()->sync_legacy_from_order($order);
+        $this->service->get_repository()->sync_legacy_from_order($order, false);
 
         if (method_exists($order, 'add_order_note')) {
             $order->add_order_note($note);

@@ -244,7 +244,7 @@ class SubscriptionsModule {
                 return;
             }
 
-            $this->get_subscription_repository()->sync_order_type_self($subId);
+            $this->get_subscription_repository()->sync_order_type_self($subId, false);
             return;
         }
 
@@ -2076,7 +2076,7 @@ class SubscriptionsModule {
         $this->process_subscription_admin_action($subId, $action);
 
         if ($order && is_object($order) && method_exists($order, 'get_id')) {
-            $this->get_subscription_repository()->sync_order_type_self((int) $order->get_id());
+            $this->get_subscription_repository()->sync_order_type_self((int) $order->get_id(), false);
         }
 
         return true;
@@ -2816,7 +2816,7 @@ class SubscriptionsModule {
             }
 
             if ($syncViaOrderObject) {
-                $this->get_subscription_repository()->sync_legacy_from_order($subscription);
+                $this->get_subscription_repository()->sync_legacy_from_order($subscription, false);
             } else {
                 $this->sync_subscription_order_type_record($subId);
             }

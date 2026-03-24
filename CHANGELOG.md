@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.73] — 2026-03-24
+### Fixed
+- Legacy-sync hardening: admin- en account-acties die order-type abonnementen bijwerken maken niet langer impliciet een ontbrekend legacy-abonnement aan tijdens `sync_legacy_from_order()`. Daardoor veroorzaken datum/status/adres-wijzigingen en vergelijkbare synchronisaties geen onbedoelde extra records meer via andere callsites van dezelfde sync-logica.
+
 ## [0.3.72] — 2026-03-24
 ### Fixed
 - Backend abonnement-editor: het handmatig aanpassen van de volgende betaling/verlengen-datum maakt niet langer eenmalig onbedoeld een extra legacy-abonnement aan. De admin-save synchroniseert nu alleen nog naar legacy-opslag wanneer er al een gekoppeld legacy-record bestaat.
