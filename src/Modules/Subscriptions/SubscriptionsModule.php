@@ -1544,6 +1544,9 @@ class SubscriptionsModule {
 
         $lineTax = (float) wc_format_decimal((string) array_sum($taxBreakdown));
         $lineTotal = (float) wc_format_decimal((string) ($lineSubtotal + $lineTax));
+        if ($this->should_display_subscription_prices_including_tax()) {
+            $lineTotal = $this->get_subscription_item_display_amount($item, $qty, true);
+        }
         $unitTotal = (float) wc_format_decimal((string) ($qty > 0 ? ($lineTotal / $qty) : $lineTotal));
 
         return [

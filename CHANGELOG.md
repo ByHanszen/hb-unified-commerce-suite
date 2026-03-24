@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.87] — 2026-03-24
+### Fixed
+- Backend afronding incl. btw: de abonnement-backoffice berekende itemtotalen nog via exclusief-btw subtotalen plus apart afgeronde belasting, terwijl de frontend het incl.-btw eindbedrag direct via de display-prijshelper toonde. Bij bepaalde bedragen gaf dat nog steeds verschillen zoals `11,50` versus `11,51`. De backend gebruikt voor incl.-btw weergave nu dezelfde display-bedrag helper als de frontend, zodat beide kanten op hetzelfde afgeronde totaal uitkomen.
+
 ## [0.3.86] — 2026-03-24
 ### Fixed
 - Mijn Account abonnementspagina: technische Mollie-velden zoals payment ID, payment mode en customer ID worden niet langer aan klanten getoond in de frontend. Die betaalmeta blijft intern beschikbaar, maar is nu verborgen uit de accountweergave.
