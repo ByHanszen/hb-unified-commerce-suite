@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.107] — 2026-03-24
+### Fixed
+- Backend abonnementen rondde interne ex-btw regelprijzen tijdens sync/heropbouw nog te vroeg af op de zichtbare shopprecisie (`wc_get_price_decimals()`, vaak 2 decimalen). De repository en datastore gebruiken nu WooCommerce-interne afrondingsprecisie voor opslag- en rekentussenstappen, zodat handmatige kortingen van 1 cent niet meer verdwijnen door een te vroege afronding.
+
 ## [0.3.106] — 2026-03-24
 ### Fixed
 - Backend handmatige abonnementskortingen bleven terugvallen omdat HB UCS bij extractie en rebuild nog maar één prijs per regel bewaarde en daarna `subtotal` en `total` opnieuw gelijk zette. De sync bewaart nu de actuele regelprijs uit `get_total()` én de referentieprijs uit `get_subtotal()`/`catalog_unit_price`, zodat backend abonnementregels hun handmatige korting behouden na opslaan.

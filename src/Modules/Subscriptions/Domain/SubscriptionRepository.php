@@ -1758,14 +1758,22 @@ class SubscriptionRepository {
 
     private function format_decimal($value): string {
         return function_exists('wc_format_decimal')
-            ? wc_format_decimal((string) $value, wc_get_price_decimals())
-            : number_format((float) $value, 2, '.', '');
+            ? wc_format_decimal((string) $value, $this->get_internal_decimal_precision())
+            : number_format((float) $value, 6, '.', '');
     }
 
     private function normalize_decimal($value): float {
         return function_exists('wc_format_decimal')
-            ? (float) wc_format_decimal((string) $value, wc_get_price_decimals())
-            : round((float) $value, 2);
+            ? (float) wc_format_decimal((string) $value, $this->get_internal_decimal_precision())
+            : round((float) $value, 6);
+    }
+
+    private function get_internal_decimal_precision(): int {
+        if (function_exists('wc_get_rounding_precision')) {
+            return max((int) wc_get_price_decimals(), (int) wc_get_rounding_precision());
+        }
+
+        return max(function_exists('wc_get_price_decimals') ? (int) wc_get_price_decimals() : 2, 6);
     }
 
     private function log_sync_debug(string $event, array $context = []): void {

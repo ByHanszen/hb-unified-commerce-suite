@@ -425,9 +425,17 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
 
     private function normalize_decimal($value): float {
         if (function_exists('wc_format_decimal')) {
-            return (float) wc_format_decimal((string) $value, wc_get_price_decimals());
+            return (float) wc_format_decimal((string) $value, $this->get_internal_decimal_precision());
         }
 
-        return round((float) $value, 2);
+        return round((float) $value, 6);
+    }
+
+    private function get_internal_decimal_precision(): int {
+        if (function_exists('wc_get_rounding_precision')) {
+            return max((int) wc_get_price_decimals(), (int) wc_get_rounding_precision());
+        }
+
+        return max(function_exists('wc_get_price_decimals') ? (int) wc_get_price_decimals() : 2, 6);
     }
 }
