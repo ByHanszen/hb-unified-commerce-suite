@@ -2463,9 +2463,6 @@ class SubscriptionsModule {
         echo '<div class="hb-ucs-info-list__row"><span>' . esc_html__('E-mail', 'hb-ucs') . '</span><strong>' . esc_html((string) ($contact['billing_email'] ?? '—')) . '</strong></div>';
         echo '<div class="hb-ucs-info-list__row"><span>' . esc_html__('Telefoon', 'hb-ucs') . '</span><strong>' . esc_html((string) ($contact['billing_phone'] ?? '—')) . '</strong></div>';
         echo '<div class="hb-ucs-info-list__row"><span>' . esc_html__('Betaalmethode', 'hb-ucs') . '</span><strong>' . esc_html($paymentMethodTitle !== '' ? $paymentMethodTitle : '—') . '</strong></div>';
-        echo '<div class="hb-ucs-info-list__row"><span>' . esc_html__('Mollie Payment ID', 'hb-ucs') . '</span><strong>' . esc_html($mollieMeta['paymentId'] !== '' ? (string) $mollieMeta['paymentId'] : '—') . '</strong></div>';
-        echo '<div class="hb-ucs-info-list__row"><span>' . esc_html__('Mollie Payment Mode', 'hb-ucs') . '</span><strong>' . esc_html($mollieMeta['paymentMode'] !== '' ? (string) $mollieMeta['paymentMode'] : '—') . '</strong></div>';
-        echo '<div class="hb-ucs-info-list__row"><span>' . esc_html__('Mollie Customer ID', 'hb-ucs') . '</span><strong>' . esc_html($mollieMeta['customerId'] !== '' ? (string) $mollieMeta['customerId'] : '—') . '</strong></div>';
         echo '</div>';
         echo '<div class="hb-ucs-address-grid">';
         echo '<div class="hb-ucs-address-block">';
@@ -3671,6 +3668,7 @@ class SubscriptionsModule {
             'hb_ucs_subscription_base_product_id',
             'hb_ucs_subscription_base_variation_id',
             'hb_ucs_subscription_scheme',
+            'reduced_stock',
             'sku',
         ];
     }
@@ -3679,6 +3677,7 @@ class SubscriptionsModule {
         return [
             self::ORDER_ITEM_META_SELECTED_ATTRIBUTES,
             self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID,
+            '_reduced_stock',
         ];
     }
 
@@ -5295,11 +5294,35 @@ class SubscriptionsModule {
         }
 
         $unitPrice = null;
-        if ($baseVariationId > 0) {
-            $unitPrice = $this->get_variation_subscription_price($baseVariationId, $scheme);
-        } else {
-            $unitPrice = $this->get_base_subscription_price($baseProductId, $scheme);
+        $pricingProductId = $baseVariationId > 0 ? $baseVariationId : $baseProductId;
+        $pricingProduct = $pricingProductId > 0 ? wc_get_product($pricingProductId) : null;
+
+        if (
+            $pricingProduct
+            && is_object($pricingProduct)
+            && get_option('woocommerce_prices_include_tax', 'no') === 'yes'
+            && $this->should_display_subscription_prices_including_tax()
+        ) {
+            $pricing = $this->get_product_page_subscription_pricing(
+                $pricingProductId,
+                $pricingProduct,
+                $scheme,
+                $baseVariationId > 0 ? $baseProductId : 0
+            );
+
+            if ($pricing && isset($pricing['final'])) {
+                $unitPrice = $this->get_product_price_storage_amount($pricingProduct, (float) $pricing['final'], 1);
+            }
         }
+
+        if ($unitPrice === null) {
+            if ($baseVariationId > 0) {
+                $unitPrice = $this->get_variation_subscription_price($baseVariationId, $scheme);
+            } else {
+                $unitPrice = $this->get_base_subscription_price($baseProductId, $scheme);
+            }
+        }
+
         if ($unitPrice === null) {
             $unitPrice = $fallbackUnitPrice !== null ? (float) $fallbackUnitPrice : 0.0;
         }

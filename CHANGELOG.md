@@ -4,6 +4,18 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.86] — 2026-03-24
+### Fixed
+- Mijn Account abonnementspagina: technische Mollie-velden zoals payment ID, payment mode en customer ID worden niet langer aan klanten getoond in de frontend. Die betaalmeta blijft intern beschikbaar, maar is nu verborgen uit de accountweergave.
+
+## [0.3.85] — 2026-03-24
+### Fixed
+- Afrondingsverschil account/backend: bij shops met prijzen inclusief btw kon een frontend abonnementsprijs van bijvoorbeeld `11,50` incl. btw in de backend als `11,51` uitkomen, omdat de opgeslagen subscription-unitprijs via een apart exclusief-btw prijs/discount pad werd berekend. Productwijzigingen via Mijn Account leiden de opslagprijs nu af van exact dezelfde frontend abonnementsprijsberekening, zodat frontend en backend op hetzelfde incl.-btw bedrag uitkomen.
+
+## [0.3.84] — 2026-03-24
+### Fixed
+- Frontend abonnement-meta: interne WooCommerce order-itemmeta zoals `_reduced_stock` wordt nu expliciet verborgen in abonnementsweergaves. Daardoor zien klanten die technische voorraadmeta niet meer terug als losse tekstregel in Mijn Account of andere frontend item-meta.
+
 ## [0.3.83] — 2026-03-24
 ### Fixed
 - Mijn Account productkiezer: prijzen in de potlood-flow gebruikten nog een oudere prijsberekening waardoor in sommige winkels exclusief-btw bedragen zichtbaar bleven. De account productmodal en variatie-preview gebruiken nu dezelfde btw-correcte subscriptions-pricing helper als de productpagina, zodat daar weer inclusief-btw prijzen worden getoond wanneer de shop dat zo weergeeft.
