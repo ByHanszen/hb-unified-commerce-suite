@@ -4548,6 +4548,15 @@ class SubscriptionsModule {
             return $items;
         }
 
+        $subscriptionOrder = $this->get_subscription_order_object($subId);
+        if ($subscriptionOrder) {
+            $orderItems = $this->extract_subscription_items_from_order($subscriptionOrder);
+            if (!empty($orderItems)) {
+                $this->persist_subscription_items($subId, $orderItems);
+                return $this->maybe_repair_subscription_item_display_meta($subId, $orderItems);
+            }
+        }
+
         $legacyItem = $this->normalize_subscription_item([
             'base_product_id' => (int) get_post_meta($subId, self::SUB_META_BASE_PRODUCT_ID, true),
             'base_variation_id' => (int) get_post_meta($subId, self::SUB_META_BASE_VARIATION_ID, true),
@@ -4556,6 +4565,76 @@ class SubscriptionsModule {
         ]);
 
         return $legacyItem ? [$legacyItem] : [];
+    }
+
+    private function get_subscription_order_object(int $subId) {
+        if ($subId <= 0 || !function_exists('wc_get_order')) {
+            return null;
+        }
+
+        $order = wc_get_order($subId);
+        if (!$order || !is_object($order) || !method_exists($order, 'get_type')) {
+            return null;
+        }
+
+        return (string) $order->get_type() === $this->get_subscription_order_type()->get_type() ? $order : null;
+    }
+
+    private function extract_subscription_items_from_order($order): array {
+        $items = [];
+        if (!$order || !is_object($order) || !method_exists($order, 'get_items')) {
+            return $items;
+        }
+
+        foreach ((array) $order->get_items('line_item') as $item) {
+            if (!$item || !is_object($item)) {
+                continue;
+            }
+
+            $baseProductId = method_exists($item, 'get_meta') ? (int) $item->get_meta('_hb_ucs_subscription_base_product_id', true) : 0;
+            $baseVariationId = method_exists($item, 'get_meta') ? (int) $item->get_meta('_hb_ucs_subscription_base_variation_id', true) : 0;
+
+            if ($baseProductId <= 0 && method_exists($item, 'get_product_id')) {
+                $baseProductId = (int) $item->get_product_id();
+            }
+            if ($baseVariationId <= 0 && method_exists($item, 'get_variation_id')) {
+                $baseVariationId = (int) $item->get_variation_id();
+            }
+
+            if ($baseProductId <= 0) {
+                continue;
+            }
+
+            $qty = method_exists($item, 'get_quantity') ? (int) $item->get_quantity() : 1;
+            if ($qty <= 0) {
+                $qty = 1;
+            }
+
+            $lineTotal = method_exists($item, 'get_total') ? (float) $item->get_total() : 0.0;
+            $unitPrice = $qty > 0 ? (float) wc_format_decimal((string) ($lineTotal / $qty)) : 0.0;
+            $selectedAttributes = $this->get_selected_attributes_from_order_item($item, $baseProductId, $baseVariationId);
+            $displayMeta = $this->get_display_meta_rows_from_order_item($item, $baseProductId, $selectedAttributes);
+            $sourceSnapshot = $this->build_subscription_item_source_snapshot_from_order_item($item, $baseProductId, $baseVariationId);
+
+            $normalized = $this->normalize_subscription_item([
+                'base_product_id' => $baseProductId,
+                'base_variation_id' => $baseVariationId,
+                'source_order_item_id' => method_exists($item, 'get_meta') ? (int) $item->get_meta(self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID, true) : 0,
+                'qty' => $qty,
+                'unit_price' => $unitPrice,
+                'price_includes_tax' => 0,
+                'taxes' => method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : [],
+                'selected_attributes' => $selectedAttributes,
+                'display_meta' => $displayMeta,
+                'source_item_snapshot' => $sourceSnapshot,
+            ]);
+
+            if ($normalized) {
+                $items[] = $normalized;
+            }
+        }
+
+        return $items;
     }
 
     private function maybe_repair_migrated_wcs_subscription_items(int $subId, array $items): array {
@@ -4967,6 +5046,15 @@ class SubscriptionsModule {
             return $lines;
         }
 
+        $subscriptionOrder = $this->get_subscription_order_object($subId);
+        if ($subscriptionOrder) {
+            $lines = $this->extract_subscription_shipping_lines($subscriptionOrder);
+            if (!empty($lines)) {
+                $this->persist_subscription_shipping_lines($subId, $lines);
+                return $lines;
+            }
+        }
+
         if (!$fallbackOrder) {
             $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
             $fallbackOrder = $parentOrderId > 0 ? wc_get_order($parentOrderId) : null;
@@ -4979,6 +5067,15 @@ class SubscriptionsModule {
         $lines = $this->get_subscription_fee_lines($subId);
         if (!empty($lines) || metadata_exists('post', $subId, self::SUB_META_FEE_LINES)) {
             return $lines;
+        }
+
+        $subscriptionOrder = $this->get_subscription_order_object($subId);
+        if ($subscriptionOrder) {
+            $lines = $this->extract_subscription_fee_lines($subscriptionOrder);
+            if (!empty($lines)) {
+                $this->persist_subscription_fee_lines($subId, $lines);
+                return $lines;
+            }
         }
 
         if (!$fallbackOrder) {

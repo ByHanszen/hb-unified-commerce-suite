@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.74] — 2026-03-24
+### Fixed
+- Renewal regressie: wanneer een order-type abonnement onvoldoende opgeslagen `_hb_ucs_sub_items` of verzend-/fee-meta had, viel de renewal terug op één minimale productregel zonder correcte btw of verzending. Renewals herstellen die data nu eerst uit de echte subscription-order items, taxes en shipping-regels zelf, zodat meerdere producten, btw en verzending weer correct meegenomen worden.
+
 ## [0.3.73] — 2026-03-24
 ### Fixed
 - Legacy-sync hardening: admin- en account-acties die order-type abonnementen bijwerken maken niet langer impliciet een ontbrekend legacy-abonnement aan tijdens `sync_legacy_from_order()`. Daardoor veroorzaken datum/status/adres-wijzigingen en vergelijkbare synchronisaties geen onbedoelde extra records meer via andere callsites van dezelfde sync-logica.
