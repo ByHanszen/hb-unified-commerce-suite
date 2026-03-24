@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.101] — 2026-03-24
+### Fixed
+- Het openen van HB UCS abonnementen kon vastlopen door een recursielus bij order-type abonnementen zonder opgeslagen item-meta. De repository probeert orderregels nu nog steeds als fallback te gebruiken, maar met een guard die voorkomt dat dezelfde data-resolutie zichzelf via het order-datastore opnieuw blijft aanroepen en zo memory exhaustion veroorzaakt.
+
 ## [0.3.100] — 2026-03-24
 ### Fixed
 - Handmatig aangemaakte backend-abonnementen konden een totaal van `0` tonen terwijl subtotalen en btw wel zichtbaar waren. Voor order-type abonnementen zonder gekoppelde legacy-post worden artikel-, toeslag- en verzendregels nu ook direct uit de echte orderregels afgeleid en bij admin-save teruggesynchroniseerd, zodat de opgeslagen totaalbedragen correct worden opgebouwd.

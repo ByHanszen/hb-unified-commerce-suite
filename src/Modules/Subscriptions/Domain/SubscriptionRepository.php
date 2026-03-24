@@ -35,6 +35,9 @@ class SubscriptionRepository {
     /** @var bool */
     private static $creatingLegacyFromOrder = false;
 
+    /** @var bool */
+    private static $resolvingOrderTypeData = false;
+
     public static function is_creating_legacy_from_order(): bool {
         return self::$creatingLegacyFromOrder;
     }
@@ -542,16 +545,24 @@ class SubscriptionRepository {
         $feeLines = is_array($feeLines) ? $feeLines : [];
         $shippingLines = is_array($shippingLines) ? $shippingLines : [];
 
-        if (empty($items) && method_exists($order, 'get_items')) {
-            $items = $this->extract_legacy_items_from_order($order);
-        }
+        if (!self::$resolvingOrderTypeData && method_exists($order, 'get_items')) {
+            self::$resolvingOrderTypeData = true;
 
-        if (empty($feeLines) && method_exists($order, 'get_items')) {
-            $feeLines = $this->extract_legacy_fee_lines_from_order($order);
-        }
+            try {
+                if (empty($items)) {
+                    $items = $this->extract_legacy_items_from_order($order);
+                }
 
-        if (empty($shippingLines) && method_exists($order, 'get_items')) {
-            $shippingLines = $this->extract_legacy_shipping_lines_from_order($order);
+                if (empty($feeLines)) {
+                    $feeLines = $this->extract_legacy_fee_lines_from_order($order);
+                }
+
+                if (empty($shippingLines)) {
+                    $shippingLines = $this->extract_legacy_shipping_lines_from_order($order);
+                }
+            } finally {
+                self::$resolvingOrderTypeData = false;
+            }
         }
 
         $totals = $this->calculate_legacy_totals($items, $feeLines, $shippingLines);
