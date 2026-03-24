@@ -1129,6 +1129,11 @@ class SubscriptionRepository {
             $productId = method_exists($item, 'get_product_id') ? (int) $item->get_product_id() : 0;
             $variationId = method_exists($item, 'get_variation_id') ? (int) $item->get_variation_id() : 0;
             $lineTotal = method_exists($item, 'get_total') ? (float) $item->get_total() : 0.0;
+            $lineSubtotal = method_exists($item, 'get_subtotal') ? (float) $item->get_subtotal() : $lineTotal;
+            $catalogUnitPrice = method_exists($item, 'get_meta') ? $item->get_meta(self::ORDER_ITEM_META_CATALOG_UNIT_PRICE, true) : '';
+            if (($catalogUnitPrice === '' || $catalogUnitPrice === null) && $qty > 0) {
+                $catalogUnitPrice = $this->normalize_decimal($lineSubtotal / $qty);
+            }
             $attributes = $this->extract_selected_attributes_from_order_item($item);
             $displayMetaRows = $this->extract_display_meta_rows_from_order_item($item);
             $sourceOrderItemId = $this->resolve_source_order_item_id($item, $isSubscriptionOrder);
@@ -1139,7 +1144,7 @@ class SubscriptionRepository {
                 'source_order_item_id' => $sourceOrderItemId,
                 'qty' => $qty,
                 'unit_price' => $qty > 0 ? $this->normalize_decimal($lineTotal / $qty) : 0.0,
-                'catalog_unit_price' => method_exists($item, 'get_meta') ? $item->get_meta(self::ORDER_ITEM_META_CATALOG_UNIT_PRICE, true) : '',
+                'catalog_unit_price' => $catalogUnitPrice,
                 'scheme' => $scheme,
                 'price_includes_tax' => 0,
                 'taxes' => $this->normalize_item_taxes(method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : []),
@@ -1321,7 +1326,9 @@ class SubscriptionRepository {
             $product = $targetId > 0 ? wc_get_product($targetId) : false;
             $qty = max(1, (int) ($row['qty'] ?? 1));
             $unitPrice = $this->get_legacy_item_storage_unit_price($row, $product);
-            $lineSubtotal = $this->normalize_decimal($unitPrice * $qty);
+            $referenceUnitPrice = $this->get_legacy_item_reference_unit_price($row);
+            $lineSubtotal = $this->normalize_decimal($referenceUnitPrice * $qty);
+            $lineTotal = $this->normalize_decimal($unitPrice * $qty);
             $taxes = $this->normalize_item_taxes($row['taxes'] ?? []);
             $subtotalTax = array_sum($this->normalize_tax_group($taxes['subtotal'] ?? []));
             $lineTax = array_sum($this->normalize_tax_group($taxes['total'] ?? []));
@@ -1335,7 +1342,7 @@ class SubscriptionRepository {
             }
             $item->set_quantity($qty);
             $item->set_subtotal($lineSubtotal);
-            $item->set_total($lineSubtotal);
+            $item->set_total($lineTotal);
             if (method_exists($item, 'set_subtotal_tax')) {
                 $item->set_subtotal_tax($this->normalize_decimal($subtotalTax));
             }
@@ -1697,6 +1704,14 @@ class SubscriptionRepository {
             'qty' => 1,
             'price' => $unitPrice,
         ]);
+    }
+
+    private function get_legacy_item_reference_unit_price(array $item): float {
+        if (array_key_exists('catalog_unit_price', $item) && $item['catalog_unit_price'] !== '' && $item['catalog_unit_price'] !== null) {
+            return $this->normalize_decimal($item['catalog_unit_price']);
+        }
+
+        return $this->normalize_decimal($item['unit_price'] ?? 0.0);
     }
 
     private function extract_interval_from_scheme(string $scheme, int $fallback = 0): int {

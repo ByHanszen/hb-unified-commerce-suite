@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.106] — 2026-03-24
+### Fixed
+- Backend handmatige abonnementskortingen bleven terugvallen omdat HB UCS bij extractie en rebuild nog maar één prijs per regel bewaarde en daarna `subtotal` en `total` opnieuw gelijk zette. De sync bewaart nu de actuele regelprijs uit `get_total()` én de referentieprijs uit `get_subtotal()`/`catalog_unit_price`, zodat backend abonnementregels hun handmatige korting behouden na opslaan.
+
 ## [0.3.105] — 2026-03-24
 ### Fixed
 - Backend abonnementskortingen bleven bij self-sync nog fout terugvallen naar de originele regelprijs, omdat de repository de abonnementsprijs uit `line_item->get_subtotal()` haalde in plaats van uit het werkelijk opgeslagen afgeprijsde `line_item->get_total()`. Order-type abonnementen nemen handmatige backend-kortingen nu correct over vanuit het echte regel-totaal.

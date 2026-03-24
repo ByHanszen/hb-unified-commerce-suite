@@ -168,7 +168,11 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
             $product = $targetId > 0 ? wc_get_product($targetId) : false;
             $qty = max(1, (int) ($row['qty'] ?? 1));
             $unitPrice = $this->normalize_decimal($row['unit_price'] ?? 0.0);
-            $lineSubtotal = $this->normalize_decimal($unitPrice * $qty);
+            $referenceUnitPrice = array_key_exists('catalog_unit_price', $row) && $row['catalog_unit_price'] !== '' && $row['catalog_unit_price'] !== null
+                ? $this->normalize_decimal($row['catalog_unit_price'])
+                : $unitPrice;
+            $lineSubtotal = $this->normalize_decimal($referenceUnitPrice * $qty);
+            $lineTotal = $this->normalize_decimal($unitPrice * $qty);
             $taxes = $this->normalize_item_taxes($row['taxes'] ?? []);
             $subtotalTax = $this->sum_tax_group($taxes['subtotal']);
             $lineTax = $this->sum_tax_group($taxes['total']);
@@ -180,7 +184,7 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
             $item->set_variation_id($variationId);
             $item->set_quantity($qty);
             $item->set_subtotal($lineSubtotal);
-            $item->set_total($lineSubtotal);
+            $item->set_total($lineTotal);
             $item->set_subtotal_tax($subtotalTax);
             $item->set_total_tax($lineTax);
             $item->set_taxes($taxes);
