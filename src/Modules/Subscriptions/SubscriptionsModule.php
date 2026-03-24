@@ -9056,6 +9056,140 @@ JS;
         ];
     }
 
+    private function get_current_product_display_price($product): ?float {
+        if (!$product || !is_object($product) || !method_exists($product, 'get_price')) {
+            return null;
+        }
+
+        $priceRaw = (string) $product->get_price();
+        if ($priceRaw === '') {
+            return null;
+        }
+
+        $price = (float) wc_format_decimal($priceRaw);
+        if ($price <= 0) {
+            return $price;
+        }
+
+        $includeTax = $this->should_display_subscription_prices_including_tax();
+        if (get_option('woocommerce_prices_include_tax', 'no') === 'yes' && $includeTax) {
+            return $price;
+        }
+
+        $storagePrice = $this->get_product_current_storage_price($product);
+        if ($storagePrice === null) {
+            return null;
+        }
+
+        return $this->get_product_price_display_amount($product, $storagePrice, 1, $includeTax);
+    }
+
+    private function get_product_page_subscription_pricing(int $entityId, $product, string $scheme, int $fallbackEntityId = 0): ?array {
+        if (!$product || !is_object($product)) {
+            return null;
+        }
+
+        $displayBasePrice = $this->get_current_product_display_price($product);
+        if ($displayBasePrice === null) {
+            return null;
+        }
+
+        $includeTax = $this->should_display_subscription_prices_including_tax();
+        $pricesIncludeTax = get_option('woocommerce_prices_include_tax', 'no') === 'yes';
+
+        if (!$pricesIncludeTax || !$includeTax) {
+            $storageBasePrice = $this->get_product_current_storage_price($product);
+            if ($storageBasePrice === null) {
+                return null;
+            }
+
+            $pricing = $this->get_subscription_pricing($entityId, $storageBasePrice, $scheme, $fallbackEntityId);
+            $pricing['base'] = $this->get_product_price_display_amount($product, (float) $pricing['base'], 1, $includeTax);
+            $pricing['final'] = $this->get_product_price_display_amount($product, (float) $pricing['final'], 1, $includeTax);
+
+            return $pricing;
+        }
+
+        $scheme = sanitize_key($scheme);
+        $fixedRaw = (string) get_post_meta($entityId, self::META_PRICE_PREFIX . $scheme, true);
+        if ($fixedRaw === '' && $fallbackEntityId > 0) {
+            $fixedRaw = (string) get_post_meta($fallbackEntityId, self::META_PRICE_PREFIX . $scheme, true);
+        }
+
+        $fixed = $fixedRaw !== '' ? (float) wc_format_decimal($fixedRaw) : null;
+        $discount = $this->get_discount_settings($entityId, $scheme, $fallbackEntityId);
+
+        $final = $fixed !== null ? $fixed : $this->calculate_discounted_price($displayBasePrice, $discount);
+        $final = (float) wc_format_decimal($final);
+
+        $hasDiscount = ($displayBasePrice > 0.0 && $final >= 0.0 && $final < $displayBasePrice);
+        $badge = '';
+        if ($hasDiscount) {
+            if ($fixed !== null) {
+                $pct = (int) round((1 - ($final / $displayBasePrice)) * 100);
+                if ($pct > 0) {
+                    $badge = sprintf(__('-%d%%', 'hb-ucs'), $pct);
+                }
+            } elseif (!empty($discount['enabled'])) {
+                if ($discount['type'] === 'percent') {
+                    $badge = sprintf(__('-%s%%', 'hb-ucs'), rtrim(rtrim(wc_format_decimal($discount['value']), '0'), '.'));
+                } else {
+                    $val = (float) $discount['value'];
+                    $badge = '-' . get_woocommerce_currency_symbol() . wc_format_decimal($val);
+                }
+            }
+        }
+
+        return [
+            'base' => $displayBasePrice,
+            'final' => $final,
+            'has_discount' => $hasDiscount,
+            'badge' => $badge,
+            'discount' => $discount,
+            'fixed' => $fixed,
+        ];
+    }
+
+    private function get_manual_cart_subscription_pricing(int $entityId, $product, string $scheme, int $fallbackEntityId = 0): ?array {
+        if (!$product || !is_object($product) || !method_exists($product, 'get_price')) {
+            return null;
+        }
+
+        $pricesIncludeTax = get_option('woocommerce_prices_include_tax', 'no') === 'yes';
+        if (!$pricesIncludeTax) {
+            $storageBasePrice = $this->get_product_current_storage_price($product);
+            if ($storageBasePrice === null) {
+                return null;
+            }
+
+            return $this->get_subscription_pricing($entityId, $storageBasePrice, $scheme, $fallbackEntityId);
+        }
+
+        $priceRaw = (string) $product->get_price();
+        if ($priceRaw === '') {
+            return null;
+        }
+
+        $basePrice = (float) wc_format_decimal($priceRaw);
+        $scheme = sanitize_key($scheme);
+
+        $fixedRaw = (string) get_post_meta($entityId, self::META_PRICE_PREFIX . $scheme, true);
+        if ($fixedRaw === '' && $fallbackEntityId > 0) {
+            $fixedRaw = (string) get_post_meta($fallbackEntityId, self::META_PRICE_PREFIX . $scheme, true);
+        }
+
+        $fixed = $fixedRaw !== '' ? (float) wc_format_decimal($fixedRaw) : null;
+        $discount = $this->get_discount_settings($entityId, $scheme, $fallbackEntityId);
+        $final = $fixed !== null ? $fixed : $this->calculate_discounted_price($basePrice, $discount);
+
+        return [
+            'base' => (float) wc_format_decimal((string) $basePrice),
+            'final' => (float) wc_format_decimal((string) $final),
+            'discount' => $discount,
+            'fixed' => $fixed,
+        ];
+    }
+
     public function maybe_notice_missing_wcs(): void {
         if ($this->get_engine() !== 'wcs') {
             return;
@@ -10036,9 +10170,8 @@ JS;
             echo '<input type="radio" name="hb_ucs_subs_scheme" value="' . esc_attr($scheme) . '" ' . checked($selected, (string) $scheme, false) . ' /> ';
             echo esc_html($label);
             if ($product->is_type('simple')) {
-                $base = (float) ($this->get_product_current_storage_price($product) ?? 0.0);
-                $pricing = $this->get_subscription_pricing($productId, $base, (string) $scheme);
-                $priceHtml = $this->format_subscription_price_html_for_product($product, (float) $pricing['base'], (float) $pricing['final'], (string) ($pricing['badge'] ?? ''));
+                $pricing = $this->get_product_page_subscription_pricing($productId, $product, (string) $scheme);
+                $priceHtml = $pricing ? $this->format_subscription_price_html((float) $pricing['base'], (float) $pricing['final'], (string) ($pricing['badge'] ?? '')) : '';
                 echo ' — <span class="price">' . wp_kses_post($priceHtml) . '</span>';
             } else {
                 echo ' — <span class="price hb-ucs-subs-price" data-scheme="' . esc_attr((string) $scheme) . '"></span>';
@@ -10245,8 +10378,12 @@ JS;
             return $cartItemData;
         }
 
-        $base = (float) ($this->get_product_current_storage_price($p) ?? 0.0);
-        $pricing = $this->get_subscription_pricing($entityId, $base, (string) $scheme, $fallbackId);
+        $pricing = $this->get_manual_cart_subscription_pricing($entityId, $p, (string) $scheme, $fallbackId);
+        if (!$pricing) {
+            return $cartItemData;
+        }
+
+        $base = (float) ($pricing['base'] ?? 0.0);
         $final = isset($pricing['final']) ? (float) $pricing['final'] : $base;
 
         // Ensure unique cart item so one-time and different schemes don't merge.
@@ -10290,14 +10427,25 @@ JS;
                 continue;
             }
 
+            $base = isset($data['base_price']) ? (float) $data['base_price'] : null;
             $final = isset($data['final_price']) ? (float) $data['final_price'] : null;
-            if ($final === null) {
+            if ($final === null || $base === null) {
                 continue;
             }
 
             if (!isset($cartItem['data']) || !is_object($cartItem['data']) || !method_exists($cartItem['data'], 'set_price')) {
                 continue;
             }
+
+            if (method_exists($cartItem['data'], 'set_regular_price')) {
+                $cartItem['data']->set_regular_price(wc_format_decimal((string) max(0.0, $base)));
+            }
+
+            if (method_exists($cartItem['data'], 'set_sale_price')) {
+                $salePrice = ($final >= 0.0 && $final < $base) ? wc_format_decimal((string) $final) : '';
+                $cartItem['data']->set_sale_price($salePrice);
+            }
+
             $cartItem['data']->set_price($final);
         }
     }
@@ -10580,22 +10728,6 @@ JS;
         return (float) ($pricing['final'] ?? $basePrice);
     }
 
-    private function format_subscription_price_html_for_product($product, float $base, float $final, string $badge = ''): string {
-        $includeTax = $this->should_display_subscription_prices_including_tax();
-        $displayBase = $this->get_product_price_display_amount($product, $base, 1, $includeTax);
-        $displayFinal = $this->get_product_price_display_amount($product, $final, 1, $includeTax);
-
-        if ($displayBase > 0 && $displayFinal >= 0 && $displayFinal < $displayBase) {
-            $html = '<del>' . wc_price($displayBase) . '</del> <ins>' . wc_price($displayFinal) . '</ins>';
-            if ($badge !== '') {
-                $html .= ' <small class="hb-ucs-subs-badge">' . esc_html($badge) . '</small>';
-            }
-            return $html;
-        }
-
-        return wc_price($displayFinal);
-    }
-
     private function format_subscription_price_html(float $base, float $final, string $badge = ''): string {
         if ($base > 0 && $final >= 0 && $final < $base) {
             $html = '<del>' . wc_price($base) . '</del> <ins>' . wc_price($final) . '</ins>';
@@ -10639,12 +10771,18 @@ JS;
 
         $out = [];
         foreach ($freqs as $scheme => $row) {
-            $pricing = $this->get_subscription_pricing($variationId, (float) $base, (string) $scheme, $parentId);
+            $pricing = $this->get_product_page_subscription_pricing($variationId, $variation, (string) $scheme, $parentId);
+            if ($pricing === null) {
+                $pricing = $this->get_subscription_pricing($variationId, (float) $base, (string) $scheme, $parentId);
+                $pricing['base'] = $this->get_product_price_display_amount($variation, (float) $pricing['base'], 1, $this->should_display_subscription_prices_including_tax());
+                $pricing['final'] = $this->get_product_price_display_amount($variation, (float) $pricing['final'], 1, $this->should_display_subscription_prices_including_tax());
+            }
+
             $out[(string) $scheme] = [
                 'base' => (float) $pricing['base'],
                 'final' => (float) $pricing['final'],
                 'badge' => (string) ($pricing['badge'] ?? ''),
-                'price_html' => $this->format_subscription_price_html_for_product($variation, (float) $pricing['base'], (float) $pricing['final'], (string) ($pricing['badge'] ?? '')),
+                'price_html' => $this->format_subscription_price_html((float) $pricing['base'], (float) $pricing['final'], (string) ($pricing['badge'] ?? '')),
             ];
         }
 

@@ -4,6 +4,14 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.71] — 2026-03-24
+### Fixed
+- Checkout/cart abonnement-prijzen gebruiken nu weer dezelfde prijsbasis als WooCommerce zelf. In winkels waar productprijzen inclusief btw worden ingevoerd, wordt de handmatige abonnementsprijs in winkelwagen en afrekenen niet langer op een exclusief-btw bedrag gezet, waardoor btw niet meer als schijnbare korting zichtbaar wordt.
+
+## [0.3.70] — 2026-03-24
+### Fixed
+- Productpagina abonnement-prijzen volgen nu dezelfde zichtbare prijsbasis als de WooCommerce productprijs. Bij winkels die prijzen inclusief btw invoeren en tonen, gebruikt de abonnementsweergave nu die incl.-btw basis direct voor simpele producten en variaties, zodat de frontend productpagina niet langer exclusief btw toont.
+
 ## [0.3.69] — 2026-03-24
 ### Fixed
 - Frontend abonnement-prijzen volgen nu weer correct de WooCommerce btw-weergave-instelling. Bij inclusief-btw weergave rekent de frontend itemprijzen voortaan consistent vanaf de opslagprijs en producttax-config, in plaats van in sommige gevallen terug te vallen op een opgeslagen prijs/tax-flag combinatie waardoor exclusief btw werd getoond.
