@@ -3170,9 +3170,10 @@ class SubscriptionsModule {
             if ($imageHtml === '' && function_exists('wc_placeholder_img')) {
                 $imageHtml = (string) wc_placeholder_img('woocommerce_thumbnail', ['class' => 'hb-ucs-subscription-item-card__image-el']);
             }
-            $baseSubscriptionPrice = $scheme !== '' ? $this->get_base_subscription_price($productId, $scheme) : null;
-            $displaySubscriptionPrice = $baseSubscriptionPrice !== null ? $this->get_product_price_display_amount($product, $baseSubscriptionPrice, 1, $this->should_display_subscription_prices_including_tax()) : null;
-            $priceHtml = $displaySubscriptionPrice !== null ? (string) html_entity_decode(wp_strip_all_tags(wc_price($displaySubscriptionPrice), true), ENT_QUOTES, 'UTF-8') : (method_exists($product, 'get_price_html') ? (string) wp_strip_all_tags($product->get_price_html(), true) : '');
+            $pricing = $scheme !== '' ? $this->get_product_page_subscription_pricing($productId, $product, $scheme) : null;
+            $priceHtml = $pricing
+                ? (string) html_entity_decode(wp_strip_all_tags($this->format_subscription_price_html((float) ($pricing['base'] ?? 0.0), (float) ($pricing['final'] ?? 0.0), (string) ($pricing['badge'] ?? '')), true), ENT_QUOTES, 'UTF-8')
+                : (method_exists($product, 'get_price_html') ? (string) wp_strip_all_tags($product->get_price_html(), true) : '');
 
             if (method_exists($product, 'is_type') && $product->is_type('variable') && method_exists($product, 'get_children')) {
                 $variableConfig = $this->get_variable_product_attribute_config($product);
@@ -3192,8 +3193,8 @@ class SubscriptionsModule {
                     'image_html' => $imageHtml,
                     'price_html' => $priceHtml,
                 ];
-                $options['items'][] = $entry;
                 $options['lookup'][$productId] = $entry;
+                $options['items'][] = $entry;
 
                 continue;
             }
@@ -3235,11 +3236,11 @@ class SubscriptionsModule {
 
         echo '<div class="hb-ucs-product-picker-field">';
         echo '<input type="hidden" name="' . esc_attr($name) . '" id="' . esc_attr($fieldId) . '" class="hb-ucs-product-picker-value" value="' . esc_attr((string) $selectedId) . '" />';
-        echo '<div class="hb-ucs-product-picker-summary">';
+        echo '<div class="hb-ucs-product-picker-summary" hidden aria-hidden="true">';
         echo '<span class="hb-ucs-product-picker-label" data-empty-label="' . esc_attr($emptyLabel) . '" data-base-label="' . esc_attr($selectedId > 0 ? $baseLabel : $emptyLabel) . '">' . esc_html($displayLabel) . '</span>';
         echo '</div>';
         if ($attributesName !== '') {
-            echo '<div class="hb-ucs-product-picker-attributes" data-attributes-name="' . esc_attr($attributesName) . '">';
+            echo '<div class="hb-ucs-product-picker-attributes" data-attributes-name="' . esc_attr($attributesName) . '" hidden aria-hidden="true">';
             $this->render_manageable_product_attribute_fields($selectedId, $selectedAttributes, $attributesName, $disabled, $productOptions);
             echo '</div>';
         }
@@ -3362,7 +3363,8 @@ class SubscriptionsModule {
         echo '<button type="button" class="hb-ucs-product-card__trash hb-ucs-product-card__icon-action hb-ucs-product-card__icon-action--remove" data-hb-ucs-remove-toggle="' . esc_attr($removeFieldName) . '" aria-label="' . esc_attr__('Product verwijderen', 'hb-ucs') . '" title="' . esc_attr__('Product verwijderen', 'hb-ucs') . '" aria-pressed="false" ' . disabled($manageDisabled, true, false) . '>' . $trashIcon . '<span class="screen-reader-text">' . esc_html__('Product verwijderen', 'hb-ucs') . '</span></button>';
         echo '</div>';
         echo '</div>';
-        echo '<div class="hb-ucs-product-card__editor">';
+        echo '<div class="hb-ucs-product-card__editor" hidden aria-hidden="true">';
+        echo '<p class="hb-ucs-subscription-item-card__editor-help">' . esc_html__('Kies eerst een hoofdartikel via het potlood en selecteer daarna hier de gewenste productopties.', 'hb-ucs') . '</p>';
         echo '<div class="hb-ucs-subscription-item-card__body hb-ucs-subscription-item-card__body--visible">';
         echo '<div class="hb-ucs-subscription-item-card__picker hb-ucs-subscription-item-card__picker--editor">';
         $this->render_manageable_product_select(
@@ -3811,9 +3813,11 @@ class SubscriptionsModule {
                 $imageHtml = (string) wc_placeholder_img('woocommerce_thumbnail', ['class' => 'hb-ucs-subscription-item-card__image-el']);
             }
 
-            $subscriptionPrice = $scheme !== '' ? $this->get_variation_subscription_price($variationId, $scheme) : null;
-            $displaySubscriptionPrice = $subscriptionPrice !== null ? $this->get_product_price_display_amount($variation, $subscriptionPrice, 1, $this->should_display_subscription_prices_including_tax()) : null;
-            $priceHtml = $displaySubscriptionPrice !== null ? (string) html_entity_decode(wp_strip_all_tags(wc_price($displaySubscriptionPrice), true), ENT_QUOTES, 'UTF-8') : (method_exists($variation, 'get_price_html') ? (string) wp_strip_all_tags($variation->get_price_html(), true) : '');
+            $parentId = method_exists($variation, 'get_parent_id') ? (int) $variation->get_parent_id() : 0;
+            $pricing = $scheme !== '' ? $this->get_product_page_subscription_pricing($variationId, $variation, $scheme, $parentId) : null;
+            $priceHtml = $pricing
+                ? (string) html_entity_decode(wp_strip_all_tags($this->format_subscription_price_html((float) ($pricing['base'] ?? 0.0), (float) ($pricing['final'] ?? 0.0), (string) ($pricing['badge'] ?? '')), true), ENT_QUOTES, 'UTF-8')
+                : (method_exists($variation, 'get_price_html') ? (string) wp_strip_all_tags($variation->get_price_html(), true) : '');
 
             $rows[] = [
                 'id' => $variationId,

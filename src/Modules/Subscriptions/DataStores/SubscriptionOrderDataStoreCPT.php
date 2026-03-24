@@ -37,10 +37,7 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
             return $items;
         }
 
-        $legacyPostId = $order->get_legacy_post_id('edit');
-        $legacy = $legacyPostId > 0
-            ? $this->repository->get_legacy_subscription_data($legacyPostId)
-            : $this->repository->get_order_type_subscription_data($order);
+        $legacy = $this->get_overlay_subscription_data($order);
 
         if (empty($legacy)) {
             return $items;
@@ -61,10 +58,8 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
     }
 
     private function hydrate_legacy_overlay(HB_UCS_Subscription_Order $order): void {
-        $legacyPostId = $order->get_legacy_post_id('edit');
-        $legacy = $legacyPostId > 0
-            ? $this->repository->get_legacy_subscription_data($legacyPostId)
-            : $this->repository->get_order_type_subscription_data($order);
+        $legacyPostId = $this->repository->get_linked_legacy_post_id($order);
+        $legacy = $this->get_overlay_subscription_data($order);
 
         if (empty($legacy)) {
             SubscriptionSyncLogger::debug('datastore.hydrate_legacy_overlay.empty_legacy', [
@@ -146,6 +141,18 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
         ]);
     }
 
+    private function get_overlay_subscription_data(HB_UCS_Subscription_Order $order): array {
+        $legacyPostId = $this->repository->get_linked_legacy_post_id($order);
+        if ($legacyPostId > 0) {
+            $legacy = $this->repository->get_legacy_subscription_data($legacyPostId);
+            if (!empty($legacy)) {
+                return $legacy;
+            }
+        }
+
+        return $this->repository->get_order_type_subscription_data($order);
+    }
+
     private function build_legacy_line_items(HB_UCS_Subscription_Order $order, array $legacy): array {
         $items = [];
 
@@ -176,6 +183,15 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
             $item->set_subtotal_tax($subtotalTax);
             $item->set_total_tax($lineTax);
             $item->set_taxes($taxes);
+            if ($productId > 0) {
+                $item->add_meta_data('_hb_ucs_subscription_base_product_id', $productId, true);
+            }
+            if ($variationId > 0) {
+                $item->add_meta_data('_hb_ucs_subscription_base_variation_id', $variationId, true);
+            }
+            if (!empty($legacy['scheme'])) {
+                $item->add_meta_data('_hb_ucs_subscription_scheme', (string) $legacy['scheme'], true);
+            }
             if ((int) ($row['source_order_item_id'] ?? 0) > 0) {
                 $item->add_meta_data('_hb_ucs_subscription_source_order_item_id', (int) $row['source_order_item_id'], true);
             }
@@ -206,8 +222,15 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
                 }
             }
 
+            $displayMetaRows = [];
             if (!empty($row['display_meta']) && is_array($row['display_meta'])) {
-                foreach ((array) $row['display_meta'] as $displayMetaRow) {
+                $displayMetaRows = (array) $row['display_meta'];
+            } elseif (!empty($row['source_item_snapshot']['display_meta']) && is_array($row['source_item_snapshot']['display_meta'])) {
+                $displayMetaRows = (array) $row['source_item_snapshot']['display_meta'];
+            }
+
+            if (!empty($displayMetaRows)) {
+                foreach ($displayMetaRows as $displayMetaRow) {
                     if (!is_array($displayMetaRow)) {
                         continue;
                     }

@@ -913,6 +913,21 @@
   gap: 14px;
 }
 
+.hb-ucs-product-picker-field--hidden {
+  display: none;
+}
+
+.hb-ucs-product-card__editor[hidden] {
+  display: none;
+}
+
+.hb-ucs-subscription-item-card__editor-help {
+  margin: 0 0 12px;
+  color: inherit;
+  opacity: 0.8;
+  font-size: 13px;
+}
+
 .hb-ucs-product-picker-summary {
   gap: 12px;
   align-items: stretch;

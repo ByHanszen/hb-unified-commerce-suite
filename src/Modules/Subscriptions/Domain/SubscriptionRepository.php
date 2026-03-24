@@ -214,7 +214,12 @@ class SubscriptionRepository {
             return 0;
         }
 
-        return method_exists($order, 'get_meta') ? (int) $order->get_meta(SubscriptionOrderType::LEGACY_POST_ID_META, true) : 0;
+        $legacyPostId = method_exists($order, 'get_meta') ? (int) $order->get_meta(SubscriptionOrderType::LEGACY_POST_ID_META, true) : 0;
+        if ($legacyPostId <= 0) {
+            return 0;
+        }
+
+        return get_post_type($legacyPostId) === self::LEGACY_POST_TYPE ? $legacyPostId : 0;
     }
 
     public function ensure_legacy_record_for_order($order): int {
@@ -439,6 +444,7 @@ class SubscriptionRepository {
 
         wp_update_post($this->build_shadow_order_postarr($data, $orderId));
         $this->sync_shadow_order_meta($orderId, $data);
+        $this->sync_shadow_order_items($orderId, $data);
 
         $synced = $this->sync_legacy_from_order($order, $createMissingLegacy);
         if (is_array($synced)) {
@@ -817,6 +823,77 @@ class SubscriptionRepository {
 
     private function get_display_meta_row_hash(string $label, string $value): string {
         return strtolower(remove_accents(trim($label) . '|' . trim($value)));
+    }
+
+    private function get_selected_attribute_display_row_hashes(int $baseProductId, array $selectedAttributes): array {
+        $hashes = [];
+        $selectedAttributes = is_array($selectedAttributes) ? $selectedAttributes : [];
+        if (empty($selectedAttributes)) {
+            return $hashes;
+        }
+
+        $configByKey = [];
+        if ($baseProductId > 0 && function_exists('wc_get_product')) {
+            $product = wc_get_product($baseProductId);
+            if ($product && is_object($product) && method_exists($product, 'get_attributes')) {
+                foreach ((array) $product->get_attributes() as $attributeKey => $attribute) {
+                    if (!is_object($attribute) || !method_exists($attribute, 'get_name')) {
+                        continue;
+                    }
+
+                    $name = (string) $attribute->get_name();
+                    $key = strpos($name, 'pa_') === 0 ? 'attribute_' . sanitize_key($name) : 'attribute_' . sanitize_key($name);
+                    $label = function_exists('wc_attribute_label') ? (string) wc_attribute_label($name, $product) : ucwords(str_replace(['pa_', '_', '-'], ['', ' ', ' '], $name));
+                    $options = [];
+
+                    if (taxonomy_exists($name)) {
+                        foreach ((array) wc_get_product_terms($baseProductId, $name, ['fields' => 'all']) as $term) {
+                            if (!is_object($term) || !isset($term->slug, $term->name)) {
+                                continue;
+                            }
+                            $options[(string) $term->slug] = (string) $term->name;
+                        }
+                    } elseif (method_exists($attribute, 'get_options')) {
+                        foreach ((array) $attribute->get_options() as $option) {
+                            $option = (string) $option;
+                            if ($option === '') {
+                                continue;
+                            }
+                            $options[sanitize_title($option)] = $option;
+                        }
+                    }
+
+                    $configByKey[$key] = [
+                        'label' => $label !== '' ? $label : $key,
+                        'options' => $options,
+                    ];
+                }
+            }
+        }
+
+        foreach ($selectedAttributes as $key => $rawValue) {
+            $key = sanitize_key((string) $key);
+            $rawValue = (string) $rawValue;
+            if ($key === '' || $rawValue === '') {
+                continue;
+            }
+
+            $label = isset($configByKey[$key]['label']) ? (string) $configByKey[$key]['label'] : trim(wp_strip_all_tags(ucwords(str_replace(['attribute_', '_', '-'], ['', ' ', ' '], $key)), true));
+            $value = $rawValue;
+            if (isset($configByKey[$key]['options'][sanitize_title($rawValue)])) {
+                $value = (string) $configByKey[$key]['options'][sanitize_title($rawValue)];
+            } else {
+                $value = trim(wp_strip_all_tags(ucwords(str_replace(['_', '-'], [' ', ' '], $rawValue)), true));
+            }
+
+            if ($label === '' || $value === '') {
+                continue;
+            }
+
+            $hashes[$this->get_display_meta_row_hash($label, $value)] = true;
+        }
+
+        return $hashes;
     }
 
     private function sanitize_display_meta_rows(array $rows): array {
@@ -1224,8 +1301,13 @@ class SubscriptionRepository {
                 $item->add_meta_data('_hb_ucs_subscription_scheme', (string) $legacy['scheme'], true);
             }
 
+            $selectedAttributes = isset($row['selected_attributes']) && is_array($row['selected_attributes']) ? $row['selected_attributes'] : [];
+            if (!empty($selectedAttributes)) {
+                $item->add_meta_data('_hb_ucs_subscription_selected_attributes', wp_json_encode($selectedAttributes), true);
+            }
+
             if ($variationId <= 0) {
-                foreach ((array) ($row['selected_attributes'] ?? []) as $attributeKey => $attributeValue) {
+                foreach ($selectedAttributes as $attributeKey => $attributeValue) {
                     $attributeKey = sanitize_key((string) $attributeKey);
                     if ($attributeKey === '') {
                         continue;
@@ -1235,7 +1317,16 @@ class SubscriptionRepository {
                 }
             }
 
-            foreach ((array) ($row['display_meta'] ?? []) as $displayMetaRow) {
+            $displayMetaRows = [];
+            if (!empty($row['display_meta']) && is_array($row['display_meta'])) {
+                $displayMetaRows = (array) $row['display_meta'];
+            } elseif (!empty($row['source_item_snapshot']['display_meta']) && is_array($row['source_item_snapshot']['display_meta'])) {
+                $displayMetaRows = (array) $row['source_item_snapshot']['display_meta'];
+            }
+
+            $selectedAttributeHashes = $this->get_selected_attribute_display_row_hashes($productId, $selectedAttributes);
+
+            foreach ($displayMetaRows as $displayMetaRow) {
                 if (!is_array($displayMetaRow)) {
                     continue;
                 }
@@ -1243,6 +1334,10 @@ class SubscriptionRepository {
                 $label = isset($displayMetaRow['label']) && is_scalar($displayMetaRow['label']) ? trim((string) $displayMetaRow['label']) : '';
                 $value = isset($displayMetaRow['value']) && is_scalar($displayMetaRow['value']) ? trim((string) $displayMetaRow['value']) : '';
                 if ($label === '' || $value === '') {
+                    continue;
+                }
+
+                if (isset($selectedAttributeHashes[$this->get_display_meta_row_hash($label, $value)])) {
                     continue;
                 }
 

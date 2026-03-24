@@ -214,6 +214,20 @@
     return values;
   }
 
+  function setSubscriptionRowEditing($row, expanded) {
+    if (!$row || !$row.length) {
+      return;
+    }
+
+    var $editor = $row.find('.hb-ucs-product-card__editor').first();
+    if (!$editor.length) {
+      return;
+    }
+
+    $row.toggleClass('is-editing', !!expanded);
+    $editor.prop('hidden', !expanded).attr('aria-hidden', expanded ? 'false' : 'true');
+  }
+
   function findMatchingVariationData(productId, selectedAttributes) {
     var config = getProductPickerConfig();
     var variationLookup = config && config.variationLookup ? config.variationLookup : {};
@@ -492,10 +506,12 @@
         return;
       }
 
+      var $row = ($pendingRow && $pendingRow.length) ? $pendingRow : $field.closest('.hb-ucs-subscription-item-card');
       $input.val(targetProductId);
       $field.find('.hb-ucs-product-picker-label').attr('data-base-label', String($item.data('productLabel') || '')).text(String($item.data('productLabel') || ''));
       renderAttributeSelectors($field, targetProductId, selectedAttributes);
-      updateSubscriptionRowPreview(($pendingRow && $pendingRow.length) ? $pendingRow : $field.closest('.hb-ucs-subscription-item-card'), $item);
+      updateSubscriptionRowPreview($row, $item);
+      setSubscriptionRowEditing($row, $field.find('.hb-ucs-product-picker-attributes select').length > 0);
       updateRowVariationPreview($field);
       cleanupPendingSubscriptionRow($modal);
       closeProductModal($modal);
@@ -503,7 +519,9 @@
 
     $(document).off('change.hbUcsProductAttributes', '.hb-ucs-product-picker-attributes select');
     $(document).on('change.hbUcsProductAttributes', '.hb-ucs-product-picker-attributes select', function () {
-      updateRowVariationPreview($(this).closest('.hb-ucs-product-picker-field'));
+      var $field = $(this).closest('.hb-ucs-product-picker-field');
+      updateRowVariationPreview($field);
+      setSubscriptionRowEditing($(this).closest('.hb-ucs-subscription-item-card'), true);
     });
 
     $(document).off('keydown.hbUcsProductModalEsc');

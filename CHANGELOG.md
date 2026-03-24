@@ -4,6 +4,42 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.83] — 2026-03-24
+### Fixed
+- Mijn Account productkiezer: prijzen in de potlood-flow gebruikten nog een oudere prijsberekening waardoor in sommige winkels exclusief-btw bedragen zichtbaar bleven. De account productmodal en variatie-preview gebruiken nu dezelfde btw-correcte subscriptions-pricing helper als de productpagina, zodat daar weer inclusief-btw prijzen worden getoond wanneer de shop dat zo weergeeft.
+
+## [0.3.82] — 2026-03-24
+### Fixed
+- Backend abonnementsregels: variatie-attributen konden dubbel zichtbaar worden wanneer dezelfde optie zowel via geselecteerde attributen als via opgeslagen `display_meta` opnieuw op de orderregel terechtkwam. Tijdens sync worden die dubbele attribuut-rows nu uitgefilterd, terwijl aanvullende niet-variatie productopties zichtbaar blijven.
+
+## [0.3.81] — 2026-03-24
+### Fixed
+- Backend abonnement-attributen na frontend wijzigen: bij het opnieuw opbouwen van echte order-items voor het abonnement werden niet alle gekozen `selected_attributes` en snapshot `display_meta` teruggezet op die backend-items. Daardoor verdwenen sommige eerder opgeloste productopties opnieuw in de backoffice. De sync zet die metadata nu weer volledig door.
+
+## [0.3.80] — 2026-03-24
+### Fixed
+- Backend abonnementregels: wanneer een order-type abonnement geen geldige gekoppelde legacy-post had, werkte een frontend productwijziging wel de opgeslagen subscription-meta bij maar niet de echte order-items die de backoffice toont. De self-sync bouwt die order-items nu ook opnieuw op uit de actuele subscription-data, zodat backend en Mijn Account weer dezelfde productkeuze laten zien.
+
+## [0.3.79] — 2026-03-24
+### Fixed
+- Mijn Account productopties: na het kiezen van een hoofdartikel werd de attribuutselector nog verborgen door de editor-wrapper. Die wrapper toont nu weer correct de variatievelden, zodat productopties direct op de abonnementspagina zichtbaar en kiesbaar zijn na de hoofdartikelkeuze.
+
+## [0.3.78] — 2026-03-24
+### Fixed
+- Mijn Account productwissels: de productmodal toont bij variabele producten weer alleen de hoofdartikelen. Na keuze op het potlood verschijnen de attribuutselecties vervolgens op de abonnementspagina zelf in een afgeschermde edit-sectie, zodat klanten eerst een hoofdproduct kiezen en daarna pas de variatie-opties instellen.
+
+## [0.3.77] — 2026-03-24
+### Fixed
+- Mijn Account abonnementen: productwissels via het potlood kiezen nu concrete varianten direct in de modal in plaats van daarna nog inline attribuut-dropdowns te verwachten. Daardoor oogt de abonnementspagina weer read-only buiten de potloodactie en wordt de echt gekozen product/variantcombinatie ook correct opgeslagen in het abonnement.
+
+## [0.3.76] — 2026-03-24
+### Fixed
+- Backend abonnement-attributen: de virtuele order-items van het abonnement-ordertype krijgen nu weer hun interne subscription-meta (`base_product`, `base_variation`, `scheme`) en vallen voor zichtbare display-meta ook terug op de opgeslagen source snapshot. Daardoor zijn gekozen opties zoals voorheen weer zichtbaar in de backoffice, ook wanneer de frontend al correct was.
+
+## [0.3.75] — 2026-03-24
+### Fixed
+- Abonnement-ordertype: corrupte of zelf-refererende `_hb_ucs_legacy_subscription_post_id` waarden worden niet langer als geldige legacy-bron behandeld. Daardoor vallen abonnementen weer correct terug op hun eigen order-type data voor items, btw en verzending, in plaats van leeg te laden zonder producten.
+
 ## [0.3.74] — 2026-03-24
 ### Fixed
 - Renewal regressie: wanneer een order-type abonnement onvoldoende opgeslagen `_hb_ucs_sub_items` of verzend-/fee-meta had, viel de renewal terug op één minimale productregel zonder correcte btw of verzending. Renewals herstellen die data nu eerst uit de echte subscription-order items, taxes en shipping-regels zelf, zodat meerdere producten, btw en verzending weer correct meegenomen worden.
