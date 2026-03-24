@@ -541,6 +541,19 @@ class SubscriptionRepository {
         $items = is_array($items) ? $items : [];
         $feeLines = is_array($feeLines) ? $feeLines : [];
         $shippingLines = is_array($shippingLines) ? $shippingLines : [];
+
+        if (empty($items) && method_exists($order, 'get_items')) {
+            $items = $this->extract_legacy_items_from_order($order);
+        }
+
+        if (empty($feeLines) && method_exists($order, 'get_items')) {
+            $feeLines = $this->extract_legacy_fee_lines_from_order($order);
+        }
+
+        if (empty($shippingLines) && method_exists($order, 'get_items')) {
+            $shippingLines = $this->extract_legacy_shipping_lines_from_order($order);
+        }
+
         $totals = $this->calculate_legacy_totals($items, $feeLines, $shippingLines);
         $nextPayment = (int) get_post_meta($orderId, '_hb_ucs_subscription_next_payment', true);
         if ($nextPayment <= 0) {

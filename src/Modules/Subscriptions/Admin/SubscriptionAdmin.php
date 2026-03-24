@@ -1083,6 +1083,8 @@ class SubscriptionAdmin {
 
         if ($linkedLegacyPostId > 0) {
             $syncResult = $repository->sync_legacy_from_order($order, false);
+        } else {
+            $syncResult = $repository->sync_order_type_self($orderId, false);
         }
 
         $this->log_subscription_sync('admin.save.after_sync_legacy', $order, [

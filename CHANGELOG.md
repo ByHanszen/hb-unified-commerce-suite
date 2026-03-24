@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.100] — 2026-03-24
+### Fixed
+- Handmatig aangemaakte backend-abonnementen konden een totaal van `0` tonen terwijl subtotalen en btw wel zichtbaar waren. Voor order-type abonnementen zonder gekoppelde legacy-post worden artikel-, toeslag- en verzendregels nu ook direct uit de echte orderregels afgeleid en bij admin-save teruggesynchroniseerd, zodat de opgeslagen totaalbedragen correct worden opgebouwd.
+
 ## [0.3.99] — 2026-03-24
 ### Fixed
 - Backend abonnementen tonen nu altijd de bewerkbare velden voor betaalmethode, Mollie Payment ID, Payment Mode, Customer ID en Mandate ID, ook als die waardes nog leeg zijn. Daardoor kun je handmatig toegevoegde abonnementen nu dezelfde Mollie/transactiegegevens meegeven als gemigreerde abonnementen.
