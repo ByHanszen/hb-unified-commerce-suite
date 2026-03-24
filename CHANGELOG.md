@@ -8,6 +8,15 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 ### Fixed
 - Frontend verborgen meta: bestaande abonnementen konden `_reduced_stock` nog tonen wanneer die sleutel al eerder als gewone `display_meta` label/value rij in een opgeslagen snapshot terecht was gekomen. Die opgeslagen display-meta wordt nu ook tegen dezelfde uitgesloten keys gefilterd, zodat `reduced_stock` niet meer zichtbaar blijft in Mijn Account.
 
+## [0.3.91] — 2026-03-24
+### Fixed
+- SEPA/Mollie renewals: automatische renewals konden elke minuut opnieuw worden aangemaakt omdat de flow na het starten van een Mollie-incasso alleen `_hb_ucs_sub_status=payment_pending` bijwerkte, terwijl de order-type sync nog een oude interne `_hb_ucs_subscription_status=active` terugschreef. Renewal-status en volgende betaaldatum worden nu op beide opslaglagen tegelijk bijgewerkt, waardoor `payment_pending` blijft staan tot betaling is afgerond en de cron geen duplicaten meer maakt.
+- Gepauzeerde abonnementen: automatische renewals slaan nu abonnementen over zodra één van de statuslagen niet echt `active` is. Daardoor worden gepauzeerde/on-hold abonnementen niet meer alsnog door Mollie-renewals verwerkt bij statusmismatches.
+
+## [0.3.90] — 2026-03-24
+### Fixed
+- Backend datum/schemabewerkingen op order-type abonnementen schreven nog vooral naar de interne `_hb_ucs_subscription_*` order-meta, terwijl Mijn Account de legacy/frontend sleutels zoals `_hb_ucs_sub_next_payment` en `_hb_ucs_sub_scheme` leest. Admin saves spiegelen nu ook weer de volgende betaaldatum, proefeinde, einddatum en het schema naar die frontend-meta, zodat handmatige backendwijzigingen direct zichtbaar blijven in het accountoverzicht.
+
 ## [0.3.88] — 2026-03-24
 ### Fixed
 - Backend afrondingsverschillen: de repository rondde de interne exclusief-btw opslagprijs voor shadow order-items nog af op 2 decimalen voordat de backend-orderregels werden opgebouwd. Daardoor kon een frontendprijs van `11,50` incl. btw alsnog als `11,51` in het abonnement verschijnen. Die tussenafronding gebruikt nu weer interne precisie, zodat frontend en backend op hetzelfde bedrag uitkomen.

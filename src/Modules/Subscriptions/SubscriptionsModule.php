@@ -299,6 +299,47 @@ class SubscriptionsModule {
         }
     }
 
+    private function persist_subscription_runtime_state(int $subId, string $status = '', ?int $nextPayment = null): void {
+        if ($subId <= 0) {
+            return;
+        }
+
+        $metaMap = [];
+
+        if ($status !== '') {
+            $metaMap[self::SUB_META_STATUS] = $status;
+            $metaMap['_hb_ucs_subscription_status'] = $status;
+        }
+
+        if ($nextPayment !== null) {
+            $metaMap[self::SUB_META_NEXT_PAYMENT] = (int) $nextPayment;
+            $metaMap['_hb_ucs_subscription_next_payment'] = (int) $nextPayment;
+        }
+
+        if (!empty($metaMap)) {
+            $this->persist_account_subscription_shadow_meta($subId, $metaMap);
+        }
+    }
+
+    private function subscription_is_eligible_for_auto_renewal(int $subId): bool {
+        if ($subId <= 0) {
+            return false;
+        }
+
+        $legacyStatus = sanitize_key((string) get_post_meta($subId, self::SUB_META_STATUS, true));
+        $shadowStatus = sanitize_key((string) get_post_meta($subId, '_hb_ucs_subscription_status', true));
+
+        if ($legacyStatus !== '' && $legacyStatus !== 'active') {
+            return false;
+        }
+
+        if ($shadowStatus !== '' && $shadowStatus !== 'active') {
+            return false;
+        }
+
+        return ($legacyStatus !== '' || $shadowStatus !== '');
+    }
+
     private function persist_linked_legacy_subscription_items(int $subId, array $items): void {
         if ($subId <= 0) {
             return;
@@ -2053,17 +2094,17 @@ class SubscriptionsModule {
                 break;
 
             case 'pause_subscription':
-                update_post_meta($subId, self::SUB_META_STATUS, 'paused');
+                $this->persist_subscription_runtime_state($subId, 'paused');
                 $this->add_subscription_admin_note($subId, __('Abonnement is gepauzeerd vanuit de backend.', 'hb-ucs'));
                 break;
 
             case 'resume_subscription':
-                update_post_meta($subId, self::SUB_META_STATUS, 'active');
+                $this->persist_subscription_runtime_state($subId, 'active');
                 $this->add_subscription_admin_note($subId, __('Abonnement is hervat vanuit de backend.', 'hb-ucs'));
                 break;
 
             case 'cancel_subscription':
-                update_post_meta($subId, self::SUB_META_STATUS, 'cancelled');
+                $this->persist_subscription_runtime_state($subId, 'cancelled');
                 $this->add_subscription_admin_note($subId, __('Abonnement is geannuleerd vanuit de backend.', 'hb-ucs'));
                 break;
         }
@@ -8072,7 +8113,7 @@ class SubscriptionsModule {
                 $created = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
                 $createdTs = $created ? (int) $created->getTimestamp() : time();
                 update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $createdTs);
-                update_post_meta($subId, self::SUB_META_STATUS, 'on-hold');
+                $this->persist_subscription_runtime_state($subId, 'on-hold');
                 $this->sync_subscription_order_type_record($subId);
             }
         }
@@ -8117,8 +8158,7 @@ class SubscriptionsModule {
 
     private function mark_subscription_paid_and_advance(int $subId): void {
         $next = $this->calculate_next_payment_timestamp($subId);
-        update_post_meta($subId, self::SUB_META_NEXT_PAYMENT, (string) $next);
-        update_post_meta($subId, self::SUB_META_STATUS, 'active');
+        $this->persist_subscription_runtime_state($subId, 'active', $next);
         $this->sync_subscription_order_type_record($subId);
     }
 
@@ -9624,7 +9664,7 @@ JS;
                 if ($mCustomer !== '' && $mMandate !== '') {
                     update_post_meta($subId, self::SUB_META_MOLLIE_CUSTOMER_ID, $mCustomer);
                     update_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID, $mMandate);
-                    update_post_meta($subId, self::SUB_META_STATUS, 'active');
+                    $this->persist_subscription_runtime_state($subId, 'active');
                     $this->sync_subscription_order_type_record($subId);
                     $this->hydrate_subscription_order_payment_data($subId, '', '', [
                         'customerId' => $mCustomer,
@@ -9666,15 +9706,23 @@ JS;
                 continue;
             }
 
+            if (!$this->subscription_is_eligible_for_auto_renewal($subId)) {
+                continue;
+            }
+
             $result = $this->create_renewal_order_and_payment($subId, false);
             if (is_wp_error($result)) {
-                update_post_meta($subId, self::SUB_META_STATUS, 'on-hold');
+                $this->persist_subscription_runtime_state($subId, 'on-hold');
                 $this->sync_subscription_order_type_record($subId);
             }
         }
     }
 
     private function create_renewal_order_and_payment(int $subId, bool $force = false) {
+        if (!$force && !$this->subscription_is_eligible_for_auto_renewal($subId)) {
+            return 0;
+        }
+
         $nextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
         if (!$force && $nextPayment > time()) {
             return 0;
@@ -9838,8 +9886,7 @@ JS;
 
         if (!$requiresMandate) {
             $nextPayment = $this->calculate_next_payment_timestamp($subId);
-            update_post_meta($subId, self::SUB_META_STATUS, 'active');
-            update_post_meta($subId, self::SUB_META_NEXT_PAYMENT, (string) $nextPayment);
+            $this->persist_subscription_runtime_state($subId, 'active', $nextPayment);
             update_post_meta($subId, self::SUB_META_LAST_ORDER_ID, (string) (int) $order->get_id());
             $created = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
             $createdTs = $created ? (int) $created->getTimestamp() : time();
@@ -9887,7 +9934,7 @@ JS;
         $order->save();
 
         // Mark as pending so cron won't create duplicates.
-        update_post_meta($subId, self::SUB_META_STATUS, 'payment_pending');
+        $this->persist_subscription_runtime_state($subId, 'payment_pending');
         update_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, $paymentId);
 
         // Store last order pointers for admin list.

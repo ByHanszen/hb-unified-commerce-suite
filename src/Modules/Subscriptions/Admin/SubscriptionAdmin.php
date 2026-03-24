@@ -1061,9 +1061,13 @@ class SubscriptionAdmin {
             '_hb_ucs_subscription_status' => $savedStatus,
             SubscriptionRepository::LEGACY_STATUS_META => $savedStatus,
             '_hb_ucs_subscription_scheme' => $savedScheme,
+            SubscriptionRepository::LEGACY_SCHEME_META => $savedScheme,
             '_hb_ucs_subscription_next_payment' => (int) ($savedDates['_hb_ucs_subscription_next_payment'] ?? 0),
+            SubscriptionRepository::LEGACY_NEXT_PAYMENT_META => (int) ($savedDates['_hb_ucs_subscription_next_payment'] ?? 0),
             '_hb_ucs_subscription_trial_end' => (int) ($savedDates['_hb_ucs_subscription_trial_end'] ?? 0),
+            SubscriptionRepository::LEGACY_TRIAL_END_META => (int) ($savedDates['_hb_ucs_subscription_trial_end'] ?? 0),
             '_hb_ucs_subscription_end_date' => (int) ($savedDates['_hb_ucs_subscription_end_date'] ?? 0),
+            SubscriptionRepository::LEGACY_END_DATE_META => (int) ($savedDates['_hb_ucs_subscription_end_date'] ?? 0),
         ];
 
         $this->persist_subscription_shadow_meta($orderId, $shadowMetaUpdates);
