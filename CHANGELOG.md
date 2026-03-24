@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.103] — 2026-03-24
+### Fixed
+- Backend abonnement-save voert de HB UCS synchronisatie nu pas aan het einde van de request uit, nadat WooCommerce zelf alle orderregels definitief heeft opgeslagen. Daardoor worden handmatig gewijzigde regelprijzen en kortingen niet meer voortijdig teruggezet door een te vroege sync tijdens dezelfde save-cyclus.
+
 ## [0.3.102] — 2026-03-24
 ### Fixed
 - Handmatig aangepaste abonnementsregels in de backend worden bij opslaan niet langer direct terug overschreven door verouderde `_hb_ucs_sub_items` schaduwmeta. De order-type self-sync leest artikel-, toeslag- en verzendregels nu altijd opnieuw uit de live WooCommerce-order, zodat handmatige kortingen en prijswijzigingen behouden blijven.

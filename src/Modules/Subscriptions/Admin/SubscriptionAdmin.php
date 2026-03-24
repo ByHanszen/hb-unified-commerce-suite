@@ -13,6 +13,9 @@ if (!defined('ABSPATH')) exit;
 class SubscriptionAdmin {
     private const ORDER_META_SUBSCRIPTION_ID = '_hb_ucs_subscription_id';
 
+    /** @var array<int, bool> */
+    private static $deferredSyncOrderIds = [];
+
     /** @var SubscriptionService */
     private $service;
 
@@ -53,6 +56,7 @@ class SubscriptionAdmin {
         add_action('woocommerce_order_action_hb_ucs_cancel_subscription', [$this, 'handle_cancel_subscription_action']);
         add_action('woocommerce_process_shop_order_meta', [$this, 'normalize_order_type_posted_status'], 5, 2);
         add_action('woocommerce_process_shop_order_meta', [$this, 'save_order_type_screen'], 60, 2);
+        add_action('shutdown', [$this, 'process_deferred_order_type_sync'], 20);
 
         foreach ($this->get_order_screen_ids() as $screenId) {
             add_action('add_meta_boxes_' . $screenId, [$this, 'register_order_type_meta_boxes']);
@@ -1077,19 +1081,12 @@ class SubscriptionAdmin {
             'shadow_meta_updates' => $shadowMetaUpdates,
         ]);
 
-        $repository = $this->service->get_repository();
-        $linkedLegacyPostId = $repository->get_linked_legacy_post_id($order);
-        $syncResult = null;
-
-        if ($linkedLegacyPostId > 0) {
-            $syncResult = $repository->sync_legacy_from_order($order, false);
-        } else {
-            $syncResult = $repository->sync_order_type_self($orderId, false);
-        }
+        $this->schedule_deferred_order_type_sync($orderId);
 
         $this->log_subscription_sync('admin.save.after_sync_legacy', $order, [
-            'linked_legacy_post_id' => $linkedLegacyPostId,
-            'sync_result' => is_array($syncResult) ? $syncResult : [],
+            'linked_legacy_post_id' => 0,
+            'sync_result' => [],
+            'deferred_sync_scheduled' => true,
         ]);
 
         $changes = [];
@@ -1161,6 +1158,38 @@ class SubscriptionAdmin {
         return $this->service;
     }
 
+    public function process_deferred_order_type_sync(): void {
+        if (empty(self::$deferredSyncOrderIds)) {
+            return;
+        }
+
+        $orderIds = array_keys(self::$deferredSyncOrderIds);
+        self::$deferredSyncOrderIds = [];
+        $repository = $this->service->get_repository();
+
+        foreach ($orderIds as $orderId) {
+            $orderId = (int) $orderId;
+            if ($orderId <= 0) {
+                continue;
+            }
+
+            $order = $this->get_subscription_order($orderId);
+            if (!$order) {
+                continue;
+            }
+
+            $linkedLegacyPostId = $repository->get_linked_legacy_post_id($order);
+            $syncResult = $linkedLegacyPostId > 0
+                ? $repository->sync_legacy_from_order($order, false)
+                : $repository->sync_order_type_self($orderId, false);
+
+            $this->log_subscription_sync('admin.deferred_sync.completed', $order, [
+                'linked_legacy_post_id' => $linkedLegacyPostId,
+                'sync_result' => is_array($syncResult) ? $syncResult : [],
+            ]);
+        }
+    }
+
     private function redirect_legacy_screen(\WP_Screen $screen): void {
         $redirectUrl = '';
 
@@ -1180,6 +1209,14 @@ class SubscriptionAdmin {
 
         wp_safe_redirect($redirectUrl);
         exit;
+    }
+
+    private function schedule_deferred_order_type_sync(int $orderId): void {
+        if ($orderId <= 0) {
+            return;
+        }
+
+        self::$deferredSyncOrderIds[$orderId] = true;
     }
 
     private function get_order_screen_ids(): array {
