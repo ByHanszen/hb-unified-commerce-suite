@@ -3580,6 +3580,11 @@ class SubscriptionsModule {
                 continue;
             }
 
+            $normalizedLabel = ltrim(sanitize_key($label), '_');
+            if ($normalizedLabel !== '' && in_array($normalizedLabel, $this->get_subscription_order_item_display_meta_excluded_keys(), true)) {
+                continue;
+            }
+
             $hash = $this->get_subscription_item_display_row_hash($label, $value);
             if (isset($seen[$hash])) {
                 continue;

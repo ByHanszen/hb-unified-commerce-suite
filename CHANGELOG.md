@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.89] — 2026-03-24
+### Fixed
+- Frontend verborgen meta: bestaande abonnementen konden `_reduced_stock` nog tonen wanneer die sleutel al eerder als gewone `display_meta` label/value rij in een opgeslagen snapshot terecht was gekomen. Die opgeslagen display-meta wordt nu ook tegen dezelfde uitgesloten keys gefilterd, zodat `reduced_stock` niet meer zichtbaar blijft in Mijn Account.
+
 ## [0.3.88] — 2026-03-24
 ### Fixed
 - Backend afrondingsverschillen: de repository rondde de interne exclusief-btw opslagprijs voor shadow order-items nog af op 2 decimalen voordat de backend-orderregels werden opgebouwd. Daardoor kon een frontendprijs van `11,50` incl. btw alsnog als `11,51` in het abonnement verschijnen. Die tussenafronding gebruikt nu weer interne precisie, zodat frontend en backend op hetzelfde bedrag uitkomen.
