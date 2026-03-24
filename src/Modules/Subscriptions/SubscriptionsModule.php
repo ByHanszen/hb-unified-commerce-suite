@@ -72,6 +72,7 @@ class SubscriptionsModule {
     private const ORDER_META_MOLLIE_PAYMENT_ID = '_hb_ucs_mollie_payment_id';
     private const ORDER_ITEM_META_SELECTED_ATTRIBUTES = '_hb_ucs_subscription_selected_attributes';
     private const ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID = '_hb_ucs_subscription_source_order_item_id';
+    private const ORDER_ITEM_META_CATALOG_UNIT_PRICE = '_hb_ucs_subscription_catalog_unit_price';
 
     /** @var array{base_product_id:int,base_variation_id:int,child_product_id:int,scheme:string}|null */
     private static $pendingAddToCart = null;
@@ -884,26 +885,40 @@ class SubscriptionsModule {
             $paymentMethodTitle = (string) get_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, true);
         }
 
-        $fields = [
-            __('Betaalmethode', 'hb-ucs') => $paymentMethodTitle,
-            __('Mollie Payment ID', 'hb-ucs') => (string) ($mollieMeta['paymentId'] ?? ''),
-            __('Mollie Payment Mode', 'hb-ucs') => (string) ($mollieMeta['paymentMode'] ?? ''),
-            __('Mollie Customer ID', 'hb-ucs') => (string) ($mollieMeta['customerId'] ?? ''),
-            __('Mollie Mandate ID', 'hb-ucs') => (string) ($mollieMeta['mandateId'] ?? ''),
-        ];
-
-        $visibleFields = array_filter($fields, static function ($value): bool {
-            return (string) $value !== '';
-        });
-
-        if (empty($visibleFields)) {
-            return;
+        $paymentMethod = method_exists($order, 'get_payment_method') ? (string) $order->get_payment_method() : '';
+        if ($paymentMethod === '') {
+            $paymentMethod = (string) get_post_meta($subId, self::SUB_META_PAYMENT_METHOD, true);
         }
 
         echo '<div class="hb-ucs-subscription-mollie-admin-fields">';
-        foreach ($visibleFields as $label => $value) {
-            echo '<p><strong>' . esc_html($label) . ':</strong> ' . esc_html((string) $value) . '</p>';
-        }
+
+        echo '<p><strong>' . esc_html__('Abonnementsbetaling', 'hb-ucs') . '</strong></p>';
+
+        echo '<p><label for="hb_ucs_sub_payment_method"><strong>' . esc_html__('Betaalmethode code', 'hb-ucs') . '</strong></label><br/>';
+        echo '<input type="text" name="hb_ucs_sub_payment_method" id="hb_ucs_sub_payment_method" value="' . esc_attr($paymentMethod) . '" style="width:100%;" />';
+        echo '</p>';
+
+        echo '<p><label for="hb_ucs_sub_payment_method_title"><strong>' . esc_html__('Betaalmethode label', 'hb-ucs') . '</strong></label><br/>';
+        echo '<input type="text" name="hb_ucs_sub_payment_method_title" id="hb_ucs_sub_payment_method_title" value="' . esc_attr($paymentMethodTitle) . '" style="width:100%;" />';
+        echo '</p>';
+
+        echo '<p><label for="hb_ucs_sub_last_payment_id"><strong>' . esc_html__('Mollie Payment ID', 'hb-ucs') . '</strong></label><br/>';
+        echo '<input type="text" name="hb_ucs_sub_last_payment_id" id="hb_ucs_sub_last_payment_id" value="' . esc_attr((string) ($mollieMeta['paymentId'] ?? '')) . '" style="width:100%;" />';
+        echo '</p>';
+
+        echo '<p><label for="hb_ucs_sub_payment_mode"><strong>' . esc_html__('Mollie Payment Mode', 'hb-ucs') . '</strong></label><br/>';
+        echo '<input type="text" name="hb_ucs_sub_payment_mode" id="hb_ucs_sub_payment_mode" value="' . esc_attr((string) ($mollieMeta['paymentMode'] ?? '')) . '" style="width:100%;" />';
+        echo '</p>';
+
+        echo '<p><label for="hb_ucs_sub_mollie_customer_id"><strong>' . esc_html__('Mollie Customer ID', 'hb-ucs') . '</strong></label><br/>';
+        echo '<input type="text" name="hb_ucs_sub_mollie_customer_id" id="hb_ucs_sub_mollie_customer_id" value="' . esc_attr((string) ($mollieMeta['customerId'] ?? '')) . '" style="width:100%;" />';
+        echo '</p>';
+
+        echo '<p><label for="hb_ucs_sub_mollie_mandate_id"><strong>' . esc_html__('Mollie Mandate ID', 'hb-ucs') . '</strong></label><br/>';
+        echo '<input type="text" name="hb_ucs_sub_mollie_mandate_id" id="hb_ucs_sub_mollie_mandate_id" value="' . esc_attr((string) ($mollieMeta['mandateId'] ?? '')) . '" style="width:100%;" />';
+        echo '<span class="description">' . esc_html__('Laat een veld leeg om de opgeslagen waarde te verwijderen.', 'hb-ucs') . '</span>';
+        echo '</p>';
+
         echo '</div>';
     }
 
@@ -4567,7 +4582,7 @@ class SubscriptionsModule {
             );
         }
 
-        return [
+        $normalized = [
             'base_product_id' => $baseProductId,
             'base_variation_id' => max(0, $baseVariationId),
             'source_order_item_id' => $sourceOrderItemId,
@@ -4579,6 +4594,116 @@ class SubscriptionsModule {
             'display_meta' => $normalizedDisplayMeta,
             'source_item_snapshot' => $normalizedSourceSnapshot,
         ];
+
+        $normalized['catalog_unit_price'] = $this->resolve_subscription_item_catalog_unit_price($item, $normalized);
+
+        return $normalized;
+    }
+
+    private function resolve_subscription_item_catalog_unit_price(array $rawItem, array $normalizedItem): float {
+        $explicitCatalogUnitPrice = null;
+
+        if (array_key_exists('catalog_unit_price', $rawItem) && $rawItem['catalog_unit_price'] !== '' && $rawItem['catalog_unit_price'] !== null) {
+            $explicitCatalogUnitPrice = (float) wc_format_decimal((string) $rawItem['catalog_unit_price']);
+        }
+
+        if ($explicitCatalogUnitPrice !== null && $explicitCatalogUnitPrice >= 0) {
+            return $explicitCatalogUnitPrice;
+        }
+
+        $sourceOrderItemId = (int) ($normalizedItem['source_order_item_id'] ?? 0);
+        $sourceUnitPrice = $this->get_source_order_item_storage_unit_price($sourceOrderItemId);
+        if ($sourceUnitPrice !== null) {
+            return $sourceUnitPrice;
+        }
+
+        $scheme = isset($rawItem['scheme']) ? sanitize_key((string) $rawItem['scheme']) : '';
+        if ($scheme !== '') {
+            $catalogTargetPrice = $this->get_subscription_item_catalog_target_price($normalizedItem, $scheme);
+            if ($catalogTargetPrice !== null) {
+                return $catalogTargetPrice;
+            }
+        }
+
+        return $this->get_subscription_item_storage_unit_price($normalizedItem);
+    }
+
+    private function get_subscription_item_catalog_unit_price(array $item): float {
+        if (array_key_exists('catalog_unit_price', $item) && $item['catalog_unit_price'] !== '' && $item['catalog_unit_price'] !== null) {
+            return (float) wc_format_decimal((string) $item['catalog_unit_price']);
+        }
+
+        return $this->get_subscription_item_storage_unit_price($item);
+    }
+
+    private function is_subscription_item_catalog_linked(array $item): bool {
+        $catalogUnitPrice = $this->get_subscription_item_catalog_unit_price($item);
+        $storageUnitPrice = $this->get_subscription_item_storage_unit_price($item);
+
+        return abs($storageUnitPrice - $catalogUnitPrice) < 0.0001;
+    }
+
+    private function get_source_order_item_storage_unit_price(int $sourceOrderItemId): ?float {
+        if ($sourceOrderItemId <= 0 || !function_exists('WC') || !WC()->order_factory) {
+            return null;
+        }
+
+        $item = WC()->order_factory->get_order_item($sourceOrderItemId);
+        if (!$item || !is_object($item)) {
+            return null;
+        }
+
+        $qty = method_exists($item, 'get_quantity') ? (int) $item->get_quantity() : 1;
+        if ($qty <= 0) {
+            $qty = 1;
+        }
+
+        $lineTotal = method_exists($item, 'get_total') ? (float) $item->get_total() : 0.0;
+        return (float) wc_format_decimal((string) ($lineTotal / $qty));
+    }
+
+    private function get_subscription_item_catalog_target_price(array $item, string $scheme, $overrideProduct = null, int $overrideProductId = 0): ?float {
+        $scheme = sanitize_key($scheme);
+        if ($scheme === '') {
+            return null;
+        }
+
+        $baseProductId = (int) ($item['base_product_id'] ?? 0);
+        $baseVariationId = (int) ($item['base_variation_id'] ?? 0);
+
+        if ($baseVariationId > 0) {
+            if ($overrideProductId > 0 && $overrideProductId === $baseVariationId && $overrideProduct && is_object($overrideProduct)) {
+                $basePrice = $this->get_product_current_storage_price($overrideProduct);
+                if ($basePrice === null) {
+                    return null;
+                }
+
+                $parentId = method_exists($overrideProduct, 'get_parent_id')
+                    ? (int) $overrideProduct->get_parent_id()
+                    : (int) wp_get_post_parent_id($baseVariationId);
+
+                $pricing = $this->get_subscription_pricing($baseVariationId, $basePrice, $scheme, $parentId);
+                return isset($pricing['final']) ? (float) wc_format_decimal((string) $pricing['final']) : null;
+            }
+
+            return $this->get_variation_subscription_price($baseVariationId, $scheme);
+        }
+
+        if ($baseProductId <= 0) {
+            return null;
+        }
+
+        if ($overrideProductId > 0 && $overrideProductId === $baseProductId && $overrideProduct && is_object($overrideProduct)) {
+            $basePrice = $this->get_product_current_storage_price($overrideProduct);
+            if ($basePrice === null) {
+                return null;
+            }
+
+            $pricing = $this->get_subscription_pricing($baseProductId, $basePrice, $scheme);
+            return isset($pricing['final']) ? (float) wc_format_decimal((string) $pricing['final']) : null;
+        }
+
+        return $this->get_base_subscription_price($baseProductId, $scheme);
     }
 
     private function get_subscription_items(int $subId): array {
@@ -4641,6 +4766,8 @@ class SubscriptionsModule {
             return $items;
         }
 
+        $scheme = method_exists($order, 'get_meta') ? sanitize_key((string) $order->get_meta('_hb_ucs_subscription_scheme', true)) : '';
+
         foreach ((array) $order->get_items('line_item') as $item) {
             if (!$item || !is_object($item)) {
                 continue;
@@ -4677,6 +4804,8 @@ class SubscriptionsModule {
                 'source_order_item_id' => method_exists($item, 'get_meta') ? (int) $item->get_meta(self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID, true) : 0,
                 'qty' => $qty,
                 'unit_price' => $unitPrice,
+                'catalog_unit_price' => method_exists($item, 'get_meta') ? $item->get_meta(self::ORDER_ITEM_META_CATALOG_UNIT_PRICE, true) : '',
+                'scheme' => $scheme,
                 'price_includes_tax' => 0,
                 'taxes' => method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : [],
                 'selected_attributes' => $selectedAttributes,
@@ -4898,7 +5027,89 @@ class SubscriptionsModule {
         update_post_meta($subId, self::SUB_META_BASE_PRODUCT_ID, (string) ($first['base_product_id'] ?? 0));
         update_post_meta($subId, self::SUB_META_BASE_VARIATION_ID, (string) ($first['base_variation_id'] ?? 0));
         update_post_meta($subId, self::SUB_META_QTY, (string) ($first['qty'] ?? 1));
-    update_post_meta($subId, self::SUB_META_UNIT_PRICE, (string) wc_format_decimal((string) $this->get_subscription_item_storage_unit_price($first), wc_get_price_decimals()));
+        update_post_meta($subId, self::SUB_META_UNIT_PRICE, (string) wc_format_decimal((string) $this->get_subscription_item_storage_unit_price($first), wc_get_price_decimals()));
+    }
+
+    private function sync_existing_subscription_prices_for_product(int $productId, int $variationId = 0, $overrideProduct = null): void {
+        if ($productId <= 0 || !$this->recurring_enabled() || $this->get_engine() !== 'manual' || !function_exists('wc_get_orders')) {
+            return;
+        }
+
+        $subscriptionIds = wc_get_orders([
+            'type' => $this->get_subscription_order_type()->get_type(),
+            'limit' => -1,
+            'return' => 'ids',
+            'status' => array_keys(wc_get_order_statuses()),
+        ]);
+
+        if (!is_array($subscriptionIds) || empty($subscriptionIds)) {
+            return;
+        }
+
+        foreach ($subscriptionIds as $subscriptionId) {
+            $subId = (int) $subscriptionId;
+            if ($subId <= 0) {
+                continue;
+            }
+
+            $scheme = sanitize_key((string) get_post_meta($subId, self::SUB_META_SCHEME, true));
+            if ($scheme === '') {
+                continue;
+            }
+
+            $items = $this->get_subscription_items($subId);
+            if (empty($items)) {
+                continue;
+            }
+
+            $didChange = false;
+
+            foreach ($items as $index => $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+
+                $matchesProduct = $variationId > 0
+                    ? (int) ($item['base_variation_id'] ?? 0) === $variationId
+                    : (int) ($item['base_product_id'] ?? 0) === $productId;
+
+                if (!$matchesProduct || !$this->is_subscription_item_catalog_linked($item)) {
+                    continue;
+                }
+
+                $targetUnitPrice = $this->get_subscription_item_catalog_target_price(
+                    $item,
+                    $scheme,
+                    $overrideProduct,
+                    $variationId > 0 ? $variationId : $productId
+                );
+
+                if ($targetUnitPrice === null) {
+                    continue;
+                }
+
+                $currentStorageUnitPrice = $this->get_subscription_item_storage_unit_price($item);
+                $currentCatalogUnitPrice = $this->get_subscription_item_catalog_unit_price($item);
+
+                if (abs($currentStorageUnitPrice - $targetUnitPrice) < 0.0001 && abs($currentCatalogUnitPrice - $targetUnitPrice) < 0.0001) {
+                    continue;
+                }
+
+                $item['unit_price'] = $targetUnitPrice;
+                $item['catalog_unit_price'] = $targetUnitPrice;
+                $item['price_includes_tax'] = 0;
+                $item['taxes'] = [];
+                $items[$index] = $item;
+                $didChange = true;
+            }
+
+            if (!$didChange) {
+                continue;
+            }
+
+            $this->persist_subscription_items($subId, $items);
+            $this->sync_subscription_order_type_record($subId);
+        }
     }
 
     private function recalculate_subscription_item_taxes(int $subId, array $items, $fallbackOrder = null): array {
@@ -9847,6 +10058,7 @@ JS;
             if ((int) ($subscriptionItem['source_order_item_id'] ?? 0) > 0) {
                 $item->add_meta_data(self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID, (int) $subscriptionItem['source_order_item_id'], true);
             }
+            $item->add_meta_data(self::ORDER_ITEM_META_CATALOG_UNIT_PRICE, $this->get_subscription_item_catalog_unit_price($subscriptionItem), true);
             if ($baseVariationId <= 0) {
                 foreach ($this->get_subscription_item_selected_attributes($subscriptionItem) as $attributeKey => $attributeValue) {
                     if ($attributeKey === '' || $attributeValue === '') {
@@ -10300,6 +10512,8 @@ JS;
                 }
             }
         }
+
+        $this->sync_existing_subscription_prices_for_product($productId, 0, $product);
 
         // Keep generated child products in sync only for WCS engine (best-effort).
         if ($this->get_engine() === 'wcs') {
@@ -11160,6 +11374,8 @@ JS;
         if ($parentId > 0) {
             $this->sync_child_products($parentId);
         }
+
+        $this->sync_existing_subscription_prices_for_product($parentId > 0 ? $parentId : $variationId, $variationId);
     }
 
     private function get_or_create_child_product_id(int $baseProductId, string $scheme): int {

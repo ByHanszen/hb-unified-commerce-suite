@@ -4,6 +4,15 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.99] — 2026-03-24
+### Fixed
+- Backend abonnementen tonen nu altijd de bewerkbare velden voor betaalmethode, Mollie Payment ID, Payment Mode, Customer ID en Mandate ID, ook als die waardes nog leeg zijn. Daardoor kun je handmatig toegevoegde abonnementen nu dezelfde Mollie/transactiegegevens meegeven als gemigreerde abonnementen.
+
+## [0.3.98] — 2026-03-24
+### Fixed
+- Bestaande handmatige HB UCS abonnementen volgen nu reguliere productprijswijzigingen weer automatisch, ook wanneer de abonnementsprijs via frequentiekorting of vaste abonnementsprijs uit het product wordt afgeleid.
+- Handmatig aangepaste abonnementsprijzen blijven behouden: subscription-items bewaren nu hun laatst bekende catalogusprijs apart, zodat alleen catalogus-gekoppelde regels worden meegeüpdatet en handmatige kortingen of handmatige prijsoverschrijvingen in een abonnement niet worden overschreven.
+
 ## [0.3.97] — 2026-03-24
 ### Fixed
 - Backend abonnement-bewerkingen triggerden nog standaard WooCommerce ordermails, omdat het interne abonnements-ordertype bij opslaan als gewone bestelling werd behandeld voor e-mailnotificaties. Die standaard mails worden nu onderdrukt voor HB UCS abonnementen, zodat klanten en admins geen onterechte "nieuwe bestelling" of vergelijkbare ordermails meer ontvangen bij het updaten van een bestaand abonnement.

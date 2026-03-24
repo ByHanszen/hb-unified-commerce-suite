@@ -12,6 +12,7 @@ if (!defined('ABSPATH')) exit;
 class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
     /** @var SubscriptionRepository */
     private $repository;
+    private const ORDER_ITEM_META_CATALOG_UNIT_PRICE = '_hb_ucs_subscription_catalog_unit_price';
 
     public function __construct() {
         $this->repository = new SubscriptionRepository();
@@ -194,6 +195,9 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
             }
             if ((int) ($row['source_order_item_id'] ?? 0) > 0) {
                 $item->add_meta_data('_hb_ucs_subscription_source_order_item_id', (int) $row['source_order_item_id'], true);
+            }
+            if (array_key_exists('catalog_unit_price', $row) && $row['catalog_unit_price'] !== '' && $row['catalog_unit_price'] !== null) {
+                $item->add_meta_data(self::ORDER_ITEM_META_CATALOG_UNIT_PRICE, $this->normalize_decimal($row['catalog_unit_price']), true);
             }
 
             if ($product && is_object($product)) {

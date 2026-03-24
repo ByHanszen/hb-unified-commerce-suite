@@ -30,6 +30,7 @@ class SubscriptionRepository {
     public const LEGACY_MOLLIE_CUSTOMER_ID_META = '_hb_ucs_sub_mollie_customer_id';
     public const LEGACY_MOLLIE_MANDATE_ID_META = '_hb_ucs_sub_mollie_mandate_id';
     public const LEGACY_LAST_PAYMENT_ID_META = '_hb_ucs_sub_last_payment_id';
+    private const ORDER_ITEM_META_CATALOG_UNIT_PRICE = '_hb_ucs_subscription_catalog_unit_price';
 
     /** @var bool */
     private static $creatingLegacyFromOrder = false;
@@ -1085,6 +1086,7 @@ class SubscriptionRepository {
     private function extract_legacy_items_from_order($order): array {
         $items = [];
         $isSubscriptionOrder = is_object($order) && method_exists($order, 'get_type') && strpos((string) $order->get_type(), 'hb_ucs_subscription') !== false;
+        $scheme = method_exists($order, 'get_meta') ? sanitize_key((string) $order->get_meta('_hb_ucs_subscription_scheme', true)) : '';
         foreach ((array) $order->get_items('line_item') as $item) {
             if (!$item || !is_object($item)) {
                 continue;
@@ -1104,6 +1106,8 @@ class SubscriptionRepository {
                 'source_order_item_id' => $sourceOrderItemId,
                 'qty' => $qty,
                 'unit_price' => $qty > 0 ? $this->normalize_decimal($subtotal / $qty) : 0.0,
+                'catalog_unit_price' => method_exists($item, 'get_meta') ? $item->get_meta(self::ORDER_ITEM_META_CATALOG_UNIT_PRICE, true) : '',
+                'scheme' => $scheme,
                 'price_includes_tax' => 0,
                 'taxes' => $this->normalize_item_taxes(method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : []),
                 'selected_attributes' => $attributes,
@@ -1296,6 +1300,12 @@ class SubscriptionRepository {
             }
             if ((int) ($row['source_order_item_id'] ?? 0) > 0) {
                 $item->add_meta_data('_hb_ucs_subscription_source_order_item_id', (int) $row['source_order_item_id'], true);
+            }
+            if (array_key_exists('catalog_unit_price', $row) && $row['catalog_unit_price'] !== '' && $row['catalog_unit_price'] !== null) {
+                $item->add_meta_data(self::ORDER_ITEM_META_CATALOG_UNIT_PRICE, $this->normalize_decimal($row['catalog_unit_price']), true);
+            }
+            if (array_key_exists('catalog_unit_price', $row) && $row['catalog_unit_price'] !== '' && $row['catalog_unit_price'] !== null) {
+                $item->add_meta_data(self::ORDER_ITEM_META_CATALOG_UNIT_PRICE, $this->normalize_decimal($row['catalog_unit_price']), true);
             }
             if (!empty($legacy['scheme'])) {
                 $item->add_meta_data('_hb_ucs_subscription_scheme', (string) $legacy['scheme'], true);
