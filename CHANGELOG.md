@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.72] — 2026-03-24
+### Fixed
+- Backend abonnement-editor: het handmatig aanpassen van de volgende betaling/verlengen-datum maakt niet langer eenmalig onbedoeld een extra legacy-abonnement aan. De admin-save synchroniseert nu alleen nog naar legacy-opslag wanneer er al een gekoppeld legacy-record bestaat.
+
 ## [0.3.71] — 2026-03-24
 ### Fixed
 - Checkout/cart abonnement-prijzen gebruiken nu weer dezelfde prijsbasis als WooCommerce zelf. In winkels waar productprijzen inclusief btw worden ingevoerd, wordt de handmatige abonnementsprijs in winkelwagen en afrekenen niet langer op een exclusief-btw bedrag gezet, waardoor btw niet meer als schijnbare korting zichtbaar wordt.

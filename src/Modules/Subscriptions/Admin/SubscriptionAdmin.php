@@ -1072,9 +1072,16 @@ class SubscriptionAdmin {
             'shadow_meta_updates' => $shadowMetaUpdates,
         ]);
 
-        $syncResult = $this->service->get_repository()->sync_legacy_from_order($order);
+        $repository = $this->service->get_repository();
+        $linkedLegacyPostId = $repository->get_linked_legacy_post_id($order);
+        $syncResult = null;
+
+        if ($linkedLegacyPostId > 0) {
+            $syncResult = $repository->sync_legacy_from_order($order);
+        }
 
         $this->log_subscription_sync('admin.save.after_sync_legacy', $order, [
+            'linked_legacy_post_id' => $linkedLegacyPostId,
             'sync_result' => is_array($syncResult) ? $syncResult : [],
         ]);
 
