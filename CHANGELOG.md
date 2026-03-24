@@ -8,6 +8,10 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 ### Fixed
 - Frontend verborgen meta: bestaande abonnementen konden `_reduced_stock` nog tonen wanneer die sleutel al eerder als gewone `display_meta` label/value rij in een opgeslagen snapshot terecht was gekomen. Die opgeslagen display-meta wordt nu ook tegen dezelfde uitgesloten keys gefilterd, zodat `reduced_stock` niet meer zichtbaar blijft in Mijn Account.
 
+## [0.3.95] — 2026-03-24
+### Fixed
+- SEPA volgende orderdatum: na het WCS-achtige statusgedrag bleef de subscription bij een succesvol aangemaakte Mollie/SEPA renewal onterecht op de oude volgende betaaldatum staan totdat de definitieve betaalbevestiging binnenkwam. Na succesvolle renewal-creatie schuift de volgende orderdatum nu meteen door naar de volgende cyclus, terwijl het abonnement zelf actief blijft en alleen de renewal-order op `on-hold` wacht op verwerking.
+
 ## [0.3.94] — 2026-03-24
 ### Fixed
 - SEPA renewal-status: automatische/Mollie renewals zetten het abonnement niet langer direct op `on-hold` tijdens de verwerking van een open SEPA incasso. Alleen de renewal-order blijft op `on-hold` totdat Mollie de betaling definitief terugkoppelt. Het abonnement zelf gaat pas naar `on-hold` als de betaling echt mislukt.

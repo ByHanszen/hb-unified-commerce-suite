@@ -9947,6 +9947,9 @@ JS;
         $order->update_meta_data(self::ORDER_META_MOLLIE_PAYMENT_ID, $paymentId);
         $order->add_order_note(sprintf(__('HB UCS: Mollie recurring betaling gestart (%s).', 'hb-ucs'), $paymentId));
         $order->save();
+
+        $nextPayment = $this->calculate_next_payment_timestamp($subId);
+        $this->persist_subscription_runtime_state($subId, '', $nextPayment);
         $this->add_subscription_admin_note($subId, __('Abonnement blijft actief totdat betaling mislukt, omdat een SEPA incasso betaling enige tijd nodig heeft om te verwerken.', 'hb-ucs'));
         update_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, $paymentId);
 
