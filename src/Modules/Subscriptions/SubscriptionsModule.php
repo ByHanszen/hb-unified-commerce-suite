@@ -8101,10 +8101,7 @@ class SubscriptionsModule {
                 $paid = method_exists($order, 'get_date_paid') ? $order->get_date_paid() : null;
                 $paidTs = $paid ? (int) $paid->getTimestamp() : time();
                 update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $paidTs);
-                $nextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
-                if ($nextPayment <= time()) {
-                    $this->mark_subscription_paid_and_advance($subId);
-                }
+                $this->mark_subscription_paid_and_advance($subId);
                 $this->sync_subscription_order_type_record($subId);
             }
         } elseif ($status === 'failed' || $status === 'canceled' || $status === 'expired') {
@@ -8160,7 +8157,15 @@ class SubscriptionsModule {
     }
 
     private function mark_subscription_paid_and_advance(int $subId): void {
-        $next = $this->calculate_next_payment_timestamp($subId);
+        $currentNext = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
+        $threshold = (int) apply_filters('hb_ucs_subscription_activation_next_payment_date_threshold', 2 * HOUR_IN_SECONDS, $currentNext, $subId);
+
+        if ($currentNext > (time() + max(0, $threshold))) {
+            $next = $currentNext;
+        } else {
+            $next = $this->calculate_next_payment_timestamp($subId);
+        }
+
         $this->persist_subscription_runtime_state($subId, 'active', $next);
         $this->sync_subscription_order_type_record($subId);
     }
@@ -9942,9 +9947,7 @@ JS;
         $order->update_meta_data(self::ORDER_META_MOLLIE_PAYMENT_ID, $paymentId);
         $order->add_order_note(sprintf(__('HB UCS: Mollie recurring betaling gestart (%s).', 'hb-ucs'), $paymentId));
         $order->save();
-
-        $nextPayment = $this->calculate_next_payment_timestamp($subId);
-        $this->persist_subscription_runtime_state($subId, '', $nextPayment);
+        $this->add_subscription_admin_note($subId, __('Abonnement blijft actief totdat betaling mislukt, omdat een SEPA incasso betaling enige tijd nodig heeft om te verwerken.', 'hb-ucs'));
         update_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, $paymentId);
 
         // Store last order pointers for admin list.
@@ -10045,10 +10048,7 @@ JS;
         update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $paidTs);
         $nextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
         if ($nextPayment > time()) {
-            $currentStatus = sanitize_key((string) get_post_meta($subId, self::SUB_META_STATUS, true));
-            if ($currentStatus === 'payment_pending') {
-                $this->persist_subscription_runtime_state($subId, 'active', $nextPayment);
-            }
+            $this->persist_subscription_runtime_state($subId, 'active', $nextPayment);
             $this->sync_subscription_order_type_record($subId);
         } else {
             $this->mark_subscription_paid_and_advance($subId);

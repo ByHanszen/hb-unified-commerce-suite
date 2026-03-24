@@ -8,6 +8,17 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 ### Fixed
 - Frontend verborgen meta: bestaande abonnementen konden `_reduced_stock` nog tonen wanneer die sleutel al eerder als gewone `display_meta` label/value rij in een opgeslagen snapshot terecht was gekomen. Die opgeslagen display-meta wordt nu ook tegen dezelfde uitgesloten keys gefilterd, zodat `reduced_stock` niet meer zichtbaar blijft in Mijn Account.
 
+## [0.3.94] — 2026-03-24
+### Fixed
+- SEPA renewal-status: automatische/Mollie renewals zetten het abonnement niet langer direct op `on-hold` tijdens de verwerking van een open SEPA incasso. Alleen de renewal-order blijft op `on-hold` totdat Mollie de betaling definitief terugkoppelt. Het abonnement zelf gaat pas naar `on-hold` als de betaling echt mislukt.
+- Subscription notities: bij een open SEPA renewal wordt nu ook expliciet vastgelegd dat het abonnement actief blijft zolang de incasso nog verwerkt wordt, in lijn met het verwachte WCS-gedrag.
+
+## [0.3.93] — 2026-03-24
+### Fixed
+- Renewal lifecycle: automatische/Mollie renewals volgen nu meer de WCS-logica. Zodra een automatische renewal vervalt, gaat het abonnement eerst naar `on-hold`, wordt één renewal-order aangemaakt en pas na succesvolle betaling weer geactiveerd. Bij mislukte betaling blijft het abonnement op `on-hold`.
+- Volgende betaaldatum: voor automatische renewals wordt de verlengingsdatum niet meer al tijdens ordercreatie gemuteerd, maar pas via dezelfde reactivatieflow na een geslaagde betaling opnieuw berekend. Daarbij blijft de bestaande offline/manual afhandeling bewust intact: handmatige/offline renewals gaan nog steeds direct door, inclusief onmiddellijke datum-update.
+- Duplicate prevention: doordat automatische renewals nu een WCS-achtige `on-hold` lifecycle gebruiken én open renewal-orders blijven blokkeren, ontstaan er geen extra renewals meer zolang de bestaande renewal nog openstaat.
+
 ## [0.3.92] — 2026-03-24
 ### Fixed
 - SEPA-renewals: het abonnement springt niet langer naar `betaling in behandeling` wanneer een renewal-order voor Mollie SEPA wordt aangemaakt. Alleen de renewal-order zelf blijft op `on-hold` wachten op incasso, terwijl het abonnement zijn eigen status behoudt.
