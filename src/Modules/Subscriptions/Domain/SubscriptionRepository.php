@@ -440,6 +440,15 @@ class SubscriptionRepository {
             return null;
         }
 
+        $data['items'] = $this->extract_legacy_items_from_order($order);
+        $data['fee_lines'] = $this->extract_legacy_fee_lines_from_order($order);
+        $data['shipping_lines'] = $this->extract_legacy_shipping_lines_from_order($order);
+        $data['totals'] = $this->calculate_legacy_totals(
+            $data['items'],
+            $data['fee_lines'],
+            $data['shipping_lines']
+        );
+
         $this->log_sync_debug('repository.sync_order_type_self.start', [
             'order' => $this->build_order_debug_snapshot($order),
             'linked_legacy_before' => $this->build_legacy_debug_snapshot((int) ($data['legacy_post_id'] ?? 0)),

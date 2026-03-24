@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.102] — 2026-03-24
+### Fixed
+- Handmatig aangepaste abonnementsregels in de backend worden bij opslaan niet langer direct terug overschreven door verouderde `_hb_ucs_sub_items` schaduwmeta. De order-type self-sync leest artikel-, toeslag- en verzendregels nu altijd opnieuw uit de live WooCommerce-order, zodat handmatige kortingen en prijswijzigingen behouden blijven.
+
 ## [0.3.101] — 2026-03-24
 ### Fixed
 - Het openen van HB UCS abonnementen kon vastlopen door een recursielus bij order-type abonnementen zonder opgeslagen item-meta. De repository probeert orderregels nu nog steeds als fallback te gebruiken, maar met een guard die voorkomt dat dezelfde data-resolutie zichzelf via het order-datastore opnieuw blijft aanroepen en zo memory exhaustion veroorzaakt.
