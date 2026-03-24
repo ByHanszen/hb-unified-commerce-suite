@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.104] — 2026-03-24
+### Fixed
+- Order-type abonnementen zonder gekoppelde legacy-post hielden hun opgeslagen `_hb_ucs_sub_items`, fee-lines en shipping-lines op het orderrecord zelf nog op oude waarden, ook wanneer de echte WooCommerce orderregels al waren bijgewerkt. Die gestructureerde order-meta wordt nu tijdens self-sync ook direct ververst, zodat backendweergave en vervolgsyncs niet meer terugvallen op verouderde prijsregels of handmatige kortingen overschrijven.
+
 ## [0.3.103] — 2026-03-24
 ### Fixed
 - Backend abonnement-save voert de HB UCS synchronisatie nu pas aan het einde van de request uit, nadat WooCommerce zelf alle orderregels definitief heeft opgeslagen. Daardoor worden handmatig gewijzigde regelprijzen en kortingen niet meer voortijdig teruggezet door een te vroege sync tijdens dezelfde save-cyclus.

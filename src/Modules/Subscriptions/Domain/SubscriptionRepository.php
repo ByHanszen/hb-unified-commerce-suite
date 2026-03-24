@@ -1194,8 +1194,18 @@ class SubscriptionRepository {
     private function sync_shadow_order_meta(int $orderId, array $legacy): void {
         $billing = isset($legacy['billing']) && is_array($legacy['billing']) ? $legacy['billing'] : [];
         $shipping = isset($legacy['shipping']) && is_array($legacy['shipping']) ? $legacy['shipping'] : [];
+        $items = isset($legacy['items']) && is_array($legacy['items']) ? $legacy['items'] : [];
+        $feeLines = isset($legacy['fee_lines']) && is_array($legacy['fee_lines']) ? $legacy['fee_lines'] : [];
+        $shippingLines = isset($legacy['shipping_lines']) && is_array($legacy['shipping_lines']) ? $legacy['shipping_lines'] : [];
         $totals = isset($legacy['totals']) && is_array($legacy['totals']) ? $legacy['totals'] : [];
         $orderKey = (string) get_post_meta($orderId, '_order_key', true);
+        $structuredMetaKeys = [
+            self::LEGACY_BILLING_META,
+            self::LEGACY_SHIPPING_META,
+            self::LEGACY_ITEMS_META,
+            self::LEGACY_FEE_LINES_META,
+            self::LEGACY_SHIPPING_LINES_META,
+        ];
 
         if ($orderKey === '' && function_exists('wc_generate_order_key')) {
             $orderKey = wc_generate_order_key();
@@ -1208,6 +1218,11 @@ class SubscriptionRepository {
             '_customer_user' => (int) ($legacy['customer_id'] ?? 0),
             '_payment_method' => (string) ($legacy['payment_method'] ?? ''),
             '_payment_method_title' => (string) ($legacy['payment_method_title'] ?? ''),
+            self::LEGACY_BILLING_META => $billing,
+            self::LEGACY_SHIPPING_META => $shipping,
+            self::LEGACY_ITEMS_META => $items,
+            self::LEGACY_FEE_LINES_META => $feeLines,
+            self::LEGACY_SHIPPING_LINES_META => $shippingLines,
             '_created_via' => 'hb-ucs-legacy-subscription',
             '_order_currency' => (string) ($legacy['currency'] ?? get_woocommerce_currency()),
             '_prices_include_tax' => !empty($legacy['prices_include_tax']) ? 'yes' : 'no',
@@ -1238,7 +1253,11 @@ class SubscriptionRepository {
 
         foreach ($metaMap as $metaKey => $metaValue) {
             if ($metaValue === '' || $metaValue === [] || $metaValue === null) {
-                delete_post_meta($orderId, $metaKey);
+                if (in_array($metaKey, $structuredMetaKeys, true)) {
+                    update_post_meta($orderId, $metaKey, $metaValue);
+                } else {
+                    delete_post_meta($orderId, $metaKey);
+                }
                 continue;
             }
 
