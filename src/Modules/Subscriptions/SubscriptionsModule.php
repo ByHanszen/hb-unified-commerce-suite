@@ -5347,18 +5347,22 @@ class SubscriptionsModule {
             return (float) wc_format_decimal((string) ($lineSubtotal + $lineTax));
         }
 
-        $unitPrice = (float) ($item['unit_price'] ?? 0.0);
-        if (!empty($item['price_includes_tax']) && $unitPrice > 0) {
-            return (float) wc_format_decimal((string) ($unitPrice * $qty));
-        }
-
         $productId = (int) ($item['base_variation_id'] ?? 0);
         if ($productId <= 0) {
             $productId = (int) ($item['base_product_id'] ?? 0);
         }
 
         $product = $productId > 0 ? wc_get_product($productId) : false;
-        return $this->get_product_price_display_amount($product, $unitPrice, $qty, $includeTax);
+        if ($product && is_object($product)) {
+            return $this->get_product_price_display_amount($product, $unitSubtotal, $qty, $includeTax);
+        }
+
+        $unitPrice = (float) ($item['unit_price'] ?? 0.0);
+        if (!empty($item['price_includes_tax']) && $unitPrice > 0) {
+            return (float) wc_format_decimal((string) ($unitPrice * $qty));
+        }
+
+        return $lineSubtotal;
     }
 
     private function get_product_price_display_amount($product, float $price, int $qty = 1, bool $includeTax = true): float {

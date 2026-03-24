@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.69] — 2026-03-24
+### Fixed
+- Frontend abonnement-prijzen volgen nu weer correct de WooCommerce btw-weergave-instelling. Bij inclusief-btw weergave rekent de frontend itemprijzen voortaan consistent vanaf de opslagprijs en producttax-config, in plaats van in sommige gevallen terug te vallen op een opgeslagen prijs/tax-flag combinatie waardoor exclusief btw werd getoond.
+
 ## [0.3.68] — 2026-03-24
 ### Changed
 - Onderhoud repositorylaag: `SubscriptionRepository` gebruikt nu gedeelde helpers voor uitgesloten display-meta keys, bron order-item-id resolutie en extractie van geselecteerde attributen uit order-items. Dit is een interne leesbaarheidsrefactor zonder beoogde gedragswijziging.
