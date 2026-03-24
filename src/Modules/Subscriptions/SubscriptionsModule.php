@@ -8101,7 +8101,10 @@ class SubscriptionsModule {
                 $paid = method_exists($order, 'get_date_paid') ? $order->get_date_paid() : null;
                 $paidTs = $paid ? (int) $paid->getTimestamp() : time();
                 update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $paidTs);
-                $this->mark_subscription_paid_and_advance($subId);
+                $nextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
+                if ($nextPayment <= time()) {
+                    $this->mark_subscription_paid_and_advance($subId);
+                }
                 $this->sync_subscription_order_type_record($subId);
             }
         } elseif ($status === 'failed' || $status === 'canceled' || $status === 'expired') {
@@ -9728,6 +9731,13 @@ JS;
             return 0;
         }
 
+        if (!$force) {
+            $openRenewalOrderId = $this->get_open_renewal_order_id_for_subscription($subId);
+            if ($openRenewalOrderId > 0) {
+                return $openRenewalOrderId;
+            }
+        }
+
         $latestRenewalOrderId = $this->get_latest_renewal_order_id_for_subscription($subId);
         if ($latestRenewalOrderId > 0 && $nextPayment > time()) {
             return $latestRenewalOrderId;
@@ -9933,8 +9943,8 @@ JS;
         $order->add_order_note(sprintf(__('HB UCS: Mollie recurring betaling gestart (%s).', 'hb-ucs'), $paymentId));
         $order->save();
 
-        // Mark as pending so cron won't create duplicates.
-        $this->persist_subscription_runtime_state($subId, 'payment_pending');
+        $nextPayment = $this->calculate_next_payment_timestamp($subId);
+        $this->persist_subscription_runtime_state($subId, '', $nextPayment);
         update_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, $paymentId);
 
         // Store last order pointers for admin list.
@@ -9979,6 +9989,25 @@ JS;
         return (int) $orderIds[0];
     }
 
+    private function get_open_renewal_order_id_for_subscription(int $subId): int {
+        $renewalOrderId = $this->get_latest_renewal_order_id_for_subscription($subId);
+        if ($renewalOrderId <= 0 || !function_exists('wc_get_order')) {
+            return 0;
+        }
+
+        $renewalOrder = wc_get_order($renewalOrderId);
+        if (!$renewalOrder || !is_object($renewalOrder) || !method_exists($renewalOrder, 'get_status')) {
+            return 0;
+        }
+
+        $status = sanitize_key((string) $renewalOrder->get_status());
+        if (in_array($status, ['pending', 'on-hold', 'checkout-draft'], true)) {
+            return $renewalOrderId;
+        }
+
+        return 0;
+    }
+
     public function maybe_mark_manual_renewal_paid(int $orderId): void {
         if (!$this->recurring_enabled() || $this->get_engine() !== 'manual') {
             return;
@@ -10016,7 +10045,10 @@ JS;
         update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $paidTs);
         $nextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
         if ($nextPayment > time()) {
-            update_post_meta($subId, self::SUB_META_STATUS, 'active');
+            $currentStatus = sanitize_key((string) get_post_meta($subId, self::SUB_META_STATUS, true));
+            if ($currentStatus === 'payment_pending') {
+                $this->persist_subscription_runtime_state($subId, 'active', $nextPayment);
+            }
             $this->sync_subscription_order_type_record($subId);
         } else {
             $this->mark_subscription_paid_and_advance($subId);

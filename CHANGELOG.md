@@ -8,6 +8,12 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 ### Fixed
 - Frontend verborgen meta: bestaande abonnementen konden `_reduced_stock` nog tonen wanneer die sleutel al eerder als gewone `display_meta` label/value rij in een opgeslagen snapshot terecht was gekomen. Die opgeslagen display-meta wordt nu ook tegen dezelfde uitgesloten keys gefilterd, zodat `reduced_stock` niet meer zichtbaar blijft in Mijn Account.
 
+## [0.3.92] — 2026-03-24
+### Fixed
+- SEPA-renewals: het abonnement springt niet langer naar `betaling in behandeling` wanneer een renewal-order voor Mollie SEPA wordt aangemaakt. Alleen de renewal-order zelf blijft op `on-hold` wachten op incasso, terwijl het abonnement zijn eigen status behoudt.
+- Renewal planning: zodra een SEPA-renewal succesvol bij Mollie is aangemaakt, schuift de volgende betaaldatum meteen door naar de volgende cyclus. Daardoor blijft de verlengingsdatum in het abonnement up-to-date en kan de cron niet elke minuut opnieuw dezelfde renewal starten.
+- Duplicate guard: zolang er al een open renewal-order met status `pending` of `on-hold` voor hetzelfde abonnement bestaat, wordt er geen extra automatische renewal aangemaakt. Dat vangt ook resterende randgevallen op bij gepauzeerde abonnementen of oudere statusmismatches.
+
 ## [0.3.91] — 2026-03-24
 ### Fixed
 - SEPA/Mollie renewals: automatische renewals konden elke minuut opnieuw worden aangemaakt omdat de flow na het starten van een Mollie-incasso alleen `_hb_ucs_sub_status=payment_pending` bijwerkte, terwijl de order-type sync nog een oude interne `_hb_ucs_subscription_status=active` terugschreef. Renewal-status en volgende betaaldatum worden nu op beide opslaglagen tegelijk bijgewerkt, waardoor `payment_pending` blijft staan tot betaling is afgerond en de cron geen duplicaten meer maakt.
