@@ -4,6 +4,93 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.68] — 2026-03-24
+### Changed
+- Onderhoud repositorylaag: `SubscriptionRepository` gebruikt nu gedeelde helpers voor uitgesloten display-meta keys, bron order-item-id resolutie en extractie van geselecteerde attributen uit order-items. Dit is een interne leesbaarheidsrefactor zonder beoogde gedragswijziging.
+
+## [0.3.67] — 2026-03-24
+### Changed
+- Onderhoud subscriptionsmodule: kleine interne duplicaties in admin order-item meta-afhandeling zijn samengebracht in gedeelde helpers voor verborgen meta-keys, uitgesloten display-meta keys en subscription order-item context. Dit is een leesbaarheidsrefactor zonder beoogde gedragswijziging.
+
+## [0.3.66] — 2026-03-24
+### Changed
+- Opschoning abonnementenmodule: dode code uit het admin item-meta pad is verwijderd, interne `source_order_item_id` meta wordt explicieter uitgesloten van zichtbare display-meta extractie, en dubbele `display_meta` extractie in de repository is samengevoegd tot één berekening.
+
+### Fixed
+- Voorraadmarkering: na basisvoorraad-afboeking op subscription-orders wordt `_hb_ucs_subs_base_stock_reduced` nu weer op de juiste plek opgeslagen, zodat de restore-logica correct blijft werken.
+
+## [0.3.65] — 2026-03-24
+### Fixed
+- Backend performance: de admin item-meta fallback voor abonnementen heeft nu een expliciete recursie-guard en leest in dat pad geen `formatted_meta_data` meer uit hetzelfde item. Dit voorkomt herhaalde nested WooCommerce meta-opbouw bij het openen van orders en abonnementen in de backoffice.
+
+## [0.3.64] — 2026-03-24
+### Fixed
+- Backend performance: het openen van orders en abonnementen triggert niet langer een recursieve tweede `formatted_meta_data` opbouw voor subscription-items. De admin-fallback voor zichtbare attributen leest nu in dat pad alleen directe meta, waardoor backend detailpagina’s weer normaal snel moeten laden.
+
+## [0.3.63] — 2026-03-24
+### Fixed
+- Performance: de extra fallback die ontbrekende abonnement-attributen zichtbaar maakt in WooCommerce order-item-meta draait nu alleen nog in de backend. Daardoor blijft de backoffice-weergave compleet, terwijl frontend en checkout niet onnodig hetzelfde zwaardere herstelpad uitvoeren.
+
+## [0.3.62] — 2026-03-24
+### Fixed
+- Backend abonnementen/order-items: WooCommerce admin krijgt nu dezelfde zichtbare attribuut-fallback als de frontend. Ontbrekende item-meta wordt tijdens backend render aangevuld vanuit opgeslagen geselecteerde attributen en, indien nodig, het exacte bron-orderitem. Daardoor worden opties zoals `Maling` nu ook in de backoffice zichtbaar bij abonnementen en renewals.
+
+## [0.3.61] — 2026-03-24
+### Fixed
+- Abonnementen: gekozen opties die wel in `selected_attributes` zitten maar niet als echte Woo variatie-attribute in de productconfig voorkomen, worden nu altijd omgezet naar zichtbare abonnement-meta. Daardoor worden waarden zoals `Maling` ook zonder aparte losse order-meta correct zichtbaar in abonnementen en renewals. Deze fallback is gecontroleerd op testorder 420 / abonnement 421.
+
+## [0.3.60] — 2026-03-24
+### Fixed
+- Abonnementen: gekozen opties uit de eerste order worden nu als blijvende bron-snapshot op subscription-items opgeslagen, inclusief zichtbare item-meta en gekozen attributen. Tijdens sync wordt een bestaand bron-item-id niet meer onterecht overschreven door subscription-order item ids, en renewals/UI vallen nu eerst terug op die snapshot wanneer het originele order-item niet meer direct beschikbaar is.
+
+## [0.3.59] — 2026-03-24
+### Fixed
+- Abonnementen: elk subscription-item bewaart nu het exacte bronregel-ID van de eerste order. Bestaande abonnementen herstellen die koppeling automatisch vanuit de parent order, abonnementweergaves vullen zichtbare item-meta daarvan opnieuw aan, en renewals nemen die zichtbare meta voortaan direct van die eerste orderregel over.
+
+## [0.3.58] — 2026-03-24
+### Fixed
+- Abonnementen: zichtbare orderregel-meta uit Woo formatted item meta wordt nu ook meegenomen wanneer de onderliggende meta-key intern met `_` begint. Daardoor blijven opties zoals `Maling` niet meer onterecht buiten abonnementen en renewals.
+
+## [0.3.57] — 2026-03-24
+### Fixed
+- Abonnementen: zichtbare orderregel-meta die geen echt variatie-attribuut is, zoals `Maling`, wordt nu apart opgeslagen op subscription-items, automatisch hersteld vanuit de eerste order voor bestaande abonnementen, en ook weer getoond in Mijn Account, admin en renewal/order-syncs.
+
+## [0.3.56] — 2026-03-24
+### Fixed
+- Abonnementen: intern opgeslagen `_hb_ucs_subscription_selected_attributes` op de eerste orderregel dient nu alleen nog als startset. Ontbrekende attributen worden daarna alsnog aangevuld vanuit de overige orderregel-meta en Woo formatted meta, zodat keuzes zoals `Maling` niet meer wegvallen.
+
+## [0.3.55] — 2026-03-24
+### Fixed
+- Abonnementen: gekozen variatie-attributen worden nu op abonnementregels zichtbaar getoond vanuit de opgeslagen `selected_attributes`, zowel in Mijn Account als in de admin abonnementsregels. Interne orderregel-meta `_hb_ucs_subscription_selected_attributes` wordt daarnaast verborgen uit WooCommerce meta-weergaves.
+
+## [0.3.54] — 2026-03-24
+### Fixed
+- Abonnementen: de eerste orderregel bewaart nu de exacte checkout-variatiekeuze ook in eigen HB UCS item-meta, gebaseerd op WooCommerce `values['variation']`. De abonnement-aanmaak gebruikt die bron nu als primaire waarheid, zodat geen gekozen attribuut meer verloren gaat tussen checkout en abonnement.
+
+## [0.3.53] — 2026-03-24
+### Fixed
+- Abonnementen: de eerste order → abonnement extractie vertaalt nu ook WooCommerce order-item variatiemeta zonder `attribute_`-prefix direct terug naar de canonical attribuutkeys en leest alle formatted meta entries uit. Hierdoor worden ook resterende ontbrekende variatie-attributen correct meegenomen.
+
+## [0.3.52] — 2026-03-23
+### Fixed
+- Abonnementen: de initiële order → abonnement attribuutovername leest nu naast ruwe attribute-meta ook WooCommerce formatted item meta uit. Daardoor worden ook variatiekeuzes die alleen als zichtbare orderregel-meta aanwezig zijn correct teruggezet in het abonnement.
+
+## [0.3.51] — 2026-03-23
+### Fixed
+- Abonnementen: bij het aanmaken vanuit de eerste bestelling worden ontbrekende variatie-attributen nu per attribuut aangevuld vanuit de orderregel-meta, ook wanneer een deel al via de variatie bekend is. Hierdoor gaan geen geselecteerde attribuutwaarden meer verloren bij variabele abonnementsartikelen.
+
+## [0.3.50] — 2026-03-23
+### Fixed
+- Abonnementen: variatie-attributen worden niet meer dubbel zichtbaar/opgeslagen op subscription- en renewal-orderitems. Wanneer een abonnementsregel al aan een WooCommerce-variatieproduct gekoppeld is, voegt HB UCS die attribuutmeta niet nogmaals handmatig toe.
+
+## [0.3.49] — 2026-03-23
+### Fixed
+- Abonnementen: bij het aanmaken van een nieuw abonnement vanuit de eerste bestelling worden gekozen variatie-attributen nu expliciet meegeslagen in de opgeslagen subscription items. Daardoor blijven variabele abonnementsartikelen dezelfde attribuutselectie houden voor de actieve abonnementsweergave en voor renewals.
+
+## [0.3.48] — 2026-03-23
+### Fixed
+- Abonnementen: ongeldige of lege variatie-attributen zoals een lege `attribute_`-key worden nu weggefilterd uit de actieve productweergave, attribuutselectors en renewal order item-meta. Daardoor verschijnt geen extra leeg attribuutveld meer met alleen “Kies een optie…” en komt die vervuiling ook niet meer op pakbonnen terecht.
+
 ## [0.3.47] — 2026-03-23
 ### Changed
 - Abonnementen: de melding over een gekoppelde open bestelling op Mijn Account gebruikt nu de frontend WooCommerce-statusnamen in plaats van de interne statussleutels `on-hold` en `processing`.

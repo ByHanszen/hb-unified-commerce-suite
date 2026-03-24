@@ -810,8 +810,199 @@ class SubscriptionRepository {
         });
     }
 
+    private function get_display_meta_row_hash(string $label, string $value): string {
+        return strtolower(remove_accents(trim($label) . '|' . trim($value)));
+    }
+
+    private function sanitize_display_meta_rows(array $rows): array {
+        $clean = [];
+        $seen = [];
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $label = isset($row['label']) && is_scalar($row['label']) ? trim(wp_strip_all_tags((string) $row['label'], true)) : '';
+            $value = isset($row['value']) && is_scalar($row['value']) ? trim(html_entity_decode(wp_strip_all_tags((string) $row['value'], true), ENT_QUOTES, 'UTF-8')) : '';
+            if ($label === '' || $value === '') {
+                continue;
+            }
+
+            $hash = $this->get_display_meta_row_hash($label, $value);
+            if (isset($seen[$hash])) {
+                continue;
+            }
+
+            $seen[$hash] = true;
+            $clean[] = [
+                'label' => $label,
+                'value' => $value,
+            ];
+        }
+
+        return $clean;
+    }
+
+    private function should_skip_display_meta_key(string $metaKey): bool {
+        $metaKey = trim($metaKey);
+        if ($metaKey === '') {
+            return true;
+        }
+
+        $normalizedKey = ltrim(sanitize_key($metaKey), '_');
+        if ($normalizedKey === '' || strpos($normalizedKey, 'attribute_') === 0) {
+            return true;
+        }
+
+        if (in_array($normalizedKey, $this->get_display_meta_excluded_keys(), true)) {
+            return true;
+        }
+
+        return strpos($metaKey, '_') === 0;
+    }
+
+    private function should_skip_formatted_display_meta(string $metaKey, string $label): bool {
+        $label = trim($label);
+        if ($label === '') {
+            return true;
+        }
+
+        $metaKey = trim($metaKey);
+        if ($metaKey === '') {
+            return false;
+        }
+
+        $normalizedKey = ltrim(sanitize_key($metaKey), '_');
+        if ($normalizedKey === '' || strpos($normalizedKey, 'attribute_') === 0) {
+            return true;
+        }
+
+        return in_array($normalizedKey, $this->get_display_meta_excluded_keys(), true);
+    }
+
+    private function get_display_meta_excluded_keys(): array {
+        return [
+            'hb_ucs_subscription_selected_attributes',
+            'hb_ucs_subscription_source_order_item_id',
+            'hb_ucs_subscription_base_product_id',
+            'hb_ucs_subscription_base_variation_id',
+            'hb_ucs_subscription_scheme',
+            'sku',
+        ];
+    }
+
+    private function resolve_source_order_item_id($item, bool $isSubscriptionOrder): int {
+        $sourceOrderItemId = 0;
+
+        if (method_exists($item, 'get_meta')) {
+            $sourceOrderItemId = (int) $item->get_meta('_hb_ucs_subscription_source_order_item_id', true);
+        }
+
+        if ($sourceOrderItemId <= 0 && !$isSubscriptionOrder && method_exists($item, 'get_id')) {
+            $sourceOrderItemId = (int) $item->get_id();
+        }
+
+        return $sourceOrderItemId;
+    }
+
+    private function extract_selected_attributes_from_order_item($item): array {
+        $attributes = [];
+
+        if (!method_exists($item, 'get_meta_data')) {
+            return $attributes;
+        }
+
+        foreach ((array) $item->get_meta_data() as $meta) {
+            if (!is_object($meta) || !isset($meta->key)) {
+                continue;
+            }
+
+            $metaKey = sanitize_key((string) $meta->key);
+            if (strpos($metaKey, 'attribute_') !== 0) {
+                continue;
+            }
+
+            $attributes[$metaKey] = sanitize_title((string) $meta->value);
+        }
+
+        return $attributes;
+    }
+
+    private function extract_display_meta_rows_from_order_item($item): array {
+        if (!$item || !is_object($item)) {
+            return [];
+        }
+
+        $rows = [];
+        $seen = [];
+
+        if (method_exists($item, 'get_all_formatted_meta_data') || method_exists($item, 'get_formatted_meta_data')) {
+            $formattedMeta = method_exists($item, 'get_all_formatted_meta_data')
+                ? (array) $item->get_all_formatted_meta_data('', true)
+                : (array) $item->get_formatted_meta_data('', true);
+
+            foreach ($formattedMeta as $meta) {
+                if (!is_object($meta)) {
+                    continue;
+                }
+
+                $metaKey = isset($meta->key) ? (string) $meta->key : '';
+                $label = isset($meta->display_key) ? trim(wp_strip_all_tags((string) $meta->display_key, true)) : '';
+                $value = isset($meta->display_value) ? trim(html_entity_decode(wp_strip_all_tags((string) $meta->display_value, true), ENT_QUOTES, 'UTF-8')) : '';
+                if ($label === '' || $value === '' || $this->should_skip_formatted_display_meta($metaKey, $label)) {
+                    continue;
+                }
+
+                $hash = $this->get_display_meta_row_hash($label, $value);
+                if (isset($seen[$hash])) {
+                    continue;
+                }
+
+                $seen[$hash] = true;
+                $rows[] = [
+                    'label' => $label,
+                    'value' => $value,
+                ];
+            }
+        }
+
+        if (method_exists($item, 'get_meta_data')) {
+            foreach ((array) $item->get_meta_data() as $meta) {
+                if (!is_object($meta) || !isset($meta->key) || !isset($meta->value)) {
+                    continue;
+                }
+
+                $metaKey = is_scalar($meta->key) ? (string) $meta->key : '';
+                $metaValue = is_scalar($meta->value) ? trim((string) $meta->value) : '';
+                if ($metaValue === '' || $this->should_skip_display_meta_key($metaKey)) {
+                    continue;
+                }
+
+                $label = trim(wp_strip_all_tags(ucwords(str_replace(['-', '_'], ' ', (string) preg_replace('/^_+/', '', $metaKey))), true));
+                if ($label === '') {
+                    continue;
+                }
+
+                $hash = $this->get_display_meta_row_hash($label, $metaValue);
+                if (isset($seen[$hash])) {
+                    continue;
+                }
+
+                $seen[$hash] = true;
+                $rows[] = [
+                    'label' => $label,
+                    'value' => $metaValue,
+                ];
+            }
+        }
+
+        return $this->sanitize_display_meta_rows($rows);
+    }
+
     private function extract_legacy_items_from_order($order): array {
         $items = [];
+        $isSubscriptionOrder = is_object($order) && method_exists($order, 'get_type') && strpos((string) $order->get_type(), 'hb_ucs_subscription') !== false;
         foreach ((array) $order->get_items('line_item') as $item) {
             if (!$item || !is_object($item)) {
                 continue;
@@ -821,31 +1012,24 @@ class SubscriptionRepository {
             $productId = method_exists($item, 'get_product_id') ? (int) $item->get_product_id() : 0;
             $variationId = method_exists($item, 'get_variation_id') ? (int) $item->get_variation_id() : 0;
             $subtotal = method_exists($item, 'get_subtotal') ? (float) $item->get_subtotal() : 0.0;
-            $attributes = [];
-
-            if (method_exists($item, 'get_meta_data')) {
-                foreach ((array) $item->get_meta_data() as $meta) {
-                    if (!is_object($meta) || !isset($meta->key)) {
-                        continue;
-                    }
-
-                    $metaKey = sanitize_key((string) $meta->key);
-                    if (strpos($metaKey, 'attribute_') !== 0) {
-                        continue;
-                    }
-
-                    $attributes[$metaKey] = sanitize_title((string) $meta->value);
-                }
-            }
+            $attributes = $this->extract_selected_attributes_from_order_item($item);
+            $displayMetaRows = $this->extract_display_meta_rows_from_order_item($item);
+            $sourceOrderItemId = $this->resolve_source_order_item_id($item, $isSubscriptionOrder);
 
             $items[] = [
                 'base_product_id' => $productId,
                 'base_variation_id' => $variationId,
+                'source_order_item_id' => $sourceOrderItemId,
                 'qty' => $qty,
                 'unit_price' => $qty > 0 ? $this->normalize_decimal($subtotal / $qty) : 0.0,
                 'price_includes_tax' => 0,
                 'taxes' => $this->normalize_item_taxes(method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : []),
                 'selected_attributes' => $attributes,
+                'display_meta' => $displayMetaRows,
+                'source_item_snapshot' => [
+                    'selected_attributes' => $attributes,
+                    'display_meta' => $displayMetaRows,
+                ],
             ];
         }
 
@@ -1028,17 +1212,36 @@ class SubscriptionRepository {
             if ($variationId > 0) {
                 $item->add_meta_data('_hb_ucs_subscription_base_variation_id', $variationId, true);
             }
+            if ((int) ($row['source_order_item_id'] ?? 0) > 0) {
+                $item->add_meta_data('_hb_ucs_subscription_source_order_item_id', (int) $row['source_order_item_id'], true);
+            }
             if (!empty($legacy['scheme'])) {
                 $item->add_meta_data('_hb_ucs_subscription_scheme', (string) $legacy['scheme'], true);
             }
 
-            foreach ((array) ($row['selected_attributes'] ?? []) as $attributeKey => $attributeValue) {
-                $attributeKey = sanitize_key((string) $attributeKey);
-                if ($attributeKey === '') {
+            if ($variationId <= 0) {
+                foreach ((array) ($row['selected_attributes'] ?? []) as $attributeKey => $attributeValue) {
+                    $attributeKey = sanitize_key((string) $attributeKey);
+                    if ($attributeKey === '') {
+                        continue;
+                    }
+
+                    $item->add_meta_data($attributeKey, sanitize_text_field((string) $attributeValue), true);
+                }
+            }
+
+            foreach ((array) ($row['display_meta'] ?? []) as $displayMetaRow) {
+                if (!is_array($displayMetaRow)) {
                     continue;
                 }
 
-                $item->add_meta_data($attributeKey, sanitize_text_field((string) $attributeValue), true);
+                $label = isset($displayMetaRow['label']) && is_scalar($displayMetaRow['label']) ? trim((string) $displayMetaRow['label']) : '';
+                $value = isset($displayMetaRow['value']) && is_scalar($displayMetaRow['value']) ? trim((string) $displayMetaRow['value']) : '';
+                if ($label === '' || $value === '') {
+                    continue;
+                }
+
+                $item->add_meta_data($label, sanitize_text_field($value), true);
             }
 
             $order->add_item($item);

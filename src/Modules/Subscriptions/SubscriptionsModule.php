@@ -70,6 +70,8 @@ class SubscriptionsModule {
     private const ORDER_META_RENEWAL_MODE = '_hb_ucs_subscription_renewal_mode';
     private const ORDER_META_RENEWAL_PROCESSED = '_hb_ucs_subscription_renewal_processed';
     private const ORDER_META_MOLLIE_PAYMENT_ID = '_hb_ucs_mollie_payment_id';
+    private const ORDER_ITEM_META_SELECTED_ATTRIBUTES = '_hb_ucs_subscription_selected_attributes';
+    private const ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID = '_hb_ucs_subscription_source_order_item_id';
 
     /** @var array{base_product_id:int,base_variation_id:int,child_product_id:int,scheme:string}|null */
     private static $pendingAddToCart = null;
@@ -188,6 +190,8 @@ class SubscriptionsModule {
         add_action('woocommerce_checkout_create_order_line_item', [$this, 'add_order_item_meta'], 10, 4);
         add_action('woocommerce_reduce_order_stock', [$this, 'maybe_reduce_base_stock'], 10, 1);
         add_action('woocommerce_restore_order_stock', [$this, 'maybe_restore_base_stock'], 10, 1);
+        add_filter('woocommerce_hidden_order_itemmeta', [$this, 'filter_hidden_order_itemmeta'], 20, 1);
+        add_filter('woocommerce_order_item_get_formatted_meta_data', [$this, 'filter_order_item_formatted_meta_data'], 20, 2);
     }
 
     private function bootstrap_phase1_architecture(): void {
@@ -1087,14 +1091,11 @@ class SubscriptionsModule {
 
         if ($previewItem) {
             $label = $this->get_subscription_item_label($previewItem);
-            if (!empty($previewItem['base_variation_id'])) {
-                $variation = wc_get_product((int) $previewItem['base_variation_id']);
-                $variationSummary = $this->get_variation_option_label($variation, (int) $previewItem['base_variation_id']);
-            }
             if ($resolvedProduct && is_object($resolvedProduct) && method_exists($resolvedProduct, 'get_sku')) {
                 $sku = (string) $resolvedProduct->get_sku();
             }
             $normalizedAttributes = $this->get_subscription_item_selected_attributes($previewItem);
+            $variationSummary = $this->get_subscription_item_variation_summary($previewItem);
         }
 
         return [
@@ -1754,7 +1755,8 @@ class SubscriptionsModule {
         }
 
         $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
-        $displayMetaRows = [];
+        $displayMetaRows = $this->get_subscription_item_attribute_display_rows($item);
+        $variationSummary = $this->get_subscription_item_variation_summary($item);
 
         $this->render_admin_template('subscription-order-item.php', [
             'currentBaseProductId' => $currentBaseProductId,
@@ -1773,6 +1775,7 @@ class SubscriptionsModule {
             'taxColumns' => $taxColumns,
             'thumbnailHtml' => $thumbnailHtml,
             'totals' => $totals,
+            'variationSummary' => $variationSummary,
         ]);
     }
 
@@ -2741,6 +2744,7 @@ class SubscriptionsModule {
 
                     $selectedId = isset($row['product_id']) ? (int) absint((string) $row['product_id']) : 0;
                     $selectedAttributes = isset($row['selected_attributes']) && is_array($row['selected_attributes']) ? $row['selected_attributes'] : [];
+                    $postedDisplayMeta = isset($row['meta']) && is_array($row['meta']) ? $row['meta'] : [];
                     $qty = isset($row['qty']) ? (int) absint((string) $row['qty']) : 1;
                     $existingItem = isset($existingItems[$index]) && is_array($existingItems[$index]) ? $existingItems[$index] : null;
                     $existingSelectedId = $existingItem ? (int) (($existingItem['base_variation_id'] ?? 0) > 0 ? $existingItem['base_variation_id'] : ($existingItem['base_product_id'] ?? 0)) : 0;
@@ -2753,6 +2757,27 @@ class SubscriptionsModule {
                         }
                         continue;
                     }
+
+                    if (!empty($postedDisplayMeta)) {
+                        $item['display_meta'] = $postedDisplayMeta;
+                    } elseif ($existingItem && $existingSelectedId === $selectedId && !empty($existingItem['display_meta'])) {
+                        $item['display_meta'] = $existingItem['display_meta'];
+                    }
+
+                    if ($existingItem && $existingSelectedId === $selectedId && !empty($existingItem['source_item_snapshot'])) {
+                        $item['source_item_snapshot'] = $existingItem['source_item_snapshot'];
+                    } else {
+                        $item['source_item_snapshot'] = $this->build_subscription_item_source_snapshot(
+                            isset($item['selected_attributes']) && is_array($item['selected_attributes']) ? $item['selected_attributes'] : [],
+                            isset($item['display_meta']) && is_array($item['display_meta']) ? $item['display_meta'] : [],
+                            (int) ($item['base_product_id'] ?? 0)
+                        );
+                    }
+
+                    if ($existingItem && $existingSelectedId === $selectedId && !empty($existingItem['source_order_item_id'])) {
+                        $item['source_order_item_id'] = (int) $existingItem['source_order_item_id'];
+                    }
+
                     $newItems[] = $item;
                 }
 
@@ -3300,7 +3325,7 @@ class SubscriptionsModule {
     private function render_account_subscription_item_editor_row(string $rowKey, array $item, bool $manageDisabled, array $productOptions): void {
         $selectedId = (int) ($item['base_product_id'] ?? 0);
         $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
-        $variationSummary = (string) ($item['variation_summary'] ?? '');
+        $variationSummary = $this->get_subscription_item_variation_summary($item);
         $qty = max(1, (int) ($item['qty'] ?? 1));
         $deliveryPrice = $this->get_subscription_item_display_amount($item, $qty, $this->should_display_subscription_prices_including_tax());
         $deliveryPriceHtml = $deliveryPrice > 0 ? (function_exists('wc_price') ? wc_price($deliveryPrice) : number_format($deliveryPrice, 2, '.', '')) : '';
@@ -3470,7 +3495,13 @@ class SubscriptionsModule {
                     }
 
                     $attributeName = (string) $attributeObject->get_name();
+                    if ($attributeName === '') {
+                        continue;
+                    }
                     $attributeKey = 'attribute_' . sanitize_title($attributeName);
+                    if ($attributeKey === 'attribute_') {
+                        continue;
+                    }
                     $attributeValue = isset($variationAttributes[$attributeKey]) ? (string) $variationAttributes[$attributeKey] : '';
                     if ($attributeValue === '' && method_exists($variation, 'get_attribute')) {
                         $attributeValue = (string) $variation->get_attribute($attributeName);
@@ -3510,6 +3541,189 @@ class SubscriptionsModule {
         return $fallbackId > 0 ? ('#' . $fallbackId) : '';
     }
 
+    private function sanitize_selected_attributes_map(array $attributes): array {
+        $clean = [];
+
+        foreach ($attributes as $key => $value) {
+            $key = sanitize_key((string) $key);
+            $value = sanitize_title((string) $value);
+
+            if ($key === '' || $key === 'attribute_' || $value === '') {
+                continue;
+            }
+
+            $clean[$key] = $value;
+        }
+
+        return $clean;
+    }
+
+    private function get_subscription_item_display_row_hash(string $label, string $value): string {
+        return strtolower(remove_accents(trim($label) . '|' . trim($value)));
+    }
+
+    private function sanitize_subscription_item_display_meta(array $rows): array {
+        $clean = [];
+        $seen = [];
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $label = isset($row['label']) && is_scalar($row['label']) ? trim(wp_strip_all_tags((string) $row['label'], true)) : '';
+            $value = isset($row['value']) && is_scalar($row['value']) ? trim(html_entity_decode(wp_strip_all_tags((string) $row['value'], true), ENT_QUOTES, 'UTF-8')) : '';
+
+            if ($label === '' || $value === '') {
+                continue;
+            }
+
+            $hash = $this->get_subscription_item_display_row_hash($label, $value);
+            if (isset($seen[$hash])) {
+                continue;
+            }
+
+            $seen[$hash] = true;
+            $clean[] = [
+                'label' => $label,
+                'value' => $value,
+            ];
+        }
+
+        return $clean;
+    }
+
+    private function get_subscription_item_display_meta(array $item): array {
+        $stored = isset($item['display_meta']) && is_array($item['display_meta']) ? $item['display_meta'] : [];
+        if (!empty($stored)) {
+            return $this->sanitize_subscription_item_display_meta($stored);
+        }
+
+        $sourceOrderItemId = (int) ($item['source_order_item_id'] ?? 0);
+        if ($sourceOrderItemId > 0 && function_exists('WC') && WC()->order_factory) {
+            $sourceItem = WC()->order_factory->get_order_item($sourceOrderItemId);
+            if ($sourceItem && is_object($sourceItem)) {
+                $sourceDisplayMeta = $this->get_display_meta_rows_from_order_item(
+                    $sourceItem,
+                    (int) ($item['base_product_id'] ?? 0),
+                    $this->get_subscription_item_selected_attributes($item)
+                );
+
+                if (!empty($sourceDisplayMeta)) {
+                    return $this->sanitize_subscription_item_display_meta($sourceDisplayMeta);
+                }
+            }
+        }
+
+        $snapshot = $this->get_subscription_item_source_snapshot($item);
+        $snapshotDisplayMeta = isset($snapshot['display_meta']) && is_array($snapshot['display_meta']) ? $snapshot['display_meta'] : [];
+
+        return $this->sanitize_subscription_item_display_meta($snapshotDisplayMeta);
+    }
+
+    private function should_skip_order_item_display_meta_key(string $metaKey): bool {
+        $metaKey = trim($metaKey);
+        if ($metaKey === '') {
+            return true;
+        }
+
+        $normalizedKey = ltrim(sanitize_key($metaKey), '_');
+        if ($normalizedKey === '') {
+            return true;
+        }
+
+        if (strpos($normalizedKey, 'attribute_') === 0) {
+            return true;
+        }
+
+        if (in_array($normalizedKey, $this->get_subscription_order_item_display_meta_excluded_keys(), true)) {
+            return true;
+        }
+
+        return strpos($metaKey, '_') === 0;
+    }
+
+    private function should_skip_formatted_order_item_display_meta(string $metaKey, string $label): bool {
+        $label = trim($label);
+        if ($label === '') {
+            return true;
+        }
+
+        $metaKey = trim($metaKey);
+        if ($metaKey === '') {
+            return false;
+        }
+
+        $normalizedKey = ltrim(sanitize_key($metaKey), '_');
+        if ($normalizedKey === '' || strpos($normalizedKey, 'attribute_') === 0) {
+            return true;
+        }
+
+        return in_array($normalizedKey, $this->get_subscription_order_item_display_meta_excluded_keys(), true);
+    }
+
+    private function get_subscription_order_item_display_meta_excluded_keys(): array {
+        return [
+            ltrim(sanitize_key(self::ORDER_ITEM_META_SELECTED_ATTRIBUTES), '_'),
+            ltrim(sanitize_key(self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID), '_'),
+            'hb_ucs_subscription_base_product_id',
+            'hb_ucs_subscription_base_variation_id',
+            'hb_ucs_subscription_scheme',
+            'sku',
+        ];
+    }
+
+    private function get_subscription_order_item_hidden_meta_keys(): array {
+        return [
+            self::ORDER_ITEM_META_SELECTED_ATTRIBUTES,
+            self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID,
+        ];
+    }
+
+    private function get_subscription_order_item_base_ids($item, bool $resolveParentProduct = false): array {
+        if (!is_object($item) || !method_exists($item, 'get_meta')) {
+            return [0, 0];
+        }
+
+        $baseProductId = (int) $item->get_meta('_hb_ucs_subscription_base_product_id', true);
+        $baseVariationId = (int) $item->get_meta('_hb_ucs_subscription_base_variation_id', true);
+
+        if ($resolveParentProduct && $baseProductId <= 0 && $baseVariationId > 0 && function_exists('wc_get_product')) {
+            $variation = wc_get_product($baseVariationId);
+            if ($variation && is_object($variation) && method_exists($variation, 'get_parent_id')) {
+                $baseProductId = (int) $variation->get_parent_id();
+            }
+        }
+
+        return [$baseProductId, $baseVariationId];
+    }
+
+    private function is_subscription_order_item($item): bool {
+        if (!is_object($item) || !method_exists($item, 'get_meta')) {
+            return false;
+        }
+
+        [$baseProductId, $baseVariationId] = $this->get_subscription_order_item_base_ids($item);
+
+        return $baseProductId > 0
+            || $baseVariationId > 0
+            || (string) $item->get_meta('_hb_ucs_subscription_scheme', true) !== ''
+            || (int) $item->get_meta(self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID, true) > 0;
+    }
+
+    private function get_order_item_display_meta_label(string $metaKey): string {
+        $metaKey = trim($metaKey);
+        if ($metaKey === '') {
+            return '';
+        }
+
+        $metaKey = (string) preg_replace('/^_+/', '', $metaKey);
+        $label = str_replace(['pa_', 'attribute_'], '', $metaKey);
+        $label = str_replace(['-', '_'], ' ', $label);
+
+        return trim(wp_strip_all_tags(ucwords($label), true));
+    }
+
     private function get_variable_product_attribute_config($product): array {
         if (!$product || !is_object($product) || !method_exists($product, 'is_type') || !$product->is_type('variable') || !method_exists($product, 'get_attributes')) {
             return [];
@@ -3522,6 +3736,15 @@ class SubscriptionsModule {
             }
 
             $attributeName = (string) $attributeObject->get_name();
+            if ($attributeName === '') {
+                continue;
+            }
+
+            $attributeKey = 'attribute_' . sanitize_title($attributeName);
+            if ($attributeKey === 'attribute_') {
+                continue;
+            }
+
             $options = [];
             if (taxonomy_exists($attributeName)) {
                 foreach ((array) $attributeObject->get_terms() as $term) {
@@ -3551,7 +3774,7 @@ class SubscriptionsModule {
             }
 
             $config[] = [
-                'key' => 'attribute_' . sanitize_title($attributeName),
+                'key' => $attributeKey,
                 'label' => wc_attribute_label($attributeName, $product),
                 'options' => $options,
             ];
@@ -3611,19 +3834,433 @@ class SubscriptionsModule {
 
         $out = [];
         foreach ((array) $variation->get_variation_attributes() as $key => $value) {
-            $value = is_scalar($value) ? (string) $value : '';
-            if ($value === '') {
+            $out[(string) $key] = is_scalar($value) ? (string) $value : '';
+        }
+
+        return $this->sanitize_selected_attributes_map($out);
+    }
+
+    private function get_selected_attributes_from_order_item($item, int $baseProductId = 0, int $baseVariationId = 0, bool $includeFormattedMeta = true): array {
+        $selectedAttributes = [];
+
+        if (is_object($item) && method_exists($item, 'get_meta')) {
+            $storedSelectedAttributes = $item->get_meta(self::ORDER_ITEM_META_SELECTED_ATTRIBUTES, true);
+            if (is_string($storedSelectedAttributes) && $storedSelectedAttributes !== '') {
+                $decodedSelectedAttributes = json_decode($storedSelectedAttributes, true);
+                if (is_array($decodedSelectedAttributes)) {
+                    $normalizedSelectedAttributes = $this->normalize_selected_attributes_from_variation_payload($decodedSelectedAttributes, $baseProductId);
+                    if (!empty($normalizedSelectedAttributes)) {
+                        $selectedAttributes = $normalizedSelectedAttributes;
+                    }
+                }
+            }
+        }
+
+        $product = null;
+        $config = [];
+        $configByMetaKey = [];
+        $metaCandidates = [];
+
+        if ($baseVariationId > 0 && function_exists('wc_get_product')) {
+            $variation = wc_get_product($baseVariationId);
+            foreach ($this->get_selected_attributes_from_variation($variation) as $attributeKey => $attributeValue) {
+                if ($attributeKey === '' || $attributeValue === '' || !empty($selectedAttributes[$attributeKey])) {
+                    continue;
+                }
+
+                $selectedAttributes[$attributeKey] = $attributeValue;
+            }
+        }
+
+        if ($baseProductId > 0 && function_exists('wc_get_product')) {
+            $product = wc_get_product($baseProductId);
+            if ($product && is_object($product)) {
+                $config = $this->get_variable_product_attribute_config($product);
+                foreach ($config as $attribute) {
+                    $key = (string) ($attribute['key'] ?? '');
+                    if ($key === '' || $key === 'attribute_') {
+                        continue;
+                    }
+
+                    $configByMetaKey[str_replace('attribute_', '', $key)] = $attribute;
+                }
+            }
+        }
+
+        if (!is_object($item) || !method_exists($item, 'get_meta_data')) {
+            return $selectedAttributes;
+        }
+
+        foreach ((array) $item->get_meta_data() as $meta) {
+            if (!is_object($meta) || !method_exists($meta, 'get_data')) {
                 continue;
             }
-            $out[(string) $key] = $value;
+
+            $data = (array) $meta->get_data();
+            $rawKey = (string) ($data['key'] ?? '');
+            $rawValue = is_scalar($data['value'] ?? null) ? (string) $data['value'] : '';
+            $key = sanitize_key($rawKey);
+            $value = sanitize_title($rawValue);
+
+            if ($key === '' || $key === 'attribute_' || $value === '') {
+                if ($rawKey !== '' && $rawValue !== '') {
+                    $metaCandidates[$rawKey] = $rawValue;
+                }
+                continue;
+            }
+
+            if (strpos($key, 'attribute_') === 0) {
+                $selectedAttributes[$key] = $value;
+            } elseif (isset($configByMetaKey[$key]) && is_array($configByMetaKey[$key])) {
+                $canonicalKey = (string) ($configByMetaKey[$key]['key'] ?? '');
+                $normalizedValue = $this->normalize_selected_attribute_value_from_config($rawValue, $configByMetaKey[$key]);
+                if ($canonicalKey !== '' && $normalizedValue !== '') {
+                    $selectedAttributes[$canonicalKey] = $normalizedValue;
+                }
+            }
+
+            $metaCandidates[$rawKey] = $rawValue;
+            $metaCandidates[$key] = $rawValue;
+            $metaCandidates[str_replace('attribute_', '', $key)] = $rawValue;
         }
-        return $out;
+
+        if ($includeFormattedMeta && method_exists($item, 'get_formatted_meta_data')) {
+            foreach ((array) $item->get_formatted_meta_data('', true) as $meta) {
+                if (!is_object($meta)) {
+                    continue;
+                }
+
+                $displayKey = isset($meta->display_key) ? (string) $meta->display_key : '';
+                $displayValue = isset($meta->display_value) ? html_entity_decode(wp_strip_all_tags((string) $meta->display_value, true), ENT_QUOTES, 'UTF-8') : '';
+                if ($displayKey === '' || $displayValue === '') {
+                    continue;
+                }
+
+                $metaCandidates[$displayKey] = $displayValue;
+                $metaCandidates[sanitize_title($displayKey)] = $displayValue;
+                $metaCandidates[sanitize_key($displayKey)] = $displayValue;
+            }
+        }
+
+        if (!empty($config) && method_exists($item, 'get_meta')) {
+            foreach ($config as $attribute) {
+                $key = (string) ($attribute['key'] ?? '');
+                $label = (string) ($attribute['label'] ?? '');
+                if ($key === '' || $key === 'attribute_' || !empty($selectedAttributes[$key])) {
+                    continue;
+                }
+
+                $rawValue = '';
+                if ($label !== '') {
+                    $rawValue = (string) $item->get_meta($label, true);
+                }
+                if ($rawValue === '') {
+                    $rawValue = (string) $item->get_meta(str_replace('attribute_', '', $key), true);
+                }
+                if ($rawValue === '') {
+                    $rawValue = (string) $item->get_meta($key, true);
+                }
+                if ($rawValue === '' && isset($metaCandidates[$label])) {
+                    $rawValue = (string) $metaCandidates[$label];
+                }
+                if ($rawValue === '' && isset($metaCandidates[sanitize_title($label)])) {
+                    $rawValue = (string) $metaCandidates[sanitize_title($label)];
+                }
+                if ($rawValue === '' && isset($metaCandidates[sanitize_key($label)])) {
+                    $rawValue = (string) $metaCandidates[sanitize_key($label)];
+                }
+                if ($rawValue === '' && isset($metaCandidates[$key])) {
+                    $rawValue = (string) $metaCandidates[$key];
+                }
+                if ($rawValue === '' && isset($metaCandidates[str_replace('attribute_', '', $key)])) {
+                    $rawValue = (string) $metaCandidates[str_replace('attribute_', '', $key)];
+                }
+
+                $normalizedValue = $this->normalize_selected_attribute_value_from_config($rawValue, $attribute);
+                if ($normalizedValue === '') {
+                    continue;
+                }
+
+                $selectedAttributes[$key] = $normalizedValue;
+            }
+        }
+
+        return $this->sanitize_selected_attributes_map($selectedAttributes);
+    }
+
+    private function get_selected_attribute_display_rows(int $baseProductId, array $selectedAttributes): array {
+        $rows = [];
+        $seen = [];
+        $selectedAttributes = $this->sanitize_selected_attributes_map($selectedAttributes);
+        $configByKey = [];
+
+        if ($baseProductId > 0) {
+            $product = wc_get_product($baseProductId);
+            if ($product && is_object($product)) {
+                foreach ($this->get_variable_product_attribute_config($product) as $attribute) {
+                    $key = (string) ($attribute['key'] ?? '');
+                    if ($key === '') {
+                        continue;
+                    }
+
+                    $configByKey[$key] = $attribute;
+                }
+            }
+        }
+
+        foreach ($selectedAttributes as $key => $rawValue) {
+            $key = sanitize_key((string) $key);
+            $rawValue = (string) $rawValue;
+            if ($key === '' || $rawValue === '') {
+                continue;
+            }
+
+            $label = '';
+            $value = '';
+
+            if (isset($configByKey[$key]) && is_array($configByKey[$key])) {
+                $attribute = $configByKey[$key];
+                $label = (string) ($attribute['label'] ?? $key);
+                $value = $rawValue;
+                foreach ((array) ($attribute['options'] ?? []) as $option) {
+                    $optionValue = (string) ($option['value'] ?? '');
+                    if ($optionValue === $rawValue) {
+                        $value = (string) ($option['label'] ?? $rawValue);
+                        break;
+                    }
+                }
+            } else {
+                $label = $this->get_order_item_display_meta_label($key);
+                $value = trim(wp_strip_all_tags(ucwords(str_replace(['-', '_'], ' ', $rawValue)), true));
+            }
+
+            if ($label === '' || $value === '') {
+                continue;
+            }
+
+            $hash = $this->get_subscription_item_display_row_hash($label, $value);
+            if (isset($seen[$hash])) {
+                continue;
+            }
+
+            $seen[$hash] = true;
+            $rows[] = [
+                'label' => $label,
+                'value' => $value,
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function build_subscription_item_source_snapshot(array $selectedAttributes = [], array $displayMeta = [], int $baseProductId = 0): array {
+        $supplementalDisplayMeta = $this->get_selected_attribute_display_rows($baseProductId, $selectedAttributes);
+        return [
+            'selected_attributes' => $this->sanitize_selected_attributes_map($selectedAttributes),
+            'display_meta' => $this->sanitize_subscription_item_display_meta(array_merge($supplementalDisplayMeta, $displayMeta)),
+        ];
+    }
+
+    private function get_subscription_item_source_snapshot(array $item): array {
+        $snapshot = isset($item['source_item_snapshot']) && is_array($item['source_item_snapshot']) ? $item['source_item_snapshot'] : [];
+        $selectedAttributes = isset($snapshot['selected_attributes']) && is_array($snapshot['selected_attributes']) ? $snapshot['selected_attributes'] : [];
+        $displayMeta = isset($snapshot['display_meta']) && is_array($snapshot['display_meta']) ? $snapshot['display_meta'] : [];
+
+        return $this->build_subscription_item_source_snapshot($selectedAttributes, $displayMeta, (int) ($item['base_product_id'] ?? 0));
+    }
+
+    private function build_subscription_item_source_snapshot_from_order_item($item, int $baseProductId = 0, int $baseVariationId = 0): array {
+        $selectedAttributes = $this->get_selected_attributes_from_order_item($item, $baseProductId, $baseVariationId);
+        $displayMeta = $this->get_display_meta_rows_from_order_item($item, $baseProductId, $selectedAttributes);
+
+        return $this->build_subscription_item_source_snapshot($selectedAttributes, $displayMeta, $baseProductId);
+    }
+
+    private function get_display_meta_rows_from_order_item($item, int $baseProductId = 0, array $selectedAttributes = [], bool $includeFormattedMeta = true): array {
+        if (!is_object($item)) {
+            return [];
+        }
+
+        $rows = [];
+        $seen = [];
+        $selectedRows = $this->get_subscription_item_attribute_display_rows([
+            'base_product_id' => $baseProductId,
+            'selected_attributes' => $selectedAttributes,
+        ]);
+
+        foreach ($selectedRows as $selectedRow) {
+            $selectedLabel = (string) ($selectedRow['label'] ?? '');
+            $selectedValue = (string) ($selectedRow['value'] ?? '');
+            if ($selectedLabel === '' || $selectedValue === '') {
+                continue;
+            }
+
+            $seen[$this->get_subscription_item_display_row_hash($selectedLabel, $selectedValue)] = true;
+        }
+
+        if ($includeFormattedMeta && (method_exists($item, 'get_all_formatted_meta_data') || method_exists($item, 'get_formatted_meta_data'))) {
+            $formattedMeta = method_exists($item, 'get_all_formatted_meta_data')
+                ? (array) $item->get_all_formatted_meta_data('', true)
+                : (array) $item->get_formatted_meta_data('', true);
+
+            foreach ($formattedMeta as $meta) {
+                if (!is_object($meta)) {
+                    continue;
+                }
+
+                $metaKey = isset($meta->key) ? (string) $meta->key : '';
+                $label = isset($meta->display_key) ? trim(wp_strip_all_tags((string) $meta->display_key, true)) : '';
+                $value = isset($meta->display_value) ? trim(html_entity_decode(wp_strip_all_tags((string) $meta->display_value, true), ENT_QUOTES, 'UTF-8')) : '';
+
+                if ($label === '' || $value === '' || $this->should_skip_formatted_order_item_display_meta($metaKey, $label)) {
+                    continue;
+                }
+
+                $hash = $this->get_subscription_item_display_row_hash($label, $value);
+                if (isset($seen[$hash])) {
+                    continue;
+                }
+
+                $seen[$hash] = true;
+                $rows[] = [
+                    'label' => $label,
+                    'value' => $value,
+                ];
+            }
+        }
+
+        if (method_exists($item, 'get_meta_data')) {
+            foreach ((array) $item->get_meta_data() as $meta) {
+                if (!is_object($meta) || !method_exists($meta, 'get_data')) {
+                    continue;
+                }
+
+                $data = (array) $meta->get_data();
+                $metaKey = isset($data['key']) && is_scalar($data['key']) ? (string) $data['key'] : '';
+                $metaValue = isset($data['value']) && is_scalar($data['value']) ? trim((string) $data['value']) : '';
+
+                if ($metaValue === '' || $this->should_skip_order_item_display_meta_key($metaKey)) {
+                    continue;
+                }
+
+                $label = $this->get_order_item_display_meta_label($metaKey);
+                if ($label === '') {
+                    continue;
+                }
+
+                $hash = $this->get_subscription_item_display_row_hash($label, $metaValue);
+                if (isset($seen[$hash])) {
+                    continue;
+                }
+
+                $seen[$hash] = true;
+                $rows[] = [
+                    'label' => $label,
+                    'value' => $metaValue,
+                ];
+            }
+        }
+
+        return $this->sanitize_subscription_item_display_meta($rows);
+    }
+
+    private function normalize_selected_attributes_from_variation_payload(array $variationData, int $baseProductId = 0): array {
+        if (empty($variationData)) {
+            return [];
+        }
+
+        $product = $baseProductId > 0 && function_exists('wc_get_product') ? wc_get_product($baseProductId) : null;
+        $config = $product && is_object($product) ? $this->get_variable_product_attribute_config($product) : [];
+        $configByCanonicalKey = [];
+        $configByMetaKey = [];
+
+        foreach ($config as $attribute) {
+            $canonicalKey = (string) ($attribute['key'] ?? '');
+            if ($canonicalKey === '' || $canonicalKey === 'attribute_') {
+                continue;
+            }
+
+            $configByCanonicalKey[$canonicalKey] = $attribute;
+            $configByMetaKey[str_replace('attribute_', '', $canonicalKey)] = $attribute;
+        }
+
+        $normalized = [];
+        foreach ($variationData as $key => $value) {
+            $rawKey = (string) $key;
+            $rawValue = is_scalar($value) ? (string) $value : '';
+            $sanitizedKey = sanitize_key($rawKey);
+
+            if ($sanitizedKey === '' || $rawValue === '') {
+                continue;
+            }
+
+            $attribute = null;
+            $canonicalKey = '';
+
+            if (strpos($sanitizedKey, 'attribute_') === 0 && isset($configByCanonicalKey[$sanitizedKey])) {
+                $canonicalKey = $sanitizedKey;
+                $attribute = $configByCanonicalKey[$sanitizedKey];
+            } elseif (isset($configByMetaKey[$sanitizedKey])) {
+                $attribute = $configByMetaKey[$sanitizedKey];
+                $canonicalKey = (string) ($attribute['key'] ?? '');
+            } elseif (strpos($sanitizedKey, 'attribute_') === 0) {
+                $canonicalKey = $sanitizedKey;
+            }
+
+            if ($canonicalKey === '' || $canonicalKey === 'attribute_') {
+                continue;
+            }
+
+            $normalizedValue = is_array($attribute)
+                ? $this->normalize_selected_attribute_value_from_config($rawValue, $attribute)
+                : sanitize_title($rawValue);
+
+            if ($normalizedValue === '') {
+                continue;
+            }
+
+            $normalized[$canonicalKey] = $normalizedValue;
+        }
+
+        return $this->sanitize_selected_attributes_map($normalized);
+    }
+
+    private function normalize_selected_attribute_value_from_config(string $rawValue, array $attribute): string {
+        $rawValue = html_entity_decode(wp_strip_all_tags(trim($rawValue), true), ENT_QUOTES, 'UTF-8');
+        if ($rawValue === '') {
+            return '';
+        }
+
+        $rawValueSanitized = sanitize_title($rawValue);
+        foreach ((array) ($attribute['options'] ?? []) as $option) {
+            $optionValue = (string) ($option['value'] ?? '');
+            $optionLabel = (string) ($option['label'] ?? $optionValue);
+
+            if ($optionValue === '') {
+                continue;
+            }
+
+            if ($rawValue === $optionValue || $rawValueSanitized === $optionValue) {
+                return $optionValue;
+            }
+
+            if ($rawValue === $optionLabel || $rawValueSanitized === sanitize_title($optionLabel)) {
+                return $optionValue;
+            }
+        }
+
+        return $rawValueSanitized;
     }
 
     private function get_subscription_item_selected_attributes(array $item): array {
         $stored = isset($item['selected_attributes']) && is_array($item['selected_attributes']) ? $item['selected_attributes'] : [];
         if (!empty($stored)) {
-            return $stored;
+            return $this->sanitize_selected_attributes_map($stored);
+        }
+
+        $snapshot = $this->get_subscription_item_source_snapshot($item);
+        if (!empty($snapshot['selected_attributes']) && is_array($snapshot['selected_attributes'])) {
+            return $this->sanitize_selected_attributes_map($snapshot['selected_attributes']);
         }
 
         $variationId = (int) ($item['base_variation_id'] ?? 0);
@@ -3640,6 +4277,7 @@ class SubscriptionsModule {
             return [];
         }
 
+        $selectedAttributes = $this->sanitize_selected_attributes_map($selectedAttributes);
         $normalized = [];
         $config = $this->get_variable_product_attribute_config($product);
         foreach ($config as $attribute) {
@@ -3749,6 +4387,14 @@ class SubscriptionsModule {
             return __('Onbekend product', 'hb-ucs');
         }
 
+        $attributeSummary = $this->get_subscription_item_variation_summary($item);
+        if ($attributeSummary !== '') {
+            $baseProduct = $productId > 0 ? wc_get_product($productId) : null;
+            $baseLabel = $baseProduct && is_object($baseProduct) && method_exists($baseProduct, 'get_name') ? (string) $baseProduct->get_name() : (string) $product->get_name();
+
+            return wp_strip_all_tags($baseLabel . ' — ' . $attributeSummary, true);
+        }
+
         if (method_exists($product, 'is_type') && $product->is_type('variation')) {
             $parentId = method_exists($product, 'get_parent_id') ? (int) $product->get_parent_id() : 0;
             $parent = $parentId > 0 ? wc_get_product($parentId) : null;
@@ -3760,13 +4406,83 @@ class SubscriptionsModule {
         return wp_strip_all_tags((string) $product->get_name(), true);
     }
 
+    private function get_subscription_item_variation_summary(array $item): string {
+        $displayRows = $this->get_subscription_item_attribute_display_rows($item);
+
+        if (!empty($displayRows)) {
+            $parts = [];
+            foreach ($displayRows as $row) {
+                $label = (string) ($row['label'] ?? '');
+                $value = (string) ($row['value'] ?? '');
+                if ($label === '' || $value === '') {
+                    continue;
+                }
+
+                $parts[] = $label . ': ' . $value;
+            }
+
+            if (!empty($parts)) {
+                return implode(' | ', $parts);
+            }
+        }
+
+        $variationId = (int) ($item['base_variation_id'] ?? 0);
+        if ($variationId > 0) {
+            $variation = wc_get_product($variationId);
+            return $this->get_variation_option_label($variation, $variationId);
+        }
+
+        return '';
+    }
+
+    private function get_subscription_item_attribute_display_rows(array $item): array {
+        $baseProductId = (int) ($item['base_product_id'] ?? 0);
+        $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
+        $rows = $this->get_selected_attribute_display_rows($baseProductId, $selectedAttributes);
+
+        $seen = [];
+        foreach ($rows as $row) {
+            $label = (string) ($row['label'] ?? '');
+            $value = (string) ($row['value'] ?? '');
+            if ($label === '' || $value === '') {
+                continue;
+            }
+
+            $seen[$this->get_subscription_item_display_row_hash($label, $value)] = true;
+        }
+
+        foreach ($this->get_subscription_item_display_meta($item) as $row) {
+            $label = (string) ($row['label'] ?? '');
+            $value = (string) ($row['value'] ?? '');
+            if ($label === '' || $value === '') {
+                continue;
+            }
+
+            $hash = $this->get_subscription_item_display_row_hash($label, $value);
+            if (isset($seen[$hash])) {
+                continue;
+            }
+
+            $seen[$hash] = true;
+            $rows[] = [
+                'label' => $label,
+                'value' => $value,
+            ];
+        }
+
+        return $rows;
+    }
+
     private function normalize_subscription_item(array $item): ?array {
         $baseProductId = (int) ($item['base_product_id'] ?? 0);
         $baseVariationId = (int) ($item['base_variation_id'] ?? 0);
+        $sourceOrderItemId = max(0, (int) ($item['source_order_item_id'] ?? 0));
         $qty = (int) ($item['qty'] ?? 1);
         $unitPrice = isset($item['unit_price']) ? (float) wc_format_decimal((string) $item['unit_price']) : 0.0;
         $priceIncludesTax = !empty($item['price_includes_tax']);
         $selectedAttributes = isset($item['selected_attributes']) && is_array($item['selected_attributes']) ? $item['selected_attributes'] : [];
+        $displayMeta = isset($item['display_meta']) && is_array($item['display_meta']) ? $item['display_meta'] : [];
+        $sourceSnapshot = isset($item['source_item_snapshot']) && is_array($item['source_item_snapshot']) ? $item['source_item_snapshot'] : [];
         $taxes = $this->normalize_subscription_item_taxes($item['taxes'] ?? []);
 
         if ($baseProductId <= 0) {
@@ -3776,15 +4492,16 @@ class SubscriptionsModule {
             $qty = 1;
         }
 
-        $normalizedAttributes = [];
-        foreach ($selectedAttributes as $key => $value) {
-            $key = sanitize_key((string) $key);
-            $value = sanitize_title((string) $value);
-            if ($key === '' || $value === '') {
-                continue;
-            }
-            $normalizedAttributes[$key] = $value;
-        }
+        $normalizedAttributes = $this->sanitize_selected_attributes_map($selectedAttributes);
+    $normalizedDisplayMeta = $this->sanitize_subscription_item_display_meta($displayMeta);
+        $normalizedSourceSnapshot = $this->build_subscription_item_source_snapshot(
+            isset($sourceSnapshot['selected_attributes']) && is_array($sourceSnapshot['selected_attributes'])
+                ? $sourceSnapshot['selected_attributes']
+                : $normalizedAttributes,
+            isset($sourceSnapshot['display_meta']) && is_array($sourceSnapshot['display_meta'])
+                ? $sourceSnapshot['display_meta']
+                : $normalizedDisplayMeta
+        , $baseProductId);
 
         if ($priceIncludesTax && $unitPrice > 0) {
             $priceIncludesTax = $this->should_subscription_item_price_be_treated_as_including_tax(
@@ -3798,11 +4515,14 @@ class SubscriptionsModule {
         return [
             'base_product_id' => $baseProductId,
             'base_variation_id' => max(0, $baseVariationId),
+            'source_order_item_id' => $sourceOrderItemId,
             'qty' => $qty,
             'unit_price' => $unitPrice,
             'price_includes_tax' => $priceIncludesTax ? 1 : 0,
             'taxes' => $taxes,
             'selected_attributes' => $normalizedAttributes,
+            'display_meta' => $normalizedDisplayMeta,
+            'source_item_snapshot' => $normalizedSourceSnapshot,
         ];
     }
 
@@ -3824,6 +4544,7 @@ class SubscriptionsModule {
 
         if (!empty($items)) {
             $items = $this->maybe_repair_migrated_wcs_subscription_items($subId, $items);
+            $items = $this->maybe_repair_subscription_item_display_meta($subId, $items);
             return $items;
         }
 
@@ -3884,6 +4605,132 @@ class SubscriptionsModule {
         }
 
         return $repaired;
+    }
+
+    private function maybe_repair_subscription_item_display_meta(int $subId, array $items): array {
+        $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
+        if ($subId <= 0 || empty($items)) {
+            return $items;
+        }
+
+        $parentOrder = ($parentOrderId > 0 && function_exists('wc_get_order')) ? wc_get_order($parentOrderId) : null;
+        $orderItems = ($parentOrder && is_object($parentOrder) && method_exists($parentOrder, 'get_items'))
+            ? array_values((array) $parentOrder->get_items('line_item'))
+            : [];
+        $didRepair = false;
+
+        foreach ($items as $index => $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $sourceItem = null;
+            $sourceOrderItemId = (int) ($item['source_order_item_id'] ?? 0);
+
+            if ($sourceOrderItemId > 0 && function_exists('WC') && WC()->order_factory) {
+                $candidate = WC()->order_factory->get_order_item($sourceOrderItemId);
+                if ($candidate && is_object($candidate)) {
+                    $sourceItem = $candidate;
+                }
+            }
+
+            if ((!$sourceItem || !is_object($sourceItem)) && $sourceOrderItemId > 0 && $parentOrder && method_exists($parentOrder, 'get_item')) {
+                $candidate = $parentOrder->get_item($sourceOrderItemId);
+                if ($candidate && is_object($candidate)) {
+                    $sourceItem = $candidate;
+                }
+            }
+
+            if (!$sourceItem || !is_object($sourceItem)) {
+                $sourceItem = !empty($orderItems) ? ($orderItems[$index] ?? null) : null;
+            }
+
+            if (!$sourceItem || !is_object($sourceItem)) {
+                foreach ($orderItems as $candidate) {
+                    if (!$candidate || !is_object($candidate)) {
+                        continue;
+                    }
+
+                    $candidateProductId = method_exists($candidate, 'get_product_id') ? (int) $candidate->get_product_id() : 0;
+                    $candidateVariationId = method_exists($candidate, 'get_variation_id') ? (int) $candidate->get_variation_id() : 0;
+
+                    if (
+                        $candidateProductId === (int) ($item['base_product_id'] ?? 0)
+                        && $candidateVariationId === (int) ($item['base_variation_id'] ?? 0)
+                    ) {
+                        $sourceItem = $candidate;
+                        break;
+                    }
+                }
+            }
+
+            if (!$sourceItem || !is_object($sourceItem)) {
+                continue;
+            }
+
+            $resolvedSourceOrderItemId = method_exists($sourceItem, 'get_id') ? (int) $sourceItem->get_id() : 0;
+            $sourceSnapshot = $this->build_subscription_item_source_snapshot_from_order_item(
+                $sourceItem,
+                (int) ($item['base_product_id'] ?? 0),
+                (int) ($item['base_variation_id'] ?? 0)
+            );
+            $displayMeta = isset($sourceSnapshot['display_meta']) && is_array($sourceSnapshot['display_meta']) ? $sourceSnapshot['display_meta'] : [];
+
+            if ($resolvedSourceOrderItemId > 0 && $resolvedSourceOrderItemId !== $sourceOrderItemId) {
+                $item['source_order_item_id'] = $resolvedSourceOrderItemId;
+                $didRepair = true;
+            }
+
+            $currentDisplayMeta = $this->sanitize_subscription_item_display_meta((array) ($item['display_meta'] ?? []));
+            if (!empty($displayMeta) && $displayMeta !== $currentDisplayMeta) {
+                $item['display_meta'] = $displayMeta;
+                $didRepair = true;
+            }
+
+            $currentSnapshot = $this->get_subscription_item_source_snapshot($item);
+            if ($sourceSnapshot !== $currentSnapshot) {
+                $item['source_item_snapshot'] = $sourceSnapshot;
+                $didRepair = true;
+            }
+
+            $items[$index] = $item;
+        }
+
+        if ($didRepair) {
+            $this->persist_subscription_items($subId, $items);
+        }
+
+        return $items;
+    }
+
+    private function get_subscription_item_effective_display_meta(int $subId, array $item): array {
+        $displayMeta = $this->get_subscription_item_display_meta($item);
+        $sourceOrderItemId = (int) ($item['source_order_item_id'] ?? 0);
+        $sourceSnapshot = $this->get_subscription_item_source_snapshot($item);
+        $snapshotDisplayMeta = isset($sourceSnapshot['display_meta']) && is_array($sourceSnapshot['display_meta'])
+            ? $this->sanitize_subscription_item_display_meta($sourceSnapshot['display_meta'])
+            : [];
+
+        if ($sourceOrderItemId > 0 && function_exists('WC') && WC()->order_factory) {
+            $sourceItem = WC()->order_factory->get_order_item($sourceOrderItemId);
+            if ($sourceItem && is_object($sourceItem)) {
+                $sourceDisplayMeta = $this->get_display_meta_rows_from_order_item(
+                    $sourceItem,
+                    (int) ($item['base_product_id'] ?? 0),
+                    $this->get_subscription_item_selected_attributes($item)
+                );
+
+                if (!empty($sourceDisplayMeta)) {
+                    return $sourceDisplayMeta;
+                }
+            }
+        }
+
+        if (!empty($snapshotDisplayMeta)) {
+            return $snapshotDisplayMeta;
+        }
+
+        return $displayMeta;
     }
 
     private function persist_subscription_items(int $subId, array $items): void {
@@ -6311,11 +7158,14 @@ class SubscriptionsModule {
             $normalized = $this->normalize_subscription_item([
                 'base_product_id' => $baseProductId,
                 'base_variation_id' => $baseVariationId,
+                'source_order_item_id' => method_exists($item, 'get_id') ? (int) $item->get_id() : 0,
                 'qty' => $qty,
                 'unit_price' => $unitPrice,
                 'price_includes_tax' => 0,
                 'taxes' => method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : [],
                 'selected_attributes' => $selectedAttributes,
+                'display_meta' => $this->get_display_meta_rows_from_order_item($item, $baseProductId, $selectedAttributes),
+                'source_item_snapshot' => $this->build_subscription_item_source_snapshot_from_order_item($item, $baseProductId, $baseVariationId),
             ]);
 
             if ($normalized) {
@@ -8383,13 +9233,21 @@ JS;
             update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $startTs);
             update_post_meta($subId, self::SUB_META_UNIT_PRICE, (string) wc_format_decimal($unit));
             update_post_meta($subId, self::SUB_META_QTY, (string) $qty);
+            $selectedAttributes = $this->get_selected_attributes_from_order_item($item, $baseProductId, $baseVariationId);
+            $displayMeta = $this->get_display_meta_rows_from_order_item($item, $baseProductId, $selectedAttributes);
+            $sourceSnapshot = $this->build_subscription_item_source_snapshot($selectedAttributes, $displayMeta, $baseProductId);
+
             $this->persist_subscription_items($subId, [[
                 'base_product_id' => $baseProductId,
                 'base_variation_id' => $baseVariationId,
+                'source_order_item_id' => method_exists($item, 'get_id') ? (int) $item->get_id() : 0,
                 'qty' => $qty,
                 'unit_price' => $unit,
                 'price_includes_tax' => 0,
                 'taxes' => method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : [],
+                'selected_attributes' => $selectedAttributes,
+                'display_meta' => $displayMeta,
+                'source_item_snapshot' => $sourceSnapshot,
             ]]);
             $this->persist_subscription_fee_lines($subId, $this->extract_subscription_fee_lines($order));
             $this->persist_subscription_shipping_lines($subId, $this->extract_subscription_shipping_lines($order));
@@ -8635,11 +9493,25 @@ JS;
             if ($baseVariationId > 0) {
                 $item->add_meta_data('_hb_ucs_subscription_base_variation_id', $baseVariationId, true);
             }
-            foreach ((array) ($subscriptionItem['selected_attributes'] ?? []) as $attributeKey => $attributeValue) {
-                if ($attributeKey === '' || $attributeValue === '') {
+            if ((int) ($subscriptionItem['source_order_item_id'] ?? 0) > 0) {
+                $item->add_meta_data(self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID, (int) $subscriptionItem['source_order_item_id'], true);
+            }
+            if ($baseVariationId <= 0) {
+                foreach ($this->get_subscription_item_selected_attributes($subscriptionItem) as $attributeKey => $attributeValue) {
+                    if ($attributeKey === '' || $attributeValue === '') {
+                        continue;
+                    }
+                    $item->add_meta_data($attributeKey, $attributeValue, true);
+                }
+            }
+            foreach ($this->get_subscription_item_effective_display_meta($subId, $subscriptionItem) as $displayMetaRow) {
+                $label = (string) ($displayMetaRow['label'] ?? '');
+                $value = (string) ($displayMetaRow['value'] ?? '');
+                if ($label === '' || $value === '') {
                     continue;
                 }
-                $item->add_meta_data($attributeKey, $attributeValue, true);
+
+                $item->add_meta_data($label, $value, true);
             }
             $item->add_meta_data('_hb_ucs_subscription_scheme', $scheme, true);
             $order->add_item($item);
@@ -9468,11 +10340,19 @@ JS;
             return;
         }
 
+        $selectedAttributes = [];
+        if (isset($values['variation']) && is_array($values['variation'])) {
+            $selectedAttributes = $this->normalize_selected_attributes_from_variation_payload((array) $values['variation'], $baseId);
+        }
+
         $item->add_meta_data('_hb_ucs_subscription_base_product_id', $baseId, true);
         if ($baseVariationId > 0) {
             $item->add_meta_data('_hb_ucs_subscription_base_variation_id', $baseVariationId, true);
         }
         $item->add_meta_data('_hb_ucs_subscription_scheme', $scheme, true);
+        if (!empty($selectedAttributes)) {
+            $item->add_meta_data(self::ORDER_ITEM_META_SELECTED_ATTRIBUTES, wp_json_encode($selectedAttributes), true);
+        }
     }
 
     public function maybe_reduce_base_stock($order): void {
@@ -9519,6 +10399,106 @@ JS;
         if ($changed) {
             update_post_meta($orderId, '_hb_ucs_subs_base_stock_reduced', 'yes');
         }
+
+    }
+
+    public function filter_hidden_order_itemmeta(array $hiddenMeta): array {
+        $hiddenMeta = array_merge($hiddenMeta, $this->get_subscription_order_item_hidden_meta_keys());
+
+        return array_values(array_unique($hiddenMeta));
+    }
+
+    public function filter_order_item_formatted_meta_data(array $formattedMeta, $item): array {
+        $isAdminContext = is_admin();
+        $seen = [];
+        foreach ($formattedMeta as $metaId => $meta) {
+            if (!is_object($meta) || !isset($meta->key)) {
+                continue;
+            }
+
+            if (in_array((string) $meta->key, $this->get_subscription_order_item_hidden_meta_keys(), true)) {
+                unset($formattedMeta[$metaId]);
+                continue;
+            }
+
+            $label = isset($meta->display_key) ? trim(wp_strip_all_tags((string) $meta->display_key, true)) : '';
+            $value = isset($meta->display_value) ? trim(html_entity_decode(wp_strip_all_tags((string) $meta->display_value, true), ENT_QUOTES, 'UTF-8')) : '';
+            if (!$isAdminContext || $label === '' || $value === '') {
+                continue;
+            }
+
+            $seen[$this->get_subscription_item_display_row_hash($label, $value)] = true;
+        }
+
+        if ($isAdminContext) {
+            static $isInjectingDisplayMeta = false;
+
+            if ($this->is_subscription_order_item($item) && !$isInjectingDisplayMeta) {
+                $isInjectingDisplayMeta = true;
+
+                try {
+                    foreach ($this->get_backend_order_item_display_meta_rows($item) as $displayMetaRow) {
+                        $label = isset($displayMetaRow['label']) && is_scalar($displayMetaRow['label']) ? trim((string) $displayMetaRow['label']) : '';
+                        $value = isset($displayMetaRow['value']) && is_scalar($displayMetaRow['value']) ? trim((string) $displayMetaRow['value']) : '';
+                        if ($label === '' || $value === '') {
+                            continue;
+                        }
+
+                        $hash = $this->get_subscription_item_display_row_hash($label, $value);
+                        if (isset($seen[$hash])) {
+                            continue;
+                        }
+
+                        $seen[$hash] = true;
+                        $formattedMeta['hb_ucs_' . $hash] = (object) [
+                            'key' => sanitize_key($label) !== '' ? sanitize_key($label) : $label,
+                            'value' => $value,
+                            'display_key' => $label,
+                            'display_value' => $value,
+                        ];
+                    }
+                } finally {
+                    $isInjectingDisplayMeta = false;
+                }
+            }
+        }
+
+        return $formattedMeta;
+    }
+
+    private function get_backend_order_item_display_meta_rows($item): array {
+        if (!is_object($item) || !method_exists($item, 'get_meta')) {
+            return [];
+        }
+
+        [$baseProductId, $baseVariationId] = $this->get_subscription_order_item_base_ids($item, true);
+
+        if ($baseProductId <= 0 && $baseVariationId <= 0) {
+            return [];
+        }
+
+        $selectedAttributes = $this->get_selected_attributes_from_order_item($item, $baseProductId, $baseVariationId, false);
+        $displayMeta = $this->get_display_meta_rows_from_order_item($item, $baseProductId, $selectedAttributes, false);
+        if (!empty($displayMeta)) {
+            return $displayMeta;
+        }
+
+        $sourceOrderItemId = (int) $item->get_meta(self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID, true);
+        if ($sourceOrderItemId > 0 && function_exists('WC') && WC() && isset(WC()->order_factory)) {
+            $sourceItem = WC()->order_factory->get_order_item($sourceOrderItemId);
+            if ($sourceItem && is_object($sourceItem)) {
+                if (empty($selectedAttributes)) {
+                    $selectedAttributes = $this->get_selected_attributes_from_order_item($sourceItem, $baseProductId, $baseVariationId, false);
+                }
+
+                $displayMeta = $this->get_display_meta_rows_from_order_item($sourceItem, $baseProductId, $selectedAttributes, false);
+                if (!empty($displayMeta)) {
+                    return $displayMeta;
+                }
+            }
+        }
+
+        return $this->get_selected_attribute_display_rows($baseProductId, $selectedAttributes);
     }
 
     public function maybe_restore_base_stock($order): void {

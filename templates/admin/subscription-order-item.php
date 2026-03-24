@@ -26,9 +26,9 @@ $rowClass = $editing ? 'item editing hb-ucs-sub-item-row' : 'item hb-ucs-sub-ite
                 <span class="hb-ucs-item-sku"><?php echo esc_html($sku); ?></span>
             </div>
 
-            <div class="wc-order-item-variation hb-ucs-item-variation-summary-wrap<?php echo $currentVariationId <= 0 ? ' is-empty' : ''; ?>"<?php echo $currentVariationId <= 0 ? ' style="display:none;"' : ''; ?>>
-                <strong><?php esc_html_e('Variatie-ID:', 'hb-ucs'); ?></strong>
-                <span class="hb-ucs-item-variation-summary"><?php echo esc_html($currentVariationId > 0 ? (string) $currentVariationId : ''); ?></span>
+            <div class="wc-order-item-variation hb-ucs-item-variation-summary-wrap<?php echo empty($variationSummary) ? ' is-empty' : ''; ?>"<?php echo empty($variationSummary) ? ' style="display:none;"' : ''; ?>>
+                <strong><?php esc_html_e('Gekozen opties:', 'hb-ucs'); ?></strong>
+                <span class="hb-ucs-item-variation-summary"><?php echo esc_html((string) ($variationSummary ?? '')); ?></span>
             </div>
 
             <?php $this->render_admin_template('subscription-order-item-meta.php', ['editing' => false, 'namePrefix' => '', 'rows' => $displayMetaRows]); ?>

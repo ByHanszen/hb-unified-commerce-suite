@@ -176,6 +176,9 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
             $item->set_subtotal_tax($subtotalTax);
             $item->set_total_tax($lineTax);
             $item->set_taxes($taxes);
+            if ((int) ($row['source_order_item_id'] ?? 0) > 0) {
+                $item->add_meta_data('_hb_ucs_subscription_source_order_item_id', (int) $row['source_order_item_id'], true);
+            }
 
             if ($product && is_object($product)) {
                 $item->set_name((string) $product->get_name());
@@ -192,7 +195,7 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
                 $item->set_name(sprintf(__('Abonnementsproduct #%d', 'hb-ucs'), $targetId > 0 ? $targetId : ($index + 1)));
             }
 
-            if (!empty($row['selected_attributes']) && is_array($row['selected_attributes'])) {
+            if ((int) ($row['base_variation_id'] ?? 0) <= 0 && !empty($row['selected_attributes']) && is_array($row['selected_attributes'])) {
                 foreach ((array) $row['selected_attributes'] as $attributeKey => $attributeValue) {
                     $attributeKey = sanitize_key((string) $attributeKey);
                     if ($attributeKey === '') {
@@ -200,6 +203,22 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
                     }
 
                     $item->add_meta_data($attributeKey, sanitize_text_field((string) $attributeValue), true);
+                }
+            }
+
+            if (!empty($row['display_meta']) && is_array($row['display_meta'])) {
+                foreach ((array) $row['display_meta'] as $displayMetaRow) {
+                    if (!is_array($displayMetaRow)) {
+                        continue;
+                    }
+
+                    $label = isset($displayMetaRow['label']) && is_scalar($displayMetaRow['label']) ? trim((string) $displayMetaRow['label']) : '';
+                    $value = isset($displayMetaRow['value']) && is_scalar($displayMetaRow['value']) ? trim((string) $displayMetaRow['value']) : '';
+                    if ($label === '' || $value === '') {
+                        continue;
+                    }
+
+                    $item->add_meta_data($label, sanitize_text_field($value), true);
                 }
             }
 
