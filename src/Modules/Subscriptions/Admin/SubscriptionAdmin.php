@@ -2,6 +2,7 @@
 
 namespace HB\UCS\Modules\Subscriptions\Admin;
 
+use HB\UCS\Core\Settings;
 use HB\UCS\Modules\Subscriptions\Domain\SubscriptionRepository;
 use HB\UCS\Modules\Subscriptions\Domain\SubscriptionService;
 use HB\UCS\Modules\Subscriptions\OrderTypes\SubscriptionOrderType;
@@ -1412,12 +1413,33 @@ class SubscriptionAdmin {
     }
 
     private function get_schedule_options(): array {
-        return [
-            '1w' => __('Elke week', 'hb-ucs'),
-            '2w' => __('Elke 2 weken', 'hb-ucs'),
-            '3w' => __('Elke 3 weken', 'hb-ucs'),
-            '4w' => __('Elke 4 weken', 'hb-ucs'),
+        $supported = [
+            '1w' => 1,
+            '2w' => 2,
+            '3w' => 3,
+            '4w' => 4,
+            '5w' => 5,
+            '6w' => 6,
+            '7w' => 7,
+            '8w' => 8,
         ];
+
+        $settings = get_option(Settings::OPT_SUBSCRIPTIONS, []);
+        $frequencies = isset($settings['frequencies']) && is_array($settings['frequencies']) ? $settings['frequencies'] : [];
+        $options = [];
+
+        foreach ($supported as $schemeKey => $interval) {
+            $row = isset($frequencies[$schemeKey]) && is_array($frequencies[$schemeKey]) ? $frequencies[$schemeKey] : [];
+            $label = isset($row['label']) ? trim((string) $row['label']) : '';
+            if ($label === '') {
+                $label = $interval === 1
+                    ? __('Elke week', 'hb-ucs')
+                    : sprintf(__('Elke %d weken', 'hb-ucs'), $interval);
+            }
+            $options[$schemeKey] = $label;
+        }
+
+        return $options;
     }
 
     private function get_subscription_statuses(): array {

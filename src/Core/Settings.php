@@ -183,10 +183,28 @@ class Settings {
                     'interval'=> 4,
                     'period'  => 'week',
                 ],
+                '5w' => [
+                    'enabled' => 0,
+                    'label'   => __('Elke 5 weken', 'hb-ucs'),
+                    'interval'=> 5,
+                    'period'  => 'week',
+                ],
                 '6w' => [
                     'enabled' => 0,
                     'label'   => __('Elke 6 weken', 'hb-ucs'),
                     'interval'=> 6,
+                    'period'  => 'week',
+                ],
+                '7w' => [
+                    'enabled' => 0,
+                    'label'   => __('Elke 7 weken', 'hb-ucs'),
+                    'interval'=> 7,
+                    'period'  => 'week',
+                ],
+                '8w' => [
+                    'enabled' => 0,
+                    'label'   => __('Elke 8 weken', 'hb-ucs'),
+                    'interval'=> 8,
                     'period'  => 'week',
                 ],
             ],
@@ -720,12 +738,14 @@ class Settings {
         echo '<p class="description">' . esc_html__('Beheer welke frequenties beschikbaar zijn op productpagina’s. Per product kun je daarna de prijs per frequentie instellen.', 'hb-ucs') . '</p>';
         echo '<table class="form-table" role="presentation"><tbody>';
 
-        foreach (['1w' => 1, '2w' => 2, '3w' => 3, '4w' => 4, '6w' => 6] as $key => $interval) {
+        foreach (['1w' => 1, '2w' => 2, '3w' => 3, '4w' => 4, '5w' => 5, '6w' => 6, '7w' => 7, '8w' => 8] as $key => $interval) {
             $row = is_array($freqs[$key] ?? null) ? (array) $freqs[$key] : [];
             $rowEnabled = !empty($row['enabled']);
             $rowLabel = (string) ($row['label'] ?? '');
             if ($rowLabel === '') {
-                $rowLabel = sprintf(__('Elke %d week/weken', 'hb-ucs'), (int) $interval);
+                $rowLabel = $interval === 1
+                    ? __('Elke week', 'hb-ucs')
+                    : sprintf(__('Elke %d weken', 'hb-ucs'), (int) $interval);
             }
 
             echo '<tr>';
@@ -739,7 +759,7 @@ class Settings {
             echo esc_html__('Label', 'hb-ucs') . ': ';
             echo '<input type="text" class="regular-text" name="hb_ucs_subscriptions[frequencies][' . esc_attr($key) . '][label]" value="' . esc_attr($rowLabel) . '" />';
             echo '</label>';
-            echo '<p class="description">' . esc_html(sprintf(__('Interval: %d week/weken (vast).', 'hb-ucs'), (int) $interval)) . '</p>';
+            echo '<p class="description">' . esc_html(sprintf(__('Interval: %d weken (vast).', 'hb-ucs'), (int) $interval)) . '</p>';
             echo '</td>';
             echo '</tr>';
         }
@@ -1064,12 +1084,14 @@ class Settings {
         $defaultFreqs = (array) ($defaults['frequencies'] ?? []);
 
         $cleanFreqs = [];
-        foreach (['1w' => 1, '2w' => 2, '3w' => 3, '4w' => 4, '6w' => 6] as $key => $interval) {
+        foreach (['1w' => 1, '2w' => 2, '3w' => 3, '4w' => 4, '5w' => 5, '6w' => 6, '7w' => 7, '8w' => 8] as $key => $interval) {
             $incoming = isset($raw['frequencies'][$key]) && is_array($raw['frequencies'][$key]) ? (array) $raw['frequencies'][$key] : [];
             $label = isset($incoming['label']) ? (string) wp_unslash($incoming['label']) : (string) (($defaultFreqs[$key]['label'] ?? ''));
             $label = trim($label);
             if ($label === '') {
-                $label = sprintf(__('Elke %d week/weken', 'hb-ucs'), (int) $interval);
+                $label = $interval === 1
+                    ? __('Elke week', 'hb-ucs')
+                    : sprintf(__('Elke %d weken', 'hb-ucs'), (int) $interval);
             }
 
             $cleanFreqs[$key] = [

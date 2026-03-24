@@ -103,7 +103,7 @@ if ($delete_subs) {
 
     // Remove product-level meta on base products.
     delete_metadata('post', 0, '_hb_ucs_subs_enabled', '', true);
-    foreach (['1w', '2w', '3w', '4w'] as $k) {
+    foreach (['1w', '2w', '3w', '4w', '5w', '6w', '7w', '8w'] as $k) {
         delete_metadata('post', 0, '_hb_ucs_subs_price_' . $k, '', true);
         delete_metadata('post', 0, '_hb_ucs_subs_child_' . $k, '', true);
 

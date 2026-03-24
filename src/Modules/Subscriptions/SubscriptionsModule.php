@@ -15,7 +15,7 @@ class SubscriptionsModule {
     private const ORDER_META_CONTAINS_SUBSCRIPTION = '_hb_ucs_contains_subscription';
 
     private const META_ENABLED = '_hb_ucs_subs_enabled';
-    private const META_PRICE_PREFIX = '_hb_ucs_subs_price_'; // suffix: 1w|2w|3w|4w|6w
+    private const META_PRICE_PREFIX = '_hb_ucs_subs_price_'; // suffix: 1w|2w|3w|4w|5w|6w|7w|8w
 
     private const META_DISC_ENABLED_PREFIX = '_hb_ucs_subs_disc_enabled_';
     private const META_DISC_TYPE_PREFIX = '_hb_ucs_subs_disc_type_';      // percent|fixed
@@ -9422,7 +9422,7 @@ JS;
 
         $freqsRaw = isset($opt['frequencies']) && is_array($opt['frequencies']) ? $opt['frequencies'] : [];
         $freqs = [];
-        foreach (['1w' => 1, '2w' => 2, '3w' => 3, '4w' => 4, '6w' => 6] as $key => $interval) {
+        foreach (['1w' => 1, '2w' => 2, '3w' => 3, '4w' => 4, '5w' => 5, '6w' => 6, '7w' => 7, '8w' => 8] as $key => $interval) {
             $row = isset($freqsRaw[$key]) && is_array($freqsRaw[$key]) ? $freqsRaw[$key] : [];
             $freqs[$key] = [
                 'enabled' => empty($row['enabled']) ? 0 : 1,
@@ -10067,7 +10067,7 @@ JS;
         $freqs = (array) ($settings['frequencies'] ?? []);
 
         $out = [];
-        foreach (['1w', '2w', '3w', '4w', '6w'] as $key) {
+        foreach (['1w', '2w', '3w', '4w', '5w', '6w', '7w', '8w'] as $key) {
             $row = isset($freqs[$key]) && is_array($freqs[$key]) ? $freqs[$key] : [];
             if ($enabledOnly && empty($row['enabled'])) {
                 continue;
@@ -11146,7 +11146,7 @@ JS;
 
     private function get_or_create_child_product_id(int $baseProductId, string $scheme): int {
         $scheme = sanitize_key($scheme);
-        if (!in_array($scheme, ['1w', '2w', '3w', '4w', '6w'], true)) {
+        if (!in_array($scheme, ['1w', '2w', '3w', '4w', '5w', '6w', '7w', '8w'], true)) {
             return 0;
         }
 
@@ -11197,7 +11197,7 @@ JS;
 
     private function get_or_create_child_product_id_for_variation(int $parentProductId, int $variationId, string $scheme): int {
         $scheme = sanitize_key($scheme);
-        if (!in_array($scheme, ['1w', '2w', '3w', '4w', '6w'], true)) {
+        if (!in_array($scheme, ['1w', '2w', '3w', '4w', '5w', '6w', '7w', '8w'], true)) {
             return 0;
         }
 
