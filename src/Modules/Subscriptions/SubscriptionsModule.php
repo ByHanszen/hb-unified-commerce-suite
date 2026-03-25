@@ -321,8 +321,59 @@ class SubscriptionsModule {
         }
 
         if (!empty($metaMap)) {
-            $this->persist_account_subscription_shadow_meta($subId, $metaMap);
+            foreach ($this->get_subscription_runtime_state_target_ids($subId) as $targetId) {
+                $this->persist_account_subscription_shadow_meta($targetId, $metaMap);
+            }
         }
+    }
+
+    /**
+     * @return int[]
+     */
+    private function get_subscription_runtime_state_target_ids(int $subId): array {
+        if ($subId <= 0) {
+            return [];
+        }
+
+        $targetIds = [$subId];
+        $record = $this->get_subscription_repository()->find($subId);
+
+        if (is_array($record) && (($record['storage'] ?? '') === 'order_type')) {
+            $legacyPostId = $this->get_subscription_repository()->get_linked_legacy_post_id($subId);
+            if ($legacyPostId > 0) {
+                $targetIds[] = $legacyPostId;
+            }
+        }
+
+        return array_values(array_unique(array_filter(array_map('intval', $targetIds))));
+    }
+
+    /**
+     * @return string[]
+     */
+    private function get_subscription_runtime_statuses(int $subId): array {
+        $statuses = [];
+
+        foreach ($this->get_subscription_runtime_state_target_ids($subId) as $targetId) {
+            foreach ([self::SUB_META_STATUS, '_hb_ucs_subscription_status'] as $metaKey) {
+                $status = sanitize_key((string) get_post_meta($targetId, $metaKey, true));
+                if ($status !== '') {
+                    $statuses[] = $status;
+                }
+            }
+        }
+
+        return array_values(array_unique($statuses));
+    }
+
+    private function get_subscription_runtime_blocking_status(int $subId): string {
+        foreach ($this->get_subscription_runtime_statuses($subId) as $status) {
+            if (in_array($status, ['on-hold', 'paused', 'cancelled', 'expired'], true)) {
+                return $status;
+            }
+        }
+
+        return '';
     }
 
     private function subscription_is_eligible_for_auto_renewal(int $subId): bool {
@@ -330,18 +381,19 @@ class SubscriptionsModule {
             return false;
         }
 
-        $legacyStatus = sanitize_key((string) get_post_meta($subId, self::SUB_META_STATUS, true));
-        $shadowStatus = sanitize_key((string) get_post_meta($subId, '_hb_ucs_subscription_status', true));
+        $statuses = $this->get_subscription_runtime_statuses($subId);
 
-        if ($legacyStatus !== '' && $legacyStatus !== 'active') {
+        if (empty($statuses)) {
             return false;
         }
 
-        if ($shadowStatus !== '' && $shadowStatus !== 'active') {
-            return false;
+        foreach ($statuses as $status) {
+            if ($status !== 'active') {
+                return false;
+            }
         }
 
-        return ($legacyStatus !== '' || $shadowStatus !== '');
+        return true;
     }
 
     private function persist_linked_legacy_subscription_items(int $subId, array $items): void {
@@ -6537,6 +6589,10 @@ class SubscriptionsModule {
             return;
         }
 
+        if ((string) $order->get_meta(self::ORDER_META_RENEWAL_MODE, true) !== 'mandate') {
+            return;
+        }
+
         $this->trigger_renewal_customer_email('customer_on_hold_renewal_order', $orderId, (int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true));
     }
 
@@ -9905,7 +9961,14 @@ JS;
                 if ($mCustomer !== '' && $mMandate !== '') {
                     update_post_meta($subId, self::SUB_META_MOLLIE_CUSTOMER_ID, $mCustomer);
                     update_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID, $mMandate);
-                    $this->persist_subscription_runtime_state($subId, 'active');
+
+                    $blockingStatus = $this->get_subscription_runtime_blocking_status($subId);
+                    if ($blockingStatus !== '') {
+                        $this->persist_subscription_runtime_state($subId, $blockingStatus);
+                    } else {
+                        $this->persist_subscription_runtime_state($subId, 'active');
+                    }
+
                     $this->sync_subscription_order_type_record($subId);
                     $this->hydrate_subscription_order_payment_data($subId, '', '', [
                         'customerId' => $mCustomer,
@@ -10182,8 +10245,6 @@ JS;
             $order->add_order_note(__('HB UCS: deze renewal gebruikt een handmatige/offline betaalmethode, vereist geen Mollie mandaat en staat direct op verwerken.', 'hb-ucs'));
         }
         $order->save();
-
-        $this->trigger_renewal_customer_email('customer_renewal_invoice', (int) $order->get_id(), $subId);
 
         if (!$requiresMandate) {
             $nextPayment = $this->calculate_next_payment_timestamp($subId);

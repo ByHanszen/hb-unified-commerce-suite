@@ -4,6 +4,14 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.122] — 2026-03-25
+### Fixed
+- Abonnementen: SEPA-renewals sturen niet langer direct een renewal-factuur/betaalverzoek; de klant ontvangt nu bij de on-hold automatische incasso-order een informatieve verlengingsmail met uitleg dat de incasso loopt en dat verzending/bevestiging volgt na succesvolle betaling.
+
+## [0.3.121] — 2026-03-25
+### Fixed
+- Abonnementen: runtime status-updates spiegelen nu ook naar gekoppelde legacy/order-type opslaglagen en renewal-eligibility weigert elke gekoppelde status die niet `active` is, zodat abonnementen op `on-hold` of `paused` geen renewals meer aanmaken door stale sync-meta.
+
 ## [0.3.120] — 2026-03-25
 ### Fixed
 - Abonnementen: de renewal-cron verwerkt nu due abonnementen in batches met uitsluiting van al behandelde IDs en sorteert op volgende betaaldatum, zodat productie-runs niet meer stil blijven hangen op alleen de eerste 10 te verlengen abonnementen.
