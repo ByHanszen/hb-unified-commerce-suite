@@ -32,6 +32,38 @@
   flex-wrap: wrap;
 }
 
+.hb-ucs-order-overview-status-sort {
+  width: 40px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.hb-ucs-order-overview-status-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: move;
+  color: #50575e;
+  text-decoration: none;
+}
+
+.hb-ucs-order-overview-status-handle:hover,
+.hb-ucs-order-overview-status-handle:focus {
+  color: #1d2327;
+}
+
+.hb-ucs-order-overview-status-handle .dashicons {
+  width: 20px;
+  height: 20px;
+  font-size: 20px;
+}
+
+.hb-ucs-order-overview-status-placeholder td {
+  height: 54px;
+  background: #f6f7f7;
+  border: 1px dashed #c3c4c7;
+}
+
 .hb-ucs-order-overview-status-color-preview {
   display: inline-flex;
   align-items: center;

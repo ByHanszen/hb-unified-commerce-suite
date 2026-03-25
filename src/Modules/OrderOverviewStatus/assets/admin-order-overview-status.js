@@ -47,6 +47,24 @@ jQuery(function ($) {
       return;
     }
 
+    if ($.fn.sortable) {
+      $rows.sortable({
+        axis: 'y',
+        handle: '.hb-ucs-order-overview-status-handle',
+        items: '> .hb-ucs-order-overview-status-row',
+        cursor: 'move',
+        helper: function (event, item) {
+          var $helper = item.clone();
+          $helper.children().each(function (index) {
+            $(this).width(item.children().eq(index).outerWidth());
+          });
+          return $helper;
+        },
+        placeholder: 'hb-ucs-order-overview-status-placeholder',
+        forcePlaceholderSize: true
+      });
+    }
+
     function nextIndex() {
       return $rows.find('.hb-ucs-order-overview-status-row').length;
     }

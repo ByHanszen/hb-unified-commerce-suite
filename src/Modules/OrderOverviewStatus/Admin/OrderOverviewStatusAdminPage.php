@@ -32,7 +32,9 @@ class OrderOverviewStatusAdminPage {
         $ver = defined('HB_UCS_VERSION') ? HB_UCS_VERSION : '0.0.0';
 
         wp_enqueue_style('hb-ucs-order-overview-status-admin', $base . 'admin-order-overview-status.css', [], $ver);
-        wp_enqueue_script('hb-ucs-order-overview-status-admin', $base . 'admin-order-overview-status.js', ['jquery'], $ver, true);
+        wp_enqueue_style('dashicons');
+        wp_enqueue_script('jquery-ui-sortable');
+        wp_enqueue_script('hb-ucs-order-overview-status-admin', $base . 'admin-order-overview-status.js', ['jquery', 'jquery-ui-sortable'], $ver, true);
         wp_localize_script('hb-ucs-order-overview-status-admin', 'HB_UCS_ORDER_OVERVIEW_STATUS_ADMIN', [
             'mode' => 'settings',
             'palette' => $this->settings->get_color_palette(),
@@ -40,6 +42,7 @@ class OrderOverviewStatusAdminPage {
                 'remove' => __('Verwijderen', 'hb-ucs'),
                 'emptyLabel' => __('Nieuwe status', 'hb-ucs'),
                 'emptySlugHint' => __('Laat leeg voor automatische slug', 'hb-ucs'),
+                'dragToSort' => __('Sleep om volgorde te wijzigen', 'hb-ucs'),
             ],
         ]);
     }
@@ -86,9 +89,10 @@ class OrderOverviewStatusAdminPage {
         echo '<p class="description">' . sprintf(esc_html__('Elke status krijgt een label, slug en één vaste WooCommerce-kleur. Laat de slug leeg om die automatisch uit het label te laten genereren. Het label mag maximaal %d tekens bevatten.', 'hb-ucs'), SettingsStore::MAX_LABEL_LENGTH) . '</p>';
         echo '<table class="widefat striped" style="max-width:900px;">';
         echo '<thead><tr>';
-        echo '<th style="width:30%;">' . esc_html__('Label', 'hb-ucs') . '</th>';
-        echo '<th style="width:28%;">' . esc_html__('Slug', 'hb-ucs') . '</th>';
-        echo '<th style="width:28%;">' . esc_html__('Kleur', 'hb-ucs') . '</th>';
+        echo '<th style="width:6%;">' . esc_html__('Volgorde', 'hb-ucs') . '</th>';
+        echo '<th style="width:28%;">' . esc_html__('Label', 'hb-ucs') . '</th>';
+        echo '<th style="width:26%;">' . esc_html__('Slug', 'hb-ucs') . '</th>';
+        echo '<th style="width:26%;">' . esc_html__('Kleur', 'hb-ucs') . '</th>';
         echo '<th style="width:14%;">' . esc_html__('Actie', 'hb-ucs') . '</th>';
         echo '</tr></thead>';
         echo '<tbody id="hb-ucs-order-overview-status-rows">';
@@ -170,6 +174,11 @@ class OrderOverviewStatusAdminPage {
         $preview = $palette[$color];
 
         echo '<tr class="hb-ucs-order-overview-status-row">';
+        echo '<td class="hb-ucs-order-overview-status-sort">';
+        echo '<button type="button" class="button-link hb-ucs-order-overview-status-handle" aria-label="' . esc_attr__('Sleep om volgorde te wijzigen', 'hb-ucs') . '" title="' . esc_attr__('Sleep om volgorde te wijzigen', 'hb-ucs') . '">';
+        echo '<span class="dashicons dashicons-menu"></span>';
+        echo '</button>';
+        echo '</td>';
         echo '<td><input type="text" class="regular-text" maxlength="' . esc_attr((string) SettingsStore::MAX_LABEL_LENGTH) . '" name="order_overview_status_settings[statuses][' . esc_attr((string) $index) . '][label]" value="' . esc_attr($label) . '" placeholder="' . esc_attr__('Bijvoorbeeld: In productie', 'hb-ucs') . '" /></td>';
         echo '<td><input type="text" class="regular-text code" name="order_overview_status_settings[statuses][' . esc_attr((string) $index) . '][id]" value="' . esc_attr($id) . '" placeholder="' . esc_attr__('Automatisch genereren', 'hb-ucs') . '" /></td>';
         echo '<td>';

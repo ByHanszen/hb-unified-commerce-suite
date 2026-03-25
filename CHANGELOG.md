@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.119] — 2026-03-25
+### Added
+- In de module `Besteloverzicht statussen` kun je de volgorde van statussen nu wijzigen via drag-and-drop in de instellingen. Die volgorde wordt direct gebruikt in de orderoverzicht-dropdown en filterlijst.
+
 ## [0.3.118] — 2026-03-25
 ### Changed
 - De extra status-dropdown in het WooCommerce bestellingenoverzicht gebruikt weer de volledige statuskleur op de gesloten geselecteerde dropdown, zodat de actieve status direct duidelijk zichtbaar is in het overzicht.
