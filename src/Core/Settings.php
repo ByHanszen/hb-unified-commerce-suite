@@ -14,6 +14,7 @@ class Settings {
     const OPT_INVOICE_EMAIL = 'hb_ucs_invoice_email_settings'; // Invoice e-mail module instellingen
     const OPT_CUSTOMER_ORDER_NOTE = 'hb_ucs_customer_order_note_settings'; // Klantnotitie module instellingen
     const OPT_SUBSCRIPTIONS = 'hb_ucs_subscriptions_settings'; // Subscriptions module instellingen
+    const OPT_ORDER_OVERVIEW_STATUS = 'hb_ucs_order_overview_status_settings'; // Orderoverzicht status module instellingen
     const LEGACY_QLS = 'qls_exclude_settings'; // oude plugin optie (migratie)
 
     public function init(): void {
@@ -31,6 +32,9 @@ class Settings {
         // Rollenbeheer handlers
         add_action('admin_init', [$this, 'init_roles_admin']);
 
+        // Besteloverzicht statussen handlers
+        add_action('admin_init', [$this, 'init_order_overview_status_admin']);
+
         // Form handlers (fix voor “De link is verlopen”)
         add_action('admin_post_hb_ucs_save_qls', [$this, 'handle_save_qls']);
         add_action('admin_post_hb_ucs_qls_recalc', [$this, 'handle_recalc_qls']);
@@ -44,6 +48,7 @@ class Settings {
         add_option(self::OPT_INVOICE_EMAIL, $this->defaults_invoice_email());
         add_option(self::OPT_CUSTOMER_ORDER_NOTE, $this->defaults_customer_order_note());
         add_option(self::OPT_SUBSCRIPTIONS, $this->defaults_subscriptions());
+        add_option(self::OPT_ORDER_OVERVIEW_STATUS, $this->defaults_order_overview_status());
     }
 
     public function enqueue_admin_assets(string $hook): void {
@@ -112,6 +117,11 @@ class Settings {
         (new \HB\UCS\Modules\Roles\Admin\RolesAdminPage())->register_handlers();
     }
 
+    public function init_order_overview_status_admin(): void {
+        if (!class_exists('HB\\UCS\\Modules\\OrderOverviewStatus\\Admin\\OrderOverviewStatusAdminPage')) return;
+        (new \HB\UCS\Modules\OrderOverviewStatus\Admin\OrderOverviewStatusAdminPage())->register_handlers();
+    }
+
     private function defaults_main(): array {
         return [
             'modules' => [
@@ -121,6 +131,7 @@ class Settings {
                 'roles'         => 0,
                 'customer_order_note' => 0,
                 'subscriptions' => 0,
+                'order_overview_status' => 0,
             ],
         ];
     }
@@ -208,6 +219,13 @@ class Settings {
                     'period'  => 'week',
                 ],
             ],
+        ];
+    }
+
+    private function defaults_order_overview_status(): array {
+        return [
+            'delete_data_on_uninstall' => 0,
+            'statuses' => [],
         ];
     }
 
@@ -304,6 +322,22 @@ class Settings {
 
         add_submenu_page(
             'hb-ucs',
+            __('Besteloverzicht statussen', 'hb-ucs'),
+            __('Bestelstatussen', 'hb-ucs'),
+            'manage_options',
+            'hb-ucs-order-overview-status',
+            function () {
+                if (class_exists('HB\\UCS\\Modules\\OrderOverviewStatus\\Admin\\OrderOverviewStatusAdminPage')) {
+                    (new \HB\UCS\Modules\OrderOverviewStatus\Admin\OrderOverviewStatusAdminPage())->render();
+                    return;
+                }
+                echo '<div class="wrap"><h1>' . esc_html__('Besteloverzicht statussen', 'hb-ucs') . '</h1>';
+                echo '<div class="notice notice-error"><p>' . esc_html__('Bestelstatusmodule is niet geladen.', 'hb-ucs') . '</p></div></div>';
+            }
+        );
+
+        add_submenu_page(
+            'hb-ucs',
             __('B2B klanten', 'hb-ucs'),
             __('B2B', 'hb-ucs'),
             'manage_options',
@@ -387,6 +421,14 @@ class Settings {
             $checked = !empty($mods['subscriptions']) ? 'checked' : '';
             echo '<label><input type="checkbox" name="'.esc_attr(self::OPT).'[modules][subscriptions]" value="1" '.$checked.'/> '.esc_html__('Activeren', 'hb-ucs').'</label>';
             echo '<p class="description">'.esc_html__('Maak van reguliere producten optioneel een abonnement (1–4 weken).', 'hb-ucs').'</p>';
+        }, 'hb-ucs', 'hb_ucs_modules');
+
+        add_settings_field('order_overview_status', __('Besteloverzicht statussen', 'hb-ucs'), function () {
+            $opt = get_option(self::OPT, $this->defaults_main());
+            $mods = $opt['modules'] ?? [];
+            $checked = !empty($mods['order_overview_status']) ? 'checked' : '';
+            echo '<label><input type="checkbox" name="'.esc_attr(self::OPT).'[modules][order_overview_status]" value="1" '.$checked.'/> '.esc_html__('Activeren', 'hb-ucs').'</label>';
+            echo '<p class="description">'.esc_html__('Voegt een extra beheerbare statuskolom toe aan het WooCommerce bestellingenoverzicht met direct opslaan via dropdown.', 'hb-ucs').'</p>';
         }, 'hb-ucs', 'hb_ucs_modules');
     }
 

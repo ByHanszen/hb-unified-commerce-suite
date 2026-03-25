@@ -4,6 +4,50 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.118] — 2026-03-25
+### Changed
+- De extra status-dropdown in het WooCommerce bestellingenoverzicht gebruikt weer de volledige statuskleur op de gesloten geselecteerde dropdown, zodat de actieve status direct duidelijk zichtbaar is in het overzicht.
+
+## [0.3.117] — 2026-03-25
+### Changed
+- De extra status-dropdown in het WooCommerce bestellingenoverzicht toont nu bij de actieve status een subtiele kleurindicator in het gesloten overzicht, terwijl de dropdown zelf verder neutraal blijft.
+
+## [0.3.116] — 2026-03-25
+### Changed
+- De gesloten extra status-dropdown in het WooCommerce bestellingenoverzicht blijft nu neutraal van achtergrond en rand, maar toont de geselecteerde status wel in de juiste WooCommerce-statuskleur zodat de actieve waarde direct zichtbaar is in het overzicht.
+
+## [0.3.115] — 2026-03-25
+### Changed
+- De extra status in het WooCommerce bestellingenoverzicht is weer één enkele dropdown. De gesloten dropdown blijft neutraal, terwijl alleen de waarden in de dropdownlijst hun eigen statuskleur gebruiken.
+
+## [0.3.114] — 2026-03-25
+### Changed
+- De extra statusweergave in het WooCommerce bestellingenoverzicht gebruikt nu een aparte gekleurde badge naast een neutrale dropdown. Daardoor blijft alleen de zichtbare status gekleurd in het overzicht, terwijl de dropdown zelf standaard oogt en geopende opties hun eigen kleur behouden.
+
+## [0.3.113] — 2026-03-25
+### Changed
+- De tekstkleuren van de extra HB UCS-statussen zijn nu exact gelijkgetrokken met de standaard WooCommerce admin-orderstatuskleuren, zodat de gekleurde statusdropdown visueel hetzelfde kleurcontrast gebruikt als de native orderstatus-badges.
+
+## [0.3.112] — 2026-03-25
+### Changed
+- De gekleurde extra status-dropdown in het WooCommerce bestellingenoverzicht gebruikt nu dezelfde normale tekstdikte als standaard WooCommerce-selects, zodat de kolomweergave visueel beter aansluit op de standaard orderregels.
+
+## [0.3.111] — 2026-03-25
+### Added
+- In het WooCommerce bestellingenoverzicht kun je nu ook filteren op de extra HB UCS-overzichtsstatussen via een dropdown boven de orderlijst, zowel voor klassieke orders als HPOS.
+
+## [0.3.110] — 2026-03-25
+### Changed
+- De module `Besteloverzicht statussen` dwingt statuslabels nu af op maximaal 28 tekens, zowel in de instellingen-UI als tijdens server-side opslag, zodat labels netjes leesbaar blijven in de WooCommerce orderkolom.
+
+## [0.3.109] — 2026-03-25
+### Added
+- De module `Besteloverzicht statussen` ondersteunt nu per status een vaste WooCommerce-kleurkeuze uit standaard orderstatuskleuren. Die kleur is meteen zichtbaar in de dropdownkolom van het WooCommerce bestellingenoverzicht.
+
+## [0.3.108] — 2026-03-25
+### Added
+- Nieuwe module `Besteloverzicht statussen` toegevoegd. Beheerders kunnen nu in HB UCS eigen extra orderoverzicht-statussen beheren en deze als aparte dropdownkolom direct in het WooCommerce bestellingenoverzicht aanpassen; wijzigingen worden meteen op de order opgeslagen.
+
 ## [0.3.107] — 2026-03-24
 ### Fixed
 - Backend abonnementen rondde interne ex-btw regelprijzen tijdens sync/heropbouw nog te vroeg af op de zichtbare shopprecisie (`wc_get_price_decimals()`, vaak 2 decimalen). De repository en datastore gebruiken nu WooCommerce-interne afrondingsprecisie voor opslag- en rekentussenstappen, zodat handmatige kortingen van 1 cent niet meer verdwijnen door een te vroege afronding.

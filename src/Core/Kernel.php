@@ -32,6 +32,10 @@ class Kernel {
             (new \HB\UCS\Modules\Subscriptions\SubscriptionsModule())->init();
         }
 
+        if (!empty($mods['order_overview_status']) && class_exists('HB\\UCS\\Modules\\OrderOverviewStatus\\OrderOverviewStatusModule')) {
+            (new \HB\UCS\Modules\OrderOverviewStatus\OrderOverviewStatusModule())->init();
+        }
+
         if (!empty($mods['customer_order_note']) && class_exists('HB\\UCS\\Modules\\CustomerOrderNote\\CustomerOrderNoteModule')) {
             (new \HB\UCS\Modules\CustomerOrderNote\CustomerOrderNoteModule())->init();
         }
