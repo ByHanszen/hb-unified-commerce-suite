@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.120] — 2026-03-25
+### Fixed
+- Abonnementen: de renewal-cron verwerkt nu due abonnementen in batches met uitsluiting van al behandelde IDs en sorteert op volgende betaaldatum, zodat productie-runs niet meer stil blijven hangen op alleen de eerste 10 te verlengen abonnementen.
+
 ## [0.3.119] — 2026-03-25
 ### Added
 - In de module `Besteloverzicht statussen` kun je de volgorde van statussen nu wijzigen via drag-and-drop in de instellingen. Die volgorde wordt direct gebruikt in de orderoverzicht-dropdown en filterlijst.

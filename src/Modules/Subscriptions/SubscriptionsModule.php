@@ -9859,30 +9859,34 @@ JS;
         }
 
         $now = time();
+        $batchSize = max(1, (int) apply_filters('hb_ucs_subscription_renewal_batch_size', 25));
+        $maxPerRun = max($batchSize, (int) apply_filters('hb_ucs_subscription_renewal_max_per_run', 250));
+        $processedPendingIds = [];
 
         // First: try to activate subscriptions that are waiting for a Mollie mandate.
-        $pending = function_exists('wc_get_orders')
-            ? wc_get_orders([
-                'type' => $this->get_subscription_order_type()->get_type(),
-                'limit' => 10,
-                'return' => 'ids',
-                'status' => array_keys(wc_get_order_statuses()),
-                'meta_query' => [
-                    [
-                        'key' => self::SUB_META_STATUS,
-                        'value' => 'pending_mandate',
-                        'compare' => '=',
-                    ],
-                ],
-            ])
-            : [];
-        if (!empty($pending)) {
+        while (count($processedPendingIds) < $maxPerRun) {
+            $pending = $this->get_pending_mandate_subscription_batch(
+                min($batchSize, $maxPerRun - count($processedPendingIds)),
+                array_keys($processedPendingIds)
+            );
+
+            if (empty($pending)) {
+                break;
+            }
+
             foreach ($pending as $subId) {
                 $subId = (int) $subId;
-                if ($subId <= 0) continue;
+                if ($subId <= 0) {
+                    continue;
+                }
+
+                $processedPendingIds[$subId] = true;
+
                 $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
                 $parentOrder = $parentOrderId > 0 ? wc_get_order($parentOrderId) : null;
-                if (!$parentOrder) continue;
+                if (!$parentOrder) {
+                    continue;
+                }
 
                 $mCustomer = (string) $parentOrder->get_meta('_mollie_customer_id', true);
                 $mMandate = (string) $parentOrder->get_meta('_mollie_mandate_id', true);
@@ -9911,48 +9915,100 @@ JS;
             }
         }
 
-        $q = function_exists('wc_get_orders')
-            ? wc_get_orders([
-                'type' => $this->get_subscription_order_type()->get_type(),
-                'limit' => 10,
-                'return' => 'ids',
-                'status' => array_keys(wc_get_order_statuses()),
-                'meta_query' => [
-                    [
-                        'key' => self::SUB_META_STATUS,
-                        'value' => ['active'],
-                        'compare' => 'IN',
-                    ],
-                    [
-                        'key' => self::SUB_META_NEXT_PAYMENT,
-                        'value' => (string) $now,
-                        'type' => 'NUMERIC',
-                        'compare' => '<=',
-                    ],
+        $processedDueIds = [];
+        while (count($processedDueIds) < $maxPerRun) {
+            $q = $this->get_due_renewal_subscription_batch(
+                $now,
+                min($batchSize, $maxPerRun - count($processedDueIds)),
+                array_keys($processedDueIds)
+            );
+
+            if (empty($q)) {
+                break;
+            }
+
+            foreach ($q as $subId) {
+                $subId = (int) $subId;
+                if ($subId <= 0) {
+                    continue;
+                }
+
+                $processedDueIds[$subId] = true;
+
+                if (!$this->subscription_is_eligible_for_auto_renewal($subId)) {
+                    continue;
+                }
+
+                $result = $this->create_renewal_order_and_payment($subId, false);
+                if (is_wp_error($result)) {
+                    $this->persist_subscription_runtime_state($subId, 'on-hold');
+                    $this->sync_subscription_order_type_record($subId);
+                }
+            }
+        }
+    }
+
+    private function get_pending_mandate_subscription_batch(int $limit, array $excludeIds = []): array {
+        if ($limit <= 0 || !function_exists('wc_get_orders')) {
+            return [];
+        }
+
+        $queryArgs = [
+            'type' => $this->get_subscription_order_type()->get_type(),
+            'limit' => $limit,
+            'return' => 'ids',
+            'status' => array_keys(wc_get_order_statuses()),
+            'meta_query' => [
+                [
+                    'key' => self::SUB_META_STATUS,
+                    'value' => 'pending_mandate',
+                    'compare' => '=',
                 ],
-            ])
-            : [];
+            ],
+        ];
 
-        if (empty($q)) {
-            return;
+        $excludeIds = array_values(array_filter(array_map('intval', $excludeIds)));
+        if (!empty($excludeIds)) {
+            $queryArgs['exclude'] = $excludeIds;
         }
 
-        foreach ($q as $subId) {
-            $subId = (int) $subId;
-            if ($subId <= 0) {
-                continue;
-            }
+        return array_values(array_filter(array_map('intval', (array) wc_get_orders($queryArgs))));
+    }
 
-            if (!$this->subscription_is_eligible_for_auto_renewal($subId)) {
-                continue;
-            }
-
-            $result = $this->create_renewal_order_and_payment($subId, false);
-            if (is_wp_error($result)) {
-                $this->persist_subscription_runtime_state($subId, 'on-hold');
-                $this->sync_subscription_order_type_record($subId);
-            }
+    private function get_due_renewal_subscription_batch(int $now, int $limit, array $excludeIds = []): array {
+        if ($limit <= 0 || !function_exists('wc_get_orders')) {
+            return [];
         }
+
+        $queryArgs = [
+            'type' => $this->get_subscription_order_type()->get_type(),
+            'limit' => $limit,
+            'return' => 'ids',
+            'status' => array_keys(wc_get_order_statuses()),
+            'meta_key' => self::SUB_META_NEXT_PAYMENT,
+            'orderby' => 'meta_value_num',
+            'order' => 'ASC',
+            'meta_query' => [
+                [
+                    'key' => self::SUB_META_STATUS,
+                    'value' => ['active'],
+                    'compare' => 'IN',
+                ],
+                [
+                    'key' => self::SUB_META_NEXT_PAYMENT,
+                    'value' => (string) $now,
+                    'type' => 'NUMERIC',
+                    'compare' => '<=',
+                ],
+            ],
+        ];
+
+        $excludeIds = array_values(array_filter(array_map('intval', $excludeIds)));
+        if (!empty($excludeIds)) {
+            $queryArgs['exclude'] = $excludeIds;
+        }
+
+        return array_values(array_filter(array_map('intval', (array) wc_get_orders($queryArgs))));
     }
 
     private function create_renewal_order_and_payment(int $subId, bool $force = false) {
