@@ -87,7 +87,7 @@ class SubscriptionOrderType {
             'add_order_meta_boxes' => true,
             'exclude_from_order_count' => true,
             'exclude_from_order_views' => true,
-            'exclude_from_order_webhooks' => false,
+            'exclude_from_order_webhooks' => true,
             'exclude_from_order_reports' => true,
             'exclude_from_order_sales_reports' => true,
         ]));

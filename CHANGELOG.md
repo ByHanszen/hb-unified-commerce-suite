@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.125] — 2026-03-30
+### Fixed
+- Abonnementen: het interne HB UCS subscription order type `shop_subscription_hb` is nu uitgesloten van standaard WooCommerce order webhooks. Externe systemen ontvangen daardoor niet langer zowel het subscription-record als de gekoppelde echte order als twee losse orders.
+
 ## [0.3.124] — 2026-03-30
 ### Fixed
 - Abonnementen: de minuutcron voor pending mandates en runtime-sync slaat subscription-status, mandate- en payment-meta niet langer opnieuw op als er inhoudelijk niets veranderde. Daardoor veroorzaken niet-due abonnementen geen onnodige order-type saves en externe WooCommerce webhooks meer.
