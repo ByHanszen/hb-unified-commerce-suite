@@ -297,11 +297,12 @@ class SubscriptionAdmin {
 
         $status = isset($_GET['hb_ucs_sub_status']) ? sanitize_key((string) wp_unslash($_GET['hb_ucs_sub_status'])) : '';
         if ($status !== '' && $currentOrderStatus !== 'trash') {
-            $metaQuery[] = [
-                'key' => '_hb_ucs_subscription_status',
-                'value' => $status,
-                'compare' => '=',
-            ];
+            $metaQuery[] = $this->build_subscription_status_meta_query($status);
+
+            $orderStatuses = $this->get_query_order_statuses_for_subscription_status($status);
+            if (!empty($orderStatuses)) {
+                $queryArgs['status'] = $orderStatuses;
+            }
         }
 
         $scheme = isset($_GET['hb_ucs_sub_scheme']) ? sanitize_key((string) wp_unslash($_GET['hb_ucs_sub_scheme'])) : '';
@@ -1509,6 +1510,22 @@ class SubscriptionAdmin {
         return $options;
     }
 
+    private function build_subscription_status_meta_query(string $status): array {
+        return [
+            'relation' => 'OR',
+            [
+                'key' => '_hb_ucs_subscription_status',
+                'value' => $status,
+                'compare' => '=',
+            ],
+            [
+                'key' => SubscriptionRepository::LEGACY_STATUS_META,
+                'value' => $status,
+                'compare' => '=',
+            ],
+        ];
+    }
+
     private function get_subscription_statuses(): array {
         return [
             'active' => __('Actief', 'hb-ucs'),
@@ -1531,6 +1548,25 @@ class SubscriptionAdmin {
             'cancelled' => 'wc-cancelled',
             'expired' => 'wc-cancelled',
         ];
+    }
+
+    private function get_query_order_statuses_for_subscription_status(string $subscriptionStatus): array {
+        switch (sanitize_key($subscriptionStatus)) {
+            case 'active':
+                return ['wc-processing', 'wc-completed'];
+            case 'pending_mandate':
+            case 'payment_pending':
+                return ['wc-pending'];
+            case 'on-hold':
+            case 'paused':
+                return ['wc-on-hold'];
+            case 'cancelled':
+                return ['wc-cancelled'];
+            case 'expired':
+                return ['wc-failed'];
+            default:
+                return [];
+        }
     }
 
     private function map_subscription_status_to_order_status(string $subscriptionStatus): string {
