@@ -10238,22 +10238,28 @@ JS;
             }
         }
         $order->calculate_totals(false);
+
+        // Persist renewal markers before status hooks fire so renewal orders are
+        // never re-processed as source orders for fresh subscriptions.
+        $order->save();
+
         if ($requiresMandate) {
             $order->update_status('on-hold', __('HB UCS: renewal aangemaakt, wacht op SEPA incasso.', 'hb-ucs'));
         } else {
             $order->update_status('processing', __('HB UCS: renewal aangemaakt en direct in verwerking gezet voor handmatige/offline betaalmethode.', 'hb-ucs'));
             $order->add_order_note(__('HB UCS: deze renewal gebruikt een handmatige/offline betaalmethode, vereist geen Mollie mandaat en staat direct op verwerken.', 'hb-ucs'));
         }
-        $order->save();
+
+        $nextPayment = $this->calculate_next_payment_timestamp($subId);
+        $runtimeStatus = $requiresMandate ? '' : 'active';
+        $this->persist_subscription_runtime_state($subId, $runtimeStatus, $nextPayment);
+        update_post_meta($subId, self::SUB_META_LAST_ORDER_ID, (string) (int) $order->get_id());
+        $created = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
+        $createdTs = $created ? (int) $created->getTimestamp() : time();
+        update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $createdTs);
+        $this->sync_subscription_order_type_record($subId);
 
         if (!$requiresMandate) {
-            $nextPayment = $this->calculate_next_payment_timestamp($subId);
-            $this->persist_subscription_runtime_state($subId, 'active', $nextPayment);
-            update_post_meta($subId, self::SUB_META_LAST_ORDER_ID, (string) (int) $order->get_id());
-            $created = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
-            $createdTs = $created ? (int) $created->getTimestamp() : time();
-            update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $createdTs);
-            $this->sync_subscription_order_type_record($subId);
             return (int) $order->get_id();
         }
 
@@ -10295,17 +10301,8 @@ JS;
         $order->add_order_note(sprintf(__('HB UCS: Mollie recurring betaling gestart (%s).', 'hb-ucs'), $paymentId));
         $order->save();
 
-        $nextPayment = $this->calculate_next_payment_timestamp($subId);
-        $this->persist_subscription_runtime_state($subId, '', $nextPayment);
         $this->add_subscription_admin_note($subId, __('Abonnement blijft actief totdat betaling mislukt, omdat een SEPA incasso betaling enige tijd nodig heeft om te verwerken.', 'hb-ucs'));
         update_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, $paymentId);
-
-        // Store last order pointers for admin list.
-        update_post_meta($subId, self::SUB_META_LAST_ORDER_ID, (string) (int) $order->get_id());
-        $created = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
-        $createdTs = $created ? (int) $created->getTimestamp() : time();
-        update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $createdTs);
-        $this->sync_subscription_order_type_record($subId);
 
         return (int) $order->get_id();
     }
