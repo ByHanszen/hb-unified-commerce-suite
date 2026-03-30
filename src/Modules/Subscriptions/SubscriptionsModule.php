@@ -5240,6 +5240,7 @@ class SubscriptionsModule {
     private function get_subscription_shipping_lines(int $subId): array {
         $stored = get_post_meta($subId, self::SUB_META_SHIPPING_LINES, true);
         $lines = [];
+        $seen = [];
 
         if (!is_array($stored)) {
             return $lines;
@@ -5252,6 +5253,12 @@ class SubscriptionsModule {
 
             $line = $this->normalize_subscription_shipping_line($row);
             if ($line) {
+                $hash = $this->get_subscription_shipping_line_hash($line);
+                if (isset($seen[$hash])) {
+                    continue;
+                }
+
+                $seen[$hash] = true;
                 $lines[] = $line;
             }
         }
@@ -5298,6 +5305,7 @@ class SubscriptionsModule {
     private function get_subscription_fee_lines(int $subId): array {
         $stored = get_post_meta($subId, self::SUB_META_FEE_LINES, true);
         $lines = [];
+        $seen = [];
 
         if (!is_array($stored)) {
             return $lines;
@@ -5310,6 +5318,12 @@ class SubscriptionsModule {
 
             $line = $this->normalize_subscription_fee_line($row);
             if ($line) {
+                $hash = $this->get_subscription_fee_line_hash($line);
+                if (isset($seen[$hash])) {
+                    continue;
+                }
+
+                $seen[$hash] = true;
                 $lines[] = $line;
             }
         }
@@ -5319,6 +5333,7 @@ class SubscriptionsModule {
 
     private function persist_subscription_fee_lines(int $subId, array $lines): void {
         $normalized = [];
+        $seen = [];
         foreach ($lines as $line) {
             if (!is_array($line)) {
                 continue;
@@ -5326,11 +5341,25 @@ class SubscriptionsModule {
 
             $row = $this->normalize_subscription_fee_line($line);
             if ($row) {
+                $hash = $this->get_subscription_fee_line_hash($row);
+                if (isset($seen[$hash])) {
+                    continue;
+                }
+
+                $seen[$hash] = true;
                 $normalized[] = $row;
             }
         }
 
         update_post_meta($subId, self::SUB_META_FEE_LINES, $normalized);
+    }
+
+    private function get_subscription_fee_line_hash(array $line): string {
+        return wp_json_encode([
+            'name' => (string) ($line['name'] ?? ''),
+            'total' => wc_format_decimal((string) ($line['total'] ?? 0.0), wc_get_price_decimals()),
+            'taxes' => isset($line['taxes']) && is_array($line['taxes']) ? $line['taxes'] : [],
+        ]);
     }
 
     private function extract_subscription_fee_lines($order): array {
@@ -5358,7 +5387,7 @@ class SubscriptionsModule {
         return $lines;
     }
 
-    private function get_effective_subscription_shipping_lines(int $subId, $fallbackOrder = null): array {
+    private function get_effective_subscription_shipping_lines(int $subId, $fallbackOrder = null, bool $persistRecovered = true): array {
         $lines = $this->get_subscription_shipping_lines($subId);
         if (!empty($lines) || metadata_exists('post', $subId, self::SUB_META_SHIPPING_LINES)) {
             return $lines;
@@ -5368,7 +5397,9 @@ class SubscriptionsModule {
         if ($subscriptionOrder) {
             $lines = $this->extract_subscription_shipping_lines($subscriptionOrder);
             if (!empty($lines)) {
-                $this->persist_subscription_shipping_lines($subId, $lines);
+                if ($persistRecovered) {
+                    $this->persist_subscription_shipping_lines($subId, $lines);
+                }
                 return $lines;
             }
         }
@@ -5381,7 +5412,7 @@ class SubscriptionsModule {
         return $fallbackOrder ? $this->extract_subscription_shipping_lines($fallbackOrder) : [];
     }
 
-    private function get_effective_subscription_fee_lines(int $subId, $fallbackOrder = null): array {
+    private function get_effective_subscription_fee_lines(int $subId, $fallbackOrder = null, bool $persistRecovered = true): array {
         $lines = $this->get_subscription_fee_lines($subId);
         if (!empty($lines) || metadata_exists('post', $subId, self::SUB_META_FEE_LINES)) {
             return $lines;
@@ -5391,7 +5422,9 @@ class SubscriptionsModule {
         if ($subscriptionOrder) {
             $lines = $this->extract_subscription_fee_lines($subscriptionOrder);
             if (!empty($lines)) {
-                $this->persist_subscription_fee_lines($subId, $lines);
+                if ($persistRecovered) {
+                    $this->persist_subscription_fee_lines($subId, $lines);
+                }
                 return $lines;
             }
         }
@@ -5406,6 +5439,7 @@ class SubscriptionsModule {
 
     private function persist_subscription_shipping_lines(int $subId, array $lines): void {
         $normalized = [];
+        $seen = [];
         foreach ($lines as $line) {
             if (!is_array($line)) {
                 continue;
@@ -5413,11 +5447,27 @@ class SubscriptionsModule {
 
             $row = $this->normalize_subscription_shipping_line($line);
             if ($row) {
+                $hash = $this->get_subscription_shipping_line_hash($row);
+                if (isset($seen[$hash])) {
+                    continue;
+                }
+
+                $seen[$hash] = true;
                 $normalized[] = $row;
             }
         }
 
         update_post_meta($subId, self::SUB_META_SHIPPING_LINES, $normalized);
+    }
+
+    private function get_subscription_shipping_line_hash(array $line): string {
+        return wp_json_encode([
+            'method_id' => (string) ($line['method_id'] ?? ''),
+            'method_title' => (string) ($line['method_title'] ?? ''),
+            'instance_id' => (int) ($line['instance_id'] ?? 0),
+            'total' => wc_format_decimal((string) ($line['total'] ?? 0.0), wc_get_price_decimals()),
+            'taxes' => isset($line['taxes']) && is_array($line['taxes']) ? $line['taxes'] : [],
+        ]);
     }
 
     private function calculate_subscription_shipping_lines(int $subId, array $items, $fallbackOrder = null): array {
@@ -6187,7 +6237,7 @@ class SubscriptionsModule {
             return;
         }
 
-        foreach ($this->get_effective_subscription_fee_lines($subId, $fallbackOrder) as $feeLine) {
+        foreach ($this->get_effective_subscription_fee_lines($subId, $fallbackOrder, false) as $feeLine) {
             if (!is_array($feeLine)) {
                 continue;
             }
@@ -6207,7 +6257,7 @@ class SubscriptionsModule {
             return;
         }
 
-        $shippingLines = $this->get_effective_subscription_shipping_lines($subId, $fallbackOrder);
+        $shippingLines = $this->get_effective_subscription_shipping_lines($subId, $fallbackOrder, false);
 
         foreach ($shippingLines as $shippingLine) {
             if (!is_array($shippingLine)) {
