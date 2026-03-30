@@ -13,6 +13,7 @@ class SubscriptionsModule {
     private const RENEWAL_CRON_RECURRENCE = 'hb_ucs_every_minute';
     private const ACCOUNT_ENDPOINT = 'abonnementen';
     private const ORDER_META_CONTAINS_SUBSCRIPTION = '_hb_ucs_contains_subscription';
+    private const SHOP_ORDER_SUBSCRIPTION_FILTER_PARAM = 'hb_ucs_subscription_context';
 
     private const META_ENABLED = '_hb_ucs_subs_enabled';
     private const META_PRICE_PREFIX = '_hb_ucs_subs_price_'; // suffix: 1w|2w|3w|4w|5w|6w|7w|8w
@@ -121,6 +122,10 @@ class SubscriptionsModule {
             add_action('manage_shop_order_posts_custom_column', [$this, 'render_shop_order_subscription_column_legacy'], 20, 2);
             add_filter('manage_woocommerce_page_wc-orders_columns', [$this, 'filter_shop_order_subscription_columns'], 20);
             add_action('manage_woocommerce_page_wc-orders_custom_column', [$this, 'render_shop_order_subscription_column_hpos'], 20, 2);
+            add_action('restrict_manage_posts', [$this, 'render_shop_order_subscription_filters_legacy'], 20, 1);
+            add_action('woocommerce_order_list_table_restrict_manage_orders', [$this, 'render_shop_order_subscription_filters_hpos'], 20, 2);
+            add_action('pre_get_posts', [$this, 'filter_shop_order_subscription_query_legacy'], 20);
+            add_filter('woocommerce_order_query_args', [$this, 'filter_shop_order_subscription_query_hpos'], 20, 1);
 
             add_action('admin_post_hb_ucs_subs_run_now', [$this, 'handle_run_renewals_now']);
             add_action('admin_post_hb_ucs_subs_create_demo', [$this, 'handle_create_demo_subscription']);
@@ -288,24 +293,23 @@ class SubscriptionsModule {
         return $map[sanitize_key($status)] ?? 'pending';
     }
 
-    private function persist_account_subscription_shadow_meta(int $subId, array $metaMap): void {
+    private function persist_account_subscription_shadow_meta(int $subId, array $metaMap): bool {
         if ($subId <= 0) {
-            return;
+            return false;
         }
+
+        $changed = false;
 
         foreach ($metaMap as $metaKey => $metaValue) {
-            if ($metaValue === '' || $metaValue === null || $metaValue === []) {
-                delete_post_meta($subId, (string) $metaKey);
-                continue;
-            }
-
-            update_post_meta($subId, (string) $metaKey, $metaValue);
+            $changed = $this->update_subscription_post_meta_if_changed($subId, (string) $metaKey, $metaValue) || $changed;
         }
+
+        return $changed;
     }
 
-    private function persist_subscription_runtime_state(int $subId, string $status = '', ?int $nextPayment = null): void {
+    private function persist_subscription_runtime_state(int $subId, string $status = '', ?int $nextPayment = null): bool {
         if ($subId <= 0) {
-            return;
+            return false;
         }
 
         $metaMap = [];
@@ -320,11 +324,52 @@ class SubscriptionsModule {
             $metaMap['_hb_ucs_subscription_next_payment'] = (int) $nextPayment;
         }
 
-        if (!empty($metaMap)) {
-            foreach ($this->get_subscription_runtime_state_target_ids($subId) as $targetId) {
-                $this->persist_account_subscription_shadow_meta($targetId, $metaMap);
-            }
+        if (empty($metaMap)) {
+            return false;
         }
+
+        $changed = false;
+
+        foreach ($this->get_subscription_runtime_state_target_ids($subId) as $targetId) {
+            $changed = $this->persist_account_subscription_shadow_meta($targetId, $metaMap) || $changed;
+        }
+
+        return $changed;
+    }
+
+    private function update_subscription_post_meta_if_changed(int $postId, string $metaKey, $metaValue): bool {
+        if ($postId <= 0 || $metaKey === '') {
+            return false;
+        }
+
+        if ($metaValue === '' || $metaValue === null || $metaValue === []) {
+            if (!metadata_exists('post', $postId, $metaKey)) {
+                return false;
+            }
+
+            delete_post_meta($postId, $metaKey);
+            return true;
+        }
+
+        $current = get_post_meta($postId, $metaKey, true);
+        if ($this->subscription_meta_values_equal($current, $metaValue)) {
+            return false;
+        }
+
+        update_post_meta($postId, $metaKey, $metaValue);
+        return true;
+    }
+
+    private function subscription_meta_values_equal($currentValue, $newValue): bool {
+        if (is_array($currentValue) || is_array($newValue)) {
+            return maybe_serialize($currentValue) === maybe_serialize($newValue);
+        }
+
+        if (is_bool($currentValue) || is_bool($newValue)) {
+            return (bool) $currentValue === (bool) $newValue;
+        }
+
+        return (string) $currentValue === (string) $newValue;
     }
 
     /**
@@ -6168,14 +6213,14 @@ class SubscriptionsModule {
         return $context;
     }
 
-    private function hydrate_subscription_order_payment_data(int $subId, string $paymentMethod = '', string $paymentMethodTitle = '', array $mollie = [], $fallbackOrder = null): void {
+    private function hydrate_subscription_order_payment_data(int $subId, string $paymentMethod = '', string $paymentMethodTitle = '', array $mollie = [], $fallbackOrder = null): bool {
         if ($subId <= 0 || !function_exists('wc_get_order')) {
-            return;
+            return false;
         }
 
         $order = wc_get_order($subId);
         if (!$order || !is_object($order)) {
-            return;
+            return false;
         }
 
         if (($paymentMethod === '' || $paymentMethodTitle === '') && $fallbackOrder && is_object($fallbackOrder)) {
@@ -6204,10 +6249,20 @@ class SubscriptionsModule {
             }
         }
 
+        $changed = false;
+
         if ($paymentMethod !== '' && method_exists($order, 'set_payment_method')) {
+            $currentPaymentMethod = method_exists($order, 'get_payment_method') ? (string) $order->get_payment_method() : '';
+            if ($currentPaymentMethod !== $paymentMethod) {
+                $changed = true;
+            }
             $order->set_payment_method($paymentMethod);
         }
         if ($paymentMethodTitle !== '' && method_exists($order, 'set_payment_method_title')) {
+            $currentPaymentMethodTitle = method_exists($order, 'get_payment_method_title') ? (string) $order->get_payment_method_title() : '';
+            if ($currentPaymentMethodTitle !== $paymentMethodTitle) {
+                $changed = true;
+            }
             $order->set_payment_method_title($paymentMethodTitle);
         }
 
@@ -6221,15 +6276,31 @@ class SubscriptionsModule {
 
         foreach ($metaMap as $metaKey => $metaValue) {
             if ($metaValue !== '') {
+                $currentMetaValue = method_exists($order, 'get_meta') ? $order->get_meta($metaKey, true) : get_post_meta($subId, $metaKey, true);
+                if (!$this->subscription_meta_values_equal($currentMetaValue, $metaValue)) {
+                    $changed = true;
+                }
                 $order->update_meta_data($metaKey, $metaValue);
             } else {
+                $hasMeta = method_exists($order, 'meta_exists')
+                    ? $order->meta_exists($metaKey)
+                    : metadata_exists('post', $subId, $metaKey);
+                if ($hasMeta) {
+                    $changed = true;
+                }
                 $order->delete_meta_data($metaKey);
             }
+        }
+
+        if (!$changed) {
+            return false;
         }
 
         if (method_exists($order, 'save')) {
             $order->save();
         }
+
+        return true;
     }
 
     private function apply_subscription_fee_lines_to_order($order, int $subId, $fallbackOrder = null): void {
@@ -9277,6 +9348,67 @@ JS;
         return $newColumns;
     }
 
+    public function render_shop_order_subscription_filters_legacy(string $postType): void {
+        if ($postType !== 'shop_order') {
+            return;
+        }
+
+        $this->render_shop_order_subscription_filter_dropdown();
+    }
+
+    public function render_shop_order_subscription_filters_hpos(string $orderType, string $which): void {
+        if ($which !== 'top' || $orderType !== 'shop_order') {
+            return;
+        }
+
+        $this->render_shop_order_subscription_filter_dropdown();
+    }
+
+    public function filter_shop_order_subscription_query_legacy($query): void {
+        if (!($query instanceof \WP_Query) || !is_admin() || !$query->is_main_query()) {
+            return;
+        }
+
+        $postType = $query->get('post_type');
+        if ($postType !== 'shop_order') {
+            return;
+        }
+
+        $metaQuery = $query->get('meta_query');
+        if (!is_array($metaQuery)) {
+            $metaQuery = [];
+        }
+
+        foreach ($this->get_shop_order_subscription_query_meta_clauses() as $metaClause) {
+            $metaQuery[] = $metaClause;
+        }
+
+        if (!empty($metaQuery)) {
+            $query->set('meta_query', $metaQuery);
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $queryArgs
+     * @return array<string,mixed>
+     */
+    public function filter_shop_order_subscription_query_hpos(array $queryArgs): array {
+        if (!$this->is_hpos_shop_order_list_screen()) {
+            return $queryArgs;
+        }
+
+        $metaQuery = isset($queryArgs['meta_query']) && is_array($queryArgs['meta_query']) ? $queryArgs['meta_query'] : [];
+        foreach ($this->get_shop_order_subscription_query_meta_clauses() as $metaClause) {
+            $metaQuery[] = $metaClause;
+        }
+
+        if (!empty($metaQuery)) {
+            $queryArgs['meta_query'] = $metaQuery;
+        }
+
+        return $queryArgs;
+    }
+
     public function render_shop_order_subscription_column_legacy(string $column, int $postId): void {
         if ($column !== 'hb_ucs_subscription') {
             return;
@@ -9323,6 +9455,143 @@ JS;
 
         $classes[] = 'hb-ucs-order-subscription-indicator--unlinked';
         echo '<span class="' . esc_attr(implode(' ', $classes)) . '" title="' . esc_attr($label) . '">' . $icon . '</span>';
+    }
+
+    private function render_shop_order_subscription_filter_dropdown(): void {
+        $current = $this->get_active_shop_order_subscription_filter();
+
+        echo '<select name="' . esc_attr(self::SHOP_ORDER_SUBSCRIPTION_FILTER_PARAM) . '">';
+        echo '<option value="">' . esc_html__('Alle bestellingen', 'hb-ucs') . '</option>';
+        echo '<option value="regular" ' . selected($current, 'regular', false) . '>' . esc_html__('Alleen gewone bestellingen', 'hb-ucs') . '</option>';
+        echo '<option value="subscription_related" ' . selected($current, 'subscription_related', false) . '>' . esc_html__('Alleen abonnement-gerelateerd', 'hb-ucs') . '</option>';
+        echo '<option value="parent" ' . selected($current, 'parent', false) . '>' . esc_html__('Alleen startbestellingen', 'hb-ucs') . '</option>';
+        echo '<option value="renewal" ' . selected($current, 'renewal', false) . '>' . esc_html__('Alleen renewal-orders', 'hb-ucs') . '</option>';
+        echo '</select>';
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private function get_shop_order_subscription_query_meta_clauses(): array {
+        $metaQuery = [];
+
+        $subscriptionId = $this->get_requested_shop_order_subscription_id();
+        if ($subscriptionId > 0) {
+            $metaQuery[] = [
+                'key' => self::ORDER_META_SUBSCRIPTION_ID,
+                'value' => (string) $subscriptionId,
+                'compare' => '=',
+            ];
+        }
+
+        $filter = $this->get_active_shop_order_subscription_filter();
+        if ($filter === '') {
+            return $metaQuery;
+        }
+
+        if ($filter === 'regular') {
+            $metaQuery[] = [
+                'relation' => 'AND',
+                [
+                    'key' => self::ORDER_META_SUBSCRIPTION_ID,
+                    'compare' => 'NOT EXISTS',
+                ],
+                [
+                    'relation' => 'OR',
+                    [
+                        'key' => self::ORDER_META_CONTAINS_SUBSCRIPTION,
+                        'compare' => 'NOT EXISTS',
+                    ],
+                    [
+                        'key' => self::ORDER_META_CONTAINS_SUBSCRIPTION,
+                        'value' => 'yes',
+                        'compare' => '!=',
+                    ],
+                ],
+            ];
+
+            return $metaQuery;
+        }
+
+        if ($filter === 'subscription_related') {
+            $metaQuery[] = [
+                'relation' => 'OR',
+                [
+                    'key' => self::ORDER_META_SUBSCRIPTION_ID,
+                    'compare' => 'EXISTS',
+                ],
+                [
+                    'key' => self::ORDER_META_CONTAINS_SUBSCRIPTION,
+                    'value' => 'yes',
+                    'compare' => '=',
+                ],
+            ];
+
+            return $metaQuery;
+        }
+
+        if ($filter === 'parent') {
+            $metaQuery[] = [
+                'key' => self::ORDER_META_CONTAINS_SUBSCRIPTION,
+                'value' => 'yes',
+                'compare' => '=',
+            ];
+            $metaQuery[] = [
+                'relation' => 'OR',
+                [
+                    'key' => self::ORDER_META_RENEWAL,
+                    'compare' => 'NOT EXISTS',
+                ],
+                [
+                    'key' => self::ORDER_META_RENEWAL,
+                    'value' => '1',
+                    'compare' => '!=',
+                ],
+            ];
+
+            return $metaQuery;
+        }
+
+        if ($filter === 'renewal') {
+            $metaQuery[] = [
+                'key' => self::ORDER_META_RENEWAL,
+                'value' => '1',
+                'compare' => '=',
+            ];
+        }
+
+        return $metaQuery;
+    }
+
+    private function get_active_shop_order_subscription_filter(): string {
+        $filter = isset($_GET[self::SHOP_ORDER_SUBSCRIPTION_FILTER_PARAM])
+            ? sanitize_key(wp_unslash((string) $_GET[self::SHOP_ORDER_SUBSCRIPTION_FILTER_PARAM]))
+            : '';
+
+        return in_array($filter, ['regular', 'subscription_related', 'parent', 'renewal'], true) ? $filter : '';
+    }
+
+    private function get_requested_shop_order_subscription_id(): int {
+        return isset($_GET['hb_ucs_subscription_id']) ? absint(wp_unslash((string) $_GET['hb_ucs_subscription_id'])) : 0;
+    }
+
+    private function is_hpos_shop_order_list_screen(): bool {
+        if (!is_admin()) {
+            return false;
+        }
+
+        if (isset($_GET['page']) && (string) $_GET['page'] === 'wc-orders') {
+            $orderType = isset($_GET['type']) ? sanitize_key((string) $_GET['type']) : 'shop_order';
+
+            return $orderType === 'shop_order';
+        }
+
+        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+        if (!$screen || empty($screen->id)) {
+            return false;
+        }
+
+        return $screen->id === 'woocommerce_page_wc-orders';
     }
 
     private function get_shop_order_subscription_context($order): array {
@@ -10009,21 +10278,26 @@ JS;
                     }
                 }
                 if ($mCustomer !== '' && $mMandate !== '') {
-                    update_post_meta($subId, self::SUB_META_MOLLIE_CUSTOMER_ID, $mCustomer);
-                    update_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID, $mMandate);
+                    $mollieMetaChanged = false;
+                    $mollieMetaChanged = $this->update_subscription_post_meta_if_changed($subId, self::SUB_META_MOLLIE_CUSTOMER_ID, $mCustomer) || $mollieMetaChanged;
+                    $mollieMetaChanged = $this->update_subscription_post_meta_if_changed($subId, self::SUB_META_MOLLIE_MANDATE_ID, $mMandate) || $mollieMetaChanged;
 
                     $blockingStatus = $this->get_subscription_runtime_blocking_status($subId);
+                    $runtimeStateChanged = false;
                     if ($blockingStatus !== '') {
-                        $this->persist_subscription_runtime_state($subId, $blockingStatus);
+                        $runtimeStateChanged = $this->persist_subscription_runtime_state($subId, $blockingStatus);
                     } else {
-                        $this->persist_subscription_runtime_state($subId, 'active');
+                        $runtimeStateChanged = $this->persist_subscription_runtime_state($subId, 'active');
                     }
 
-                    $this->sync_subscription_order_type_record($subId);
-                    $this->hydrate_subscription_order_payment_data($subId, '', '', [
+                    $paymentDataChanged = $this->hydrate_subscription_order_payment_data($subId, '', '', [
                         'customerId' => $mCustomer,
                         'mandateId' => $mMandate,
                     ], $parentOrder);
+
+                    if ($mollieMetaChanged || $runtimeStateChanged || $paymentDataChanged) {
+                        $this->sync_subscription_order_type_record($subId);
+                    }
                 }
             }
         }

@@ -4,6 +4,14 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.124] — 2026-03-30
+### Fixed
+- Abonnementen: de minuutcron voor pending mandates en runtime-sync slaat subscription-status, mandate- en payment-meta niet langer opnieuw op als er inhoudelijk niets veranderde. Daardoor veroorzaken niet-due abonnementen geen onnodige order-type saves en externe WooCommerce webhooks meer.
+
+## [0.3.123] — 2026-03-30
+### Added
+- Abonnementen: in het WooCommerce bestellingenoverzicht kun je `shop_order`-regels nu expliciet onderscheiden via een nieuwe filter voor gewone bestellingen, abonnement-gerelateerde orders, startbestellingen en renewal-orders. Interne orderoverzicht-links met `hb_ucs_subscription_id` filteren nu ook mee op het gekoppelde abonnement.
+
 ## [0.3.122] — 2026-03-25
 ### Fixed
 - Abonnementen: SEPA-renewals sturen niet langer direct een renewal-factuur/betaalverzoek; de klant ontvangt nu bij de on-hold automatische incasso-order een informatieve verlengingsmail met uitleg dat de incasso loopt en dat verzending/bevestiging volgt na succesvolle betaling.
