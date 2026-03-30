@@ -238,7 +238,7 @@ class SubscriptionAdmin {
         }
 
         if ($column === 'hb_ucs_subscription_status') {
-            $status = $this->get_subscription_status_for_order($order);
+            $status = $this->get_display_subscription_status_for_order($order);
 
             echo wp_kses_post($this->get_subscription_status_badge_html($status));
             return;
@@ -293,9 +293,10 @@ class SubscriptionAdmin {
 
     public function filter_order_type_query_args(array $queryArgs): array {
         $metaQuery = isset($queryArgs['meta_query']) && is_array($queryArgs['meta_query']) ? $queryArgs['meta_query'] : [];
+        $currentOrderStatus = $this->get_current_order_type_status_request();
 
         $status = isset($_GET['hb_ucs_sub_status']) ? sanitize_key((string) wp_unslash($_GET['hb_ucs_sub_status'])) : '';
-        if ($status !== '') {
+        if ($status !== '' && $currentOrderStatus !== 'trash') {
             $metaQuery[] = [
                 'key' => '_hb_ucs_subscription_status',
                 'value' => $status,
@@ -314,6 +315,10 @@ class SubscriptionAdmin {
 
         if (!empty($metaQuery)) {
             $queryArgs['meta_query'] = $metaQuery;
+        }
+
+        if ($currentOrderStatus === 'trash') {
+            $queryArgs['status'] = ['trash'];
         }
 
         $orderby = isset($_GET['orderby']) ? sanitize_key((string) wp_unslash($_GET['orderby'])) : '';
@@ -1339,6 +1344,29 @@ class SubscriptionAdmin {
         }
     }
 
+    private function get_display_subscription_status_for_order($order): string {
+        if ($this->is_order_in_trash($order)) {
+            return 'trash';
+        }
+
+        return $this->get_subscription_status_for_order($order);
+    }
+
+    private function is_order_in_trash($order): bool {
+        if (!$order || !is_object($order)) {
+            return false;
+        }
+
+        $orderStatus = method_exists($order, 'get_status') ? sanitize_key((string) $order->get_status()) : '';
+        if ($orderStatus === 'trash') {
+            return true;
+        }
+
+        $orderId = method_exists($order, 'get_id') ? (int) $order->get_id() : 0;
+
+        return $orderId > 0 && get_post_status($orderId) === 'trash';
+    }
+
     private function get_subscription_timestamp_for_order($order, string $primaryMetaKey, string $fallbackMetaKey): int {
         if (!$order || !is_object($order) || !method_exists($order, 'get_meta')) {
             return 0;
@@ -1515,7 +1543,9 @@ class SubscriptionAdmin {
     private function get_subscription_status_badge_html(string $status): string {
         $status = sanitize_key($status);
         $statuses = $this->get_subscription_statuses();
-        $label = isset($statuses[$status]) ? (string) $statuses[$status] : ($status !== '' ? $status : '—');
+        $label = $status === 'trash'
+            ? __('Verwijderd', 'hb-ucs')
+            : (isset($statuses[$status]) ? (string) $statuses[$status] : ($status !== '' ? $status : '—'));
         $class = 'hb-ucs-subscription-status-badge hb-ucs-subscription-status-badge--' . sanitize_html_class($status !== '' ? $status : 'unknown');
 
         return '<span class="' . esc_attr($class) . '">' . esc_html($label) . '</span>';
