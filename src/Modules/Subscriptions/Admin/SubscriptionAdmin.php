@@ -1037,6 +1037,23 @@ class SubscriptionAdmin {
             }
 
             $timestamp = $this->parse_datetime_local((string) wp_unslash($_POST[$inputKey]));
+            if (
+                $inputKey === 'hb_ucs_sub_next_payment'
+                && $this->is_create_renewal_order_request()
+                && $timestamp > 0
+            ) {
+                $persistedTimestamp = $this->get_persisted_subscription_timestamp_for_order(
+                    $orderId,
+                    '_hb_ucs_subscription_next_payment',
+                    SubscriptionRepository::LEGACY_NEXT_PAYMENT_META
+                );
+                $previousTimestamp = (int) ($previousDates['_hb_ucs_subscription_next_payment'] ?? 0);
+
+                if ($persistedTimestamp > 0 && $persistedTimestamp !== $timestamp && $timestamp === $previousTimestamp) {
+                    $timestamp = $persistedTimestamp;
+                }
+            }
+
             if ($timestamp > 0) {
                 if ($metaKey === '_hb_ucs_subscription_next_payment' && method_exists($order, 'set_next_payment_timestamp')) {
                     $order->set_next_payment_timestamp($timestamp);
@@ -1379,6 +1396,27 @@ class SubscriptionAdmin {
         }
 
         return (int) $order->get_meta($fallbackMetaKey, true);
+    }
+
+    private function get_persisted_subscription_timestamp_for_order(int $orderId, string $primaryMetaKey, string $fallbackMetaKey): int {
+        if ($orderId <= 0) {
+            return 0;
+        }
+
+        $timestamp = (int) get_post_meta($orderId, $primaryMetaKey, true);
+        if ($timestamp > 0) {
+            return $timestamp;
+        }
+
+        return (int) get_post_meta($orderId, $fallbackMetaKey, true);
+    }
+
+    private function is_create_renewal_order_request(): bool {
+        if (!isset($_POST['wc_order_action'])) {
+            return false;
+        }
+
+        return sanitize_key((string) wp_unslash($_POST['wc_order_action'])) === 'hb_ucs_create_renewal_order';
     }
 
     private function handle_subscription_status_action($order, string $status, string $note): void {

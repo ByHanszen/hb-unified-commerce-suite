@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.126] — 2026-04-01
+### Fixed
+- Abonnementen: handmatig aangemaakte renewal-orders vanuit de abonnementeditor behouden nu de direct doorgeschoven volgende betaaldatum. De admin-save schrijft de oude formulierdatum niet langer terug over de verse renewal-datum, terwijl expliciete handmatige datumwijzigingen en automatische online renewals ongewijzigd blijven.
+
 ## [0.3.125] — 2026-03-30
 ### Fixed
 - Abonnementen: het interne HB UCS subscription order type `shop_subscription_hb` is nu uitgesloten van standaard WooCommerce order webhooks. Externe systemen ontvangen daardoor niet langer zowel het subscription-record als de gekoppelde echte order als twee losse orders.
