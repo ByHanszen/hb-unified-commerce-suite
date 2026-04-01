@@ -219,17 +219,6 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
                 $item->set_name(sprintf(__('Abonnementsproduct #%d', 'hb-ucs'), $targetId > 0 ? $targetId : ($index + 1)));
             }
 
-            if ((int) ($row['base_variation_id'] ?? 0) <= 0 && !empty($row['selected_attributes']) && is_array($row['selected_attributes'])) {
-                foreach ((array) $row['selected_attributes'] as $attributeKey => $attributeValue) {
-                    $attributeKey = sanitize_key((string) $attributeKey);
-                    if ($attributeKey === '') {
-                        continue;
-                    }
-
-                    $item->add_meta_data($attributeKey, sanitize_text_field((string) $attributeValue), true);
-                }
-            }
-
             $displayMetaRows = [];
             if (!empty($row['display_meta']) && is_array($row['display_meta'])) {
                 $displayMetaRows = (array) $row['display_meta'];

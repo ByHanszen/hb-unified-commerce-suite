@@ -1375,17 +1375,6 @@ class SubscriptionRepository {
                 $item->add_meta_data('_hb_ucs_subscription_selected_attributes', wp_json_encode($selectedAttributes), true);
             }
 
-            if ($variationId <= 0) {
-                foreach ($selectedAttributes as $attributeKey => $attributeValue) {
-                    $attributeKey = sanitize_key((string) $attributeKey);
-                    if ($attributeKey === '') {
-                        continue;
-                    }
-
-                    $item->add_meta_data($attributeKey, sanitize_text_field((string) $attributeValue), true);
-                }
-            }
-
             $displayMetaRows = [];
             if (!empty($row['display_meta']) && is_array($row['display_meta'])) {
                 $displayMetaRows = (array) $row['display_meta'];

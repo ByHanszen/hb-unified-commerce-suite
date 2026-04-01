@@ -3699,11 +3699,35 @@ class SubscriptionsModule {
         return $fallbackId > 0 ? ('#' . $fallbackId) : '';
     }
 
+    private function normalize_selected_attribute_key(string $key): string {
+        $key = ltrim(sanitize_key($key), '_');
+
+        if ($key === '' || $key === 'attribute_') {
+            return '';
+        }
+
+        if (strpos($key, 'attribute_') === 0) {
+            return $key;
+        }
+
+        return 'attribute_' . $key;
+    }
+
+    private function is_subscription_selected_attribute_meta_key(string $metaKey): bool {
+        $normalizedKey = ltrim(sanitize_key($metaKey), '_');
+
+        if ($normalizedKey === '') {
+            return false;
+        }
+
+        return strpos($normalizedKey, 'attribute_') === 0 || strpos($normalizedKey, 'pa_') === 0;
+    }
+
     private function sanitize_selected_attributes_map(array $attributes): array {
         $clean = [];
 
         foreach ($attributes as $key => $value) {
-            $key = sanitize_key((string) $key);
+            $key = $this->normalize_selected_attribute_key((string) $key);
             $value = sanitize_title((string) $value);
 
             if ($key === '' || $key === 'attribute_' || $value === '') {
@@ -3795,7 +3819,7 @@ class SubscriptionsModule {
             return true;
         }
 
-        if (strpos($normalizedKey, 'attribute_') === 0) {
+        if ($this->is_subscription_selected_attribute_meta_key($normalizedKey)) {
             return true;
         }
 
@@ -3818,7 +3842,7 @@ class SubscriptionsModule {
         }
 
         $normalizedKey = ltrim(sanitize_key($metaKey), '_');
-        if ($normalizedKey === '' || strpos($normalizedKey, 'attribute_') === 0) {
+        if ($normalizedKey === '' || $this->is_subscription_selected_attribute_meta_key($normalizedKey)) {
             return true;
         }
 
@@ -4982,6 +5006,16 @@ class SubscriptionsModule {
         foreach ($items as $index => $item) {
             if (!is_array($item)) {
                 continue;
+            }
+
+            $currentSelectedAttributes = isset($item['selected_attributes']) && is_array($item['selected_attributes'])
+                ? $this->sanitize_selected_attributes_map($item['selected_attributes'])
+                : [];
+            $resolvedSelectedAttributes = $this->get_subscription_item_selected_attributes($item);
+
+            if ($resolvedSelectedAttributes !== $currentSelectedAttributes) {
+                $item['selected_attributes'] = $resolvedSelectedAttributes;
+                $didRepair = true;
             }
 
             $sourceItem = null;
@@ -10502,14 +10536,6 @@ JS;
                 $item->add_meta_data(self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID, (int) $subscriptionItem['source_order_item_id'], true);
             }
             $item->add_meta_data(self::ORDER_ITEM_META_CATALOG_UNIT_PRICE, $this->get_subscription_item_catalog_unit_price($subscriptionItem), true);
-            if ($baseVariationId <= 0) {
-                foreach ($this->get_subscription_item_selected_attributes($subscriptionItem) as $attributeKey => $attributeValue) {
-                    if ($attributeKey === '' || $attributeValue === '') {
-                        continue;
-                    }
-                    $item->add_meta_data($attributeKey, $attributeValue, true);
-                }
-            }
             foreach ($this->get_subscription_item_effective_display_meta($subId, $subscriptionItem) as $displayMetaRow) {
                 $label = (string) ($displayMetaRow['label'] ?? '');
                 $value = (string) ($displayMetaRow['value'] ?? '');
@@ -11446,9 +11472,15 @@ JS;
 
     public function filter_order_item_formatted_meta_data(array $formattedMeta, $item): array {
         $isAdminContext = is_admin();
+        $isSubscriptionItem = $this->is_subscription_order_item($item);
         $seen = [];
         foreach ($formattedMeta as $metaId => $meta) {
             if (!is_object($meta) || !isset($meta->key)) {
+                continue;
+            }
+
+            if ($isSubscriptionItem && $this->is_subscription_selected_attribute_meta_key((string) $meta->key)) {
+                unset($formattedMeta[$metaId]);
                 continue;
             }
 
