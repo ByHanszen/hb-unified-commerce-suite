@@ -70,6 +70,7 @@ class SubscriptionsModule {
     private const ORDER_META_RENEWAL = '_hb_ucs_subscription_renewal';
     private const ORDER_META_RENEWAL_MODE = '_hb_ucs_subscription_renewal_mode';
     private const ORDER_META_RENEWAL_PROCESSED = '_hb_ucs_subscription_renewal_processed';
+    private const ORDER_META_RENEWAL_NEXT_PAYMENT = '_hb_ucs_subscription_renewal_next_payment';
     private const ORDER_META_MOLLIE_PAYMENT_ID = '_hb_ucs_mollie_payment_id';
     private const ORDER_ITEM_META_SELECTED_ATTRIBUTES = '_hb_ucs_subscription_selected_attributes';
     private const ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID = '_hb_ucs_subscription_source_order_item_id';
@@ -6352,6 +6353,9 @@ class SubscriptionsModule {
             $newFee->set_total((float) ($feeLine['total'] ?? 0.0));
             if (!empty($feeLine['taxes']) && is_array($feeLine['taxes'])) {
                 $newFee->set_taxes((array) $feeLine['taxes']);
+                if (method_exists($newFee, 'set_total_tax')) {
+                    $newFee->set_total_tax((float) array_sum($this->normalize_subscription_tax_amounts($feeLine['taxes'])));
+                }
             }
             $order->add_item($newFee);
         }
@@ -6376,6 +6380,9 @@ class SubscriptionsModule {
             $newShip->set_total((float) ($shippingLine['total'] ?? 0.0));
             if (!empty($shippingLine['taxes']) && is_array($shippingLine['taxes'])) {
                 $newShip->set_taxes((array) $shippingLine['taxes']);
+                if (method_exists($newShip, 'set_total_tax')) {
+                    $newShip->set_total_tax((float) array_sum($this->normalize_subscription_tax_amounts($shippingLine['taxes'])));
+                }
             }
             $order->add_item($newShip);
         }
@@ -8541,7 +8548,7 @@ class SubscriptionsModule {
                 $paid = method_exists($order, 'get_date_paid') ? $order->get_date_paid() : null;
                 $paidTs = $paid ? (int) $paid->getTimestamp() : time();
                 update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $paidTs);
-                $this->mark_subscription_paid_and_advance($subId);
+                $this->persist_subscription_runtime_state($subId, 'active', $this->get_recorded_renewal_next_payment($order, $subId));
                 $this->sync_subscription_order_type_record($subId);
             }
         } elseif ($status === 'failed' || $status === 'canceled' || $status === 'expired') {
@@ -8594,6 +8601,25 @@ class SubscriptionsModule {
         }
 
         return $next;
+    }
+
+    private function get_recorded_renewal_next_payment($order, int $subId): int {
+        $recordedNextPayment = 0;
+
+        if ($order && is_object($order) && method_exists($order, 'get_meta')) {
+            $recordedNextPayment = (int) $order->get_meta(self::ORDER_META_RENEWAL_NEXT_PAYMENT, true);
+        }
+
+        if ($recordedNextPayment > time()) {
+            return $recordedNextPayment;
+        }
+
+        $currentNextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
+        if ($currentNextPayment > time()) {
+            return $currentNextPayment;
+        }
+
+        return $this->calculate_next_payment_timestamp($subId);
     }
 
     private function mark_subscription_paid_and_advance(int $subId): void {
@@ -10589,9 +10615,20 @@ JS;
         }
         $order->calculate_totals(false);
 
+        $nextPayment = $this->calculate_next_payment_timestamp($subId);
+        $runtimeStatus = $requiresMandate ? '' : 'active';
+        $order->update_meta_data(self::ORDER_META_RENEWAL_NEXT_PAYMENT, (string) $nextPayment);
+
         // Persist renewal markers before status hooks fire so renewal orders are
         // never re-processed as source orders for fresh subscriptions.
         $order->save();
+
+        $this->persist_subscription_runtime_state($subId, $runtimeStatus, $nextPayment);
+        update_post_meta($subId, self::SUB_META_LAST_ORDER_ID, (string) (int) $order->get_id());
+        $created = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
+        $createdTs = $created ? (int) $created->getTimestamp() : time();
+        update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $createdTs);
+        $this->sync_subscription_order_type_record($subId);
 
         if ($requiresMandate) {
             $order->update_status('on-hold', __('HB UCS: renewal aangemaakt, wacht op SEPA incasso.', 'hb-ucs'));
@@ -10599,15 +10636,6 @@ JS;
             $order->update_status('processing', __('HB UCS: renewal aangemaakt en direct in verwerking gezet voor handmatige/offline betaalmethode.', 'hb-ucs'));
             $order->add_order_note(__('HB UCS: deze renewal gebruikt een handmatige/offline betaalmethode, vereist geen Mollie mandaat en staat direct op verwerken.', 'hb-ucs'));
         }
-
-        $nextPayment = $this->calculate_next_payment_timestamp($subId);
-        $runtimeStatus = $requiresMandate ? '' : 'active';
-        $this->persist_subscription_runtime_state($subId, $runtimeStatus, $nextPayment);
-        update_post_meta($subId, self::SUB_META_LAST_ORDER_ID, (string) (int) $order->get_id());
-        $created = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
-        $createdTs = $created ? (int) $created->getTimestamp() : time();
-        update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $createdTs);
-        $this->sync_subscription_order_type_record($subId);
 
         if (!$requiresMandate) {
             return (int) $order->get_id();
@@ -10743,13 +10771,8 @@ JS;
         $paid = method_exists($order, 'get_date_paid') ? $order->get_date_paid() : null;
         $paidTs = $paid ? (int) $paid->getTimestamp() : time();
         update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $paidTs);
-        $nextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
-        if ($nextPayment > time()) {
-            $this->persist_subscription_runtime_state($subId, 'active', $nextPayment);
-            $this->sync_subscription_order_type_record($subId);
-        } else {
-            $this->mark_subscription_paid_and_advance($subId);
-        }
+        $this->persist_subscription_runtime_state($subId, 'active', $this->get_recorded_renewal_next_payment($order, $subId));
+        $this->sync_subscription_order_type_record($subId);
 
         if (method_exists($order, 'add_order_note')) {
             $order->add_order_note(__('HB UCS: handmatige renewal betaald; volgende abonnementsdatum is bijgewerkt.', 'hb-ucs'));
