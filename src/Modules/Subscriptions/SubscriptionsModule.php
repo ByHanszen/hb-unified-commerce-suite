@@ -2905,8 +2905,7 @@ class SubscriptionsModule {
                     $qty = isset($row['qty']) ? (int) absint((string) $row['qty']) : 1;
                     $existingItem = isset($existingItems[$index]) && is_array($existingItems[$index]) ? $existingItems[$index] : null;
                     $existingSelectedId = $existingItem ? (int) (($existingItem['base_variation_id'] ?? 0) > 0 ? $existingItem['base_variation_id'] : ($existingItem['base_product_id'] ?? 0)) : 0;
-                    $fallbackUnit = ($existingItem && $existingSelectedId === $selectedId) ? (float) ($existingItem['unit_price'] ?? 0.0) : null;
-                    $item = $this->build_subscription_item_from_selection($selectedId, $scheduleScheme, $qty, $fallbackUnit, is_array($selectedAttributes) ? $selectedAttributes : []);
+                    $item = $this->build_subscription_item_from_selection($selectedId, $scheduleScheme, $qty, null, is_array($selectedAttributes) ? $selectedAttributes : []);
                     if (!$item) {
                         if ($selectedId > 0) {
                             $hasInvalidSelection = true;
@@ -2929,10 +2928,6 @@ class SubscriptionsModule {
                             isset($item['display_meta']) && is_array($item['display_meta']) ? $item['display_meta'] : [],
                             (int) ($item['base_product_id'] ?? 0)
                         );
-                    }
-
-                    if ($existingItem && $existingSelectedId === $selectedId && !empty($existingItem['source_order_item_id'])) {
-                        $item['source_order_item_id'] = (int) $existingItem['source_order_item_id'];
                     }
 
                     $newItems[] = $item;
@@ -4751,18 +4746,18 @@ class SubscriptionsModule {
             return $explicitCatalogUnitPrice;
         }
 
-        $sourceOrderItemId = (int) ($normalizedItem['source_order_item_id'] ?? 0);
-        $sourceUnitPrice = $this->get_source_order_item_storage_unit_price($sourceOrderItemId);
-        if ($sourceUnitPrice !== null) {
-            return $sourceUnitPrice;
-        }
-
         $scheme = isset($rawItem['scheme']) ? sanitize_key((string) $rawItem['scheme']) : '';
         if ($scheme !== '') {
             $catalogTargetPrice = $this->get_subscription_item_catalog_target_price($normalizedItem, $scheme);
             if ($catalogTargetPrice !== null) {
                 return $catalogTargetPrice;
             }
+        }
+
+        $sourceOrderItemId = (int) ($normalizedItem['source_order_item_id'] ?? 0);
+        $sourceUnitPrice = $this->get_source_order_item_storage_unit_price($sourceOrderItemId);
+        if ($sourceUnitPrice !== null) {
+            return $sourceUnitPrice;
         }
 
         return $this->get_subscription_item_storage_unit_price($normalizedItem);
@@ -5148,11 +5143,16 @@ class SubscriptionsModule {
 
     private function persist_subscription_items(int $subId, array $items): void {
         $customer = $subId > 0 ? $this->get_subscription_tax_customer($subId) : null;
+        $scheme = $subId > 0 ? sanitize_key((string) get_post_meta($subId, self::SUB_META_SCHEME, true)) : '';
         $normalized = [];
         foreach ($items as $item) {
             if (!is_array($item)) {
                 continue;
             }
+            if ($scheme !== '' && !isset($item['scheme'])) {
+                $item['scheme'] = $scheme;
+            }
+
             $row = $this->normalize_subscription_item($item);
             if ($row) {
                 if (empty($row['taxes']['total'])) {
