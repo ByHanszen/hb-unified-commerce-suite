@@ -3741,8 +3741,22 @@ class SubscriptionsModule {
         return $clean;
     }
 
+    private function normalize_subscription_item_display_label(string $label): string {
+        $label = trim(wp_strip_all_tags($label, true));
+        if ($label === '') {
+            return '';
+        }
+
+        $normalizedLabel = ltrim(sanitize_key($label), '_');
+        if (strpos($normalizedLabel, 'pa_') === 0) {
+            $label = $this->get_order_item_display_meta_label($normalizedLabel);
+        }
+
+        return trim(wp_strip_all_tags($label, true));
+    }
+
     private function get_subscription_item_display_row_hash(string $label, string $value): string {
-        return strtolower(remove_accents(trim($label) . '|' . trim($value)));
+        return strtolower(remove_accents($this->normalize_subscription_item_display_label($label) . '|' . trim($value)));
     }
 
     private function sanitize_subscription_item_display_meta(array $rows): array {
@@ -3754,7 +3768,7 @@ class SubscriptionsModule {
                 continue;
             }
 
-            $label = isset($row['label']) && is_scalar($row['label']) ? trim(wp_strip_all_tags((string) $row['label'], true)) : '';
+            $label = isset($row['label']) && is_scalar($row['label']) ? $this->normalize_subscription_item_display_label((string) $row['label']) : '';
             $value = isset($row['value']) && is_scalar($row['value']) ? trim(html_entity_decode(wp_strip_all_tags((string) $row['value'], true), ENT_QUOTES, 'UTF-8')) : '';
 
             if ($label === '' || $value === '') {
@@ -3866,6 +3880,10 @@ class SubscriptionsModule {
         return [
             self::ORDER_ITEM_META_SELECTED_ATTRIBUTES,
             self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID,
+            self::ORDER_ITEM_META_CATALOG_UNIT_PRICE,
+            '_hb_ucs_subscription_base_product_id',
+            '_hb_ucs_subscription_base_variation_id',
+            '_hb_ucs_subscription_scheme',
             '_reduced_stock',
         ];
     }
