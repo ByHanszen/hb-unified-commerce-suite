@@ -9701,11 +9701,12 @@ JS;
 
         $subId = method_exists($order, 'get_meta') ? (int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true) : 0;
         $isRenewal = method_exists($order, 'get_meta') && (string) $order->get_meta(self::ORDER_META_RENEWAL, true) === '1';
+        $containsSubscription = method_exists($order, 'get_meta') && (string) $order->get_meta(self::ORDER_META_CONTAINS_SUBSCRIPTION, true) === 'yes';
         if ($subId > 0) {
             $context = [
                 'is_subscription_order' => true,
                 'subscription_id' => $subId,
-                'type' => $isRenewal ? 'renewal' : 'subscription',
+                'type' => $isRenewal ? 'renewal' : ($containsSubscription ? 'parent' : 'subscription'),
             ];
             $this->shopOrderSubscriptionContextCache[$orderId] = $context;
             wp_cache_set($cacheKey, $context, 'hb_ucs', MINUTE_IN_SECONDS * 10);
@@ -9713,37 +9714,11 @@ JS;
             return $context;
         }
 
-        $parentSubscriptionIds = function_exists('wc_get_orders')
-            ? wc_get_orders([
-                'type' => $this->get_subscription_order_type()->get_type(),
-                'limit' => 1,
-                'return' => 'ids',
-                'status' => array_keys(wc_get_order_statuses()),
-                'meta_key' => self::SUB_META_PARENT_ORDER_ID,
-                'meta_value' => (string) $orderId,
-            ])
-            : [];
-        $parentSubId = !empty($parentSubscriptionIds) ? (int) $parentSubscriptionIds[0] : 0;
-        if ($parentSubId > 0) {
-            update_post_meta($orderId, self::ORDER_META_SUBSCRIPTION_ID, (string) $parentSubId);
-            update_post_meta($orderId, self::ORDER_META_CONTAINS_SUBSCRIPTION, 'yes');
-
-            $context = [
-                'is_subscription_order' => true,
-                'subscription_id' => $parentSubId,
-                'type' => 'parent',
-            ];
-            $this->shopOrderSubscriptionContextCache[$orderId] = $context;
-            wp_cache_set($cacheKey, $context, 'hb_ucs', MINUTE_IN_SECONDS * 10);
-
-            return $context;
-        }
-
-        if ($this->order_contains_subscription($order)) {
+        if ($containsSubscription) {
             $context = [
                 'is_subscription_order' => true,
                 'subscription_id' => 0,
-                'type' => 'subscription',
+                'type' => 'parent',
             ];
             $this->shopOrderSubscriptionContextCache[$orderId] = $context;
             wp_cache_set($cacheKey, $context, 'hb_ucs', MINUTE_IN_SECONDS * 10);
@@ -10148,6 +10123,7 @@ JS;
         $existingSubscriptionIds = $this->get_existing_subscription_ids_for_parent_order($orderId);
         if (!empty($existingSubscriptionIds)) {
             $order->update_meta_data(self::ORDER_META_RECURRING_CREATED, '1');
+            $order->update_meta_data(self::ORDER_META_CONTAINS_SUBSCRIPTION, 'yes');
             if ((int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true) <= 0) {
                 $order->update_meta_data(self::ORDER_META_SUBSCRIPTION_ID, (string) (int) $existingSubscriptionIds[0]);
             }
@@ -10274,6 +10250,7 @@ JS;
             if ((int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true) <= 0) {
                 $order->update_meta_data(self::ORDER_META_SUBSCRIPTION_ID, (string) $subId);
             }
+            $order->update_meta_data(self::ORDER_META_CONTAINS_SUBSCRIPTION, 'yes');
 
             $createdAny = true;
         }
