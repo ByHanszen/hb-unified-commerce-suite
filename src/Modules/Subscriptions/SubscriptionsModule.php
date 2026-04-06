@@ -8673,8 +8673,9 @@ class SubscriptionsModule {
             $step = WEEK_IN_SECONDS;
         }
 
+        $now = time();
         $currentNext = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
-        $base = $currentNext > 0 ? $currentNext : time();
+        $base = $currentNext > 0 ? max($currentNext, $now) : $now;
         $next = $base;
 
         if ($period === 'week' || $period === 'weeks') {
@@ -8683,7 +8684,6 @@ class SubscriptionsModule {
             $next = $base + $step;
         }
 
-        $now = time();
         while ($next <= $now) {
             $next += $step;
         }

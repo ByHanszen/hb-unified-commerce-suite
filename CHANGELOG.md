@@ -12,6 +12,7 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 - Abonnementen: de renewal-flow logt nu de kritieke stappen rond orderopbouw, statuswissels en Mollie recurring-aanvragen. Onverwachte exceptions ruimen halflege nieuwe renewal-orders zonder regels of Mollie payment-id direct op in plaats van ze als losse `pending` orders te laten staan.
 - Abonnementen: renewal fee- en shippingregels roepen niet langer protected WooCommerce `set_total_tax()` methodes aan. Daardoor crasht de renewal-opbouw niet meer zodra er belasting op verzend- of fee-regels aanwezig is.
 - Abonnementen: renewal productregels leiden hun netto- en btw-bedragen nu direct af uit de opgeslagen abonnementsprijs en tax-breakdown. Daardoor wordt btw niet nogmaals van dezelfde abonnementsprijs afgehaald en sluiten renewal-orderbedragen weer aan op de abonnementprijzen.
+- Abonnementen: de volgende betaaldatum wordt bij renewal-creatie nu minimaal vanaf het actuele aanmaaktijdstip doorgeschoven. Achterstallige abonnementen kunnen daardoor niet meer op dezelfde dag maar een paar minuten vooruit springen.
 
 ## [0.3.127] — 2026-04-06
 ### Fixed
