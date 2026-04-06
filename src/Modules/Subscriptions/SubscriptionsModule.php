@@ -10508,15 +10508,8 @@ JS;
             }
         }
 
-        $order = wc_create_order([
-            'customer_id' => $userId,
-        ]);
-        if (!is_object($order)) {
-            return new \WP_Error('hb_ucs_order_create_failed', __('Kon geen renewal order aanmaken.', 'hb-ucs'));
-        }
-
-        $this->apply_subscription_snapshot_to_order($order, $subId, $userId, $parentOrder);
         $customer = $this->get_subscription_tax_customer($subId, $parentOrder);
+        $preparedOrderItems = [];
 
         foreach ($items as $subscriptionItem) {
             $baseProductId = (int) ($subscriptionItem['base_product_id'] ?? 0);
@@ -10532,32 +10525,55 @@ JS;
                 return new \WP_Error('hb_ucs_missing_product', __('Product voor renewal niet gevonden.', 'hb-ucs'));
             }
 
-            $item = new \WC_Order_Item_Product();
-            $lineSubtotal = (float) wc_format_decimal((string) ($unit * $qty));
             $itemTaxes = $this->get_subscription_item_taxes($subscriptionItem, $customer);
-            $lineTax = (float) wc_format_decimal((string) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['total'])));
-            $item->set_product($productToAdd);
-            $item->set_quantity($qty);
-            $item->set_subtotal($lineSubtotal);
-            $item->set_total($lineSubtotal);
+            $preparedOrderItems[] = [
+                'product' => $productToAdd,
+                'base_product_id' => $baseProductId,
+                'base_variation_id' => $baseVariationId,
+                'qty' => $qty,
+                'unit' => $unit,
+                'line_subtotal' => (float) wc_format_decimal((string) ($unit * $qty)),
+                'line_tax' => (float) wc_format_decimal((string) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['total']))),
+                'taxes' => $itemTaxes,
+                'source_order_item_id' => (int) ($subscriptionItem['source_order_item_id'] ?? 0),
+                'catalog_unit_price' => $this->get_subscription_item_catalog_unit_price($subscriptionItem),
+                'display_meta' => $this->get_subscription_item_effective_display_meta($subId, $subscriptionItem),
+            ];
+        }
+
+        $order = wc_create_order([
+            'customer_id' => $userId,
+        ]);
+        if (!is_object($order)) {
+            return new \WP_Error('hb_ucs_order_create_failed', __('Kon geen renewal order aanmaken.', 'hb-ucs'));
+        }
+
+        $this->apply_subscription_snapshot_to_order($order, $subId, $userId, $parentOrder);
+
+        foreach ($preparedOrderItems as $preparedItem) {
+            $item = new \WC_Order_Item_Product();
+            $item->set_product($preparedItem['product']);
+            $item->set_quantity((int) $preparedItem['qty']);
+            $item->set_subtotal((float) $preparedItem['line_subtotal']);
+            $item->set_total((float) $preparedItem['line_subtotal']);
             if (method_exists($item, 'set_subtotal_tax')) {
-                $item->set_subtotal_tax($lineTax);
+                $item->set_subtotal_tax((float) $preparedItem['line_tax']);
             }
             if (method_exists($item, 'set_total_tax')) {
-                $item->set_total_tax($lineTax);
+                $item->set_total_tax((float) $preparedItem['line_tax']);
             }
-            if (!empty($itemTaxes['total']) && method_exists($item, 'set_taxes')) {
-                $item->set_taxes($itemTaxes);
+            if (!empty($preparedItem['taxes']['total']) && method_exists($item, 'set_taxes')) {
+                $item->set_taxes((array) $preparedItem['taxes']);
             }
-            $item->add_meta_data('_hb_ucs_subscription_base_product_id', $baseProductId, true);
-            if ($baseVariationId > 0) {
-                $item->add_meta_data('_hb_ucs_subscription_base_variation_id', $baseVariationId, true);
+            $item->add_meta_data('_hb_ucs_subscription_base_product_id', (int) $preparedItem['base_product_id'], true);
+            if ((int) $preparedItem['base_variation_id'] > 0) {
+                $item->add_meta_data('_hb_ucs_subscription_base_variation_id', (int) $preparedItem['base_variation_id'], true);
             }
-            if ((int) ($subscriptionItem['source_order_item_id'] ?? 0) > 0) {
-                $item->add_meta_data(self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID, (int) $subscriptionItem['source_order_item_id'], true);
+            if ((int) $preparedItem['source_order_item_id'] > 0) {
+                $item->add_meta_data(self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID, (int) $preparedItem['source_order_item_id'], true);
             }
-            $item->add_meta_data(self::ORDER_ITEM_META_CATALOG_UNIT_PRICE, $this->get_subscription_item_catalog_unit_price($subscriptionItem), true);
-            foreach ($this->get_subscription_item_effective_display_meta($subId, $subscriptionItem) as $displayMetaRow) {
+            $item->add_meta_data(self::ORDER_ITEM_META_CATALOG_UNIT_PRICE, (float) $preparedItem['catalog_unit_price'], true);
+            foreach ((array) $preparedItem['display_meta'] as $displayMetaRow) {
                 $label = (string) ($displayMetaRow['label'] ?? '');
                 $value = (string) ($displayMetaRow['value'] ?? '');
                 if ($label === '' || $value === '') {
