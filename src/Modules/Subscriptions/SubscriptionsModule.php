@@ -1743,13 +1743,14 @@ class SubscriptionsModule {
     }
 
     private function get_subscription_admin_item_totals(array $item, $customer = null): array {
+        $totals = $this->get_subscription_item_order_totals($item, $customer);
         $qty = max(1, (int) ($item['qty'] ?? 1));
-        $unitSubtotal = (float) $this->get_subscription_item_storage_unit_price($item);
-        $lineSubtotal = (float) wc_format_decimal((string) ($unitSubtotal * $qty));
-        $taxBreakdown = $this->normalize_subscription_tax_amounts($this->get_subscription_item_taxes($item, $customer)['total']);
+        $unitSubtotal = (float) wc_format_decimal((string) ($qty > 0 ? (($totals['line_subtotal'] ?? 0.0) / $qty) : ($totals['line_subtotal'] ?? 0.0)));
+        $lineSubtotal = (float) ($totals['line_subtotal'] ?? 0.0);
+        $lineTax = (float) ($totals['line_tax'] ?? 0.0);
+        $lineTotal = (float) ($totals['line_total'] ?? 0.0);
+        $taxBreakdown = isset($totals['tax_breakdown']) && is_array($totals['tax_breakdown']) ? $totals['tax_breakdown'] : [];
 
-        $lineTax = (float) wc_format_decimal((string) array_sum($taxBreakdown));
-        $lineTotal = (float) wc_format_decimal((string) ($lineSubtotal + $lineTax));
         if ($this->should_display_subscription_prices_including_tax()) {
             $lineTotal = $this->get_subscription_item_display_amount($item, $qty, true);
         }
@@ -1761,6 +1762,34 @@ class SubscriptionsModule {
             'line_subtotal' => $lineSubtotal,
             'line_tax' => $lineTax,
             'line_total' => $lineTotal,
+            'tax_breakdown' => $taxBreakdown,
+        ];
+    }
+
+    private function get_subscription_item_order_totals(array $item, $customer = null): array {
+        $qty = max(1, (int) ($item['qty'] ?? 1));
+        $taxBreakdown = $this->normalize_subscription_tax_amounts($this->get_subscription_item_taxes($item, $customer)['total']);
+        $lineTax = (float) wc_format_decimal((string) array_sum($taxBreakdown));
+
+        if (!empty($item['price_includes_tax'])) {
+            $lineTotal = (float) wc_format_decimal((string) (((float) ($item['unit_price'] ?? 0.0)) * $qty));
+            $lineSubtotal = (float) wc_format_decimal((string) max(0.0, $lineTotal - $lineTax));
+
+            return [
+                'line_subtotal' => $lineSubtotal,
+                'line_tax' => $lineTax,
+                'line_total' => $lineTotal,
+                'tax_breakdown' => $taxBreakdown,
+            ];
+        }
+
+        $unitSubtotal = (float) $this->get_subscription_item_storage_unit_price($item);
+        $lineSubtotal = (float) wc_format_decimal((string) ($unitSubtotal * $qty));
+
+        return [
+            'line_subtotal' => $lineSubtotal,
+            'line_tax' => $lineTax,
+            'line_total' => (float) wc_format_decimal((string) ($lineSubtotal + $lineTax)),
             'tax_breakdown' => $taxBreakdown,
         ];
     }
@@ -10760,7 +10789,6 @@ JS;
             $baseProductId = (int) ($subscriptionItem['base_product_id'] ?? 0);
             $baseVariationId = (int) ($subscriptionItem['base_variation_id'] ?? 0);
             $qty = (int) ($subscriptionItem['qty'] ?? 1);
-            $unit = $this->get_subscription_item_storage_unit_price($subscriptionItem);
             if ($qty <= 0) {
                 $qty = 1;
             }
@@ -10770,15 +10798,18 @@ JS;
                 return new \WP_Error('hb_ucs_missing_product', __('Product voor renewal niet gevonden.', 'hb-ucs'));
             }
 
-            $itemTaxes = $this->get_subscription_item_taxes($subscriptionItem, $customer);
+            $orderTotals = $this->get_subscription_item_order_totals($subscriptionItem, $customer);
+            $itemTaxes = [
+                'subtotal' => $orderTotals['tax_breakdown'],
+                'total' => $orderTotals['tax_breakdown'],
+            ];
             $preparedOrderItems[] = [
                 'product' => $productToAdd,
                 'base_product_id' => $baseProductId,
                 'base_variation_id' => $baseVariationId,
                 'qty' => $qty,
-                'unit' => $unit,
-                'line_subtotal' => (float) wc_format_decimal((string) ($unit * $qty)),
-                'line_tax' => (float) wc_format_decimal((string) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['total']))),
+                'line_subtotal' => (float) ($orderTotals['line_subtotal'] ?? 0.0),
+                'line_tax' => (float) ($orderTotals['line_tax'] ?? 0.0),
                 'taxes' => $itemTaxes,
                 'source_order_item_id' => (int) ($subscriptionItem['source_order_item_id'] ?? 0),
                 'catalog_unit_price' => $this->get_subscription_item_catalog_unit_price($subscriptionItem),
