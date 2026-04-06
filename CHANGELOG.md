@@ -4,6 +4,14 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.127] — 2026-04-06
+### Fixed
+- Abonnementen: de orderlijst-indicator voor gewone WooCommerce bestellingen doet niet langer per orderregel extra subscription-opzoekqueries. Bestaande ordermeta wordt nu leidend gebruikt, zodat het backend bestellingenoverzicht merkbaar lichter blijft.
+- Abonnementen: handmatige backend productkeuzes op abonnementen worden weer catalogus-gestuurd opgeslagen. Bij het opnieuw opbouwen van subscription-items krijgen schema-prijzen nu voorrang boven oude fallback- of bronorderprijzen.
+- Abonnementen: online renewal-orders krijgen nu een hardere duplicaatbeveiliging. Een bestaande open renewal-order wordt eerst opgezocht via de laatst gekoppelde order en via WooCommerce-statuskeys, terwijl de subscription tijdens een lopende online betaling tijdelijk op `payment_pending` gaat zodat de minuutcron geen tweede renewal blijft aanmaken.
+- Abonnementen: mandate/online renewals forceren hun orderstatus nu opnieuw naar `on-hold` na de laatste save-stap rond Mollie payment-meta, zodat ze niet onbedoeld als `pending` blijven hangen.
+- Abonnementen: renewal-items worden nu volledig gevalideerd voordat een nieuwe WooCommerce-order wordt aangemaakt. Daardoor kan een mislukte productresolutie geen lege renewal-order zonder regels meer achterlaten.
+
 ## [0.3.126] — 2026-04-01
 ### Fixed
 - Abonnementen: handmatig aangemaakte renewal-orders vanuit de abonnementeditor behouden nu de direct doorgeschoven volgende betaaldatum. De admin-save schrijft de oude formulierdatum niet langer terug over de verse renewal-datum, terwijl expliciete handmatige datumwijzigingen en automatische online renewals ongewijzigd blijven.
