@@ -6420,9 +6420,6 @@ class SubscriptionsModule {
             $newFee->set_total((float) ($feeLine['total'] ?? 0.0));
             if (!empty($feeLine['taxes']) && is_array($feeLine['taxes'])) {
                 $newFee->set_taxes((array) $feeLine['taxes']);
-                if (method_exists($newFee, 'set_total_tax')) {
-                    $newFee->set_total_tax((float) array_sum($this->normalize_subscription_tax_amounts($feeLine['taxes'])));
-                }
             }
             $order->add_item($newFee);
         }
@@ -6447,9 +6444,6 @@ class SubscriptionsModule {
             $newShip->set_total((float) ($shippingLine['total'] ?? 0.0));
             if (!empty($shippingLine['taxes']) && is_array($shippingLine['taxes'])) {
                 $newShip->set_taxes((array) $shippingLine['taxes']);
-                if (method_exists($newShip, 'set_total_tax')) {
-                    $newShip->set_total_tax((float) array_sum($this->normalize_subscription_tax_amounts($shippingLine['taxes'])));
-                }
             }
             $order->add_item($newShip);
         }

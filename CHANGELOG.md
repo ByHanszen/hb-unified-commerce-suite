@@ -10,6 +10,7 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 - Abonnementen: open en laatste renewal-orders worden nu ook gezocht over gekoppelde legacy- en order-type subscription-id's heen. Dat verkleint de kans dat een bestaande renewal-order gemist wordt en dezelfde renewal opnieuw wordt aangemaakt.
 - Abonnementen: `last_order_id` en `last_order_date` worden nu consequent op gekoppelde subscription-records bijgewerkt, zodat duplicate guards en statusherstel op beide opslaglagen dezelfde ordercontext zien.
 - Abonnementen: de renewal-flow logt nu de kritieke stappen rond orderopbouw, statuswissels en Mollie recurring-aanvragen. Onverwachte exceptions ruimen halflege nieuwe renewal-orders zonder regels of Mollie payment-id direct op in plaats van ze als losse `pending` orders te laten staan.
+- Abonnementen: renewal fee- en shippingregels roepen niet langer protected WooCommerce `set_total_tax()` methodes aan. Daardoor crasht de renewal-opbouw niet meer zodra er belasting op verzend- of fee-regels aanwezig is.
 
 ## [0.3.127] — 2026-04-06
 ### Fixed
