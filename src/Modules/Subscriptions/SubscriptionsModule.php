@@ -10642,12 +10642,7 @@ JS;
         $this->sync_subscription_order_type_record($subId);
 
         if ($requiresMandate) {
-            if (method_exists($order, 'set_status')) {
-                $order->set_status('on-hold', __('HB UCS: renewal aangemaakt, wacht op SEPA incasso.', 'hb-ucs'), true);
-                $order->save();
-            } else {
-                $order->update_status('on-hold', __('HB UCS: renewal aangemaakt, wacht op SEPA incasso.', 'hb-ucs'));
-            }
+            $this->force_order_status($order, 'on-hold', __('HB UCS: renewal aangemaakt, wacht op SEPA incasso.', 'hb-ucs'));
         } else {
             $order->update_status('processing', __('HB UCS: renewal aangemaakt en direct in verwerking gezet voor handmatige/offline betaalmethode.', 'hb-ucs'));
             $order->add_order_note(__('HB UCS: deze renewal gebruikt een handmatige/offline betaalmethode, vereist geen Mollie mandaat en staat direct op verwerken.', 'hb-ucs'));
@@ -10691,13 +10686,12 @@ JS;
             return new \WP_Error('hb_ucs_mollie_no_payment_id', __('Mollie gaf geen payment id terug.', 'hb-ucs'));
         }
 
-        $order->update_meta_data(self::ORDER_META_MOLLIE_PAYMENT_ID, $paymentId);
-        $order->add_order_note(sprintf(__('HB UCS: Mollie recurring betaling gestart (%s).', 'hb-ucs'), $paymentId));
-        $order->save();
-
         $freshOrder = wc_get_order((int) $order->get_id());
-        if ($freshOrder && is_object($freshOrder) && method_exists($freshOrder, 'get_status') && (string) $freshOrder->get_status() !== 'on-hold') {
-            $freshOrder->update_status('on-hold', __('HB UCS: renewal wacht op SEPA incasso.', 'hb-ucs'));
+        if ($freshOrder && is_object($freshOrder)) {
+            $freshOrder->update_meta_data(self::ORDER_META_MOLLIE_PAYMENT_ID, $paymentId);
+            $freshOrder->add_order_note(sprintf(__('HB UCS: Mollie recurring betaling gestart (%s).', 'hb-ucs'), $paymentId));
+            $freshOrder->save();
+            $this->force_order_status($freshOrder, 'on-hold', __('HB UCS: renewal wacht op SEPA incasso.', 'hb-ucs'));
         }
 
         $this->add_subscription_admin_note($subId, __('Abonnement blijft actief totdat betaling mislukt, omdat een SEPA incasso betaling enige tijd nodig heeft om te verwerken.', 'hb-ucs'));
@@ -10805,6 +10799,48 @@ JS;
         $status = sanitize_key((string) $order->get_status());
 
         return in_array($status, ['pending', 'on-hold', 'checkout-draft'], true);
+    }
+
+    private function force_order_status($order, string $status, string $note = ''): bool {
+        if (!$order || !is_object($order) || !method_exists($order, 'get_id')) {
+            return false;
+        }
+
+        $orderId = (int) $order->get_id();
+        if ($orderId <= 0) {
+            return false;
+        }
+
+        $targetStatus = sanitize_key($status);
+        if ($targetStatus === '') {
+            return false;
+        }
+
+        $freshOrder = function_exists('wc_get_order') ? wc_get_order($orderId) : $order;
+        if ($freshOrder && is_object($freshOrder) && method_exists($freshOrder, 'set_status') && method_exists($freshOrder, 'save')) {
+            $freshOrder->set_status($targetStatus, $note, true);
+            $freshOrder->save();
+        } elseif ($freshOrder && is_object($freshOrder) && method_exists($freshOrder, 'update_status')) {
+            $freshOrder->update_status($targetStatus, $note);
+        }
+
+        $verifiedOrder = function_exists('wc_get_order') ? wc_get_order($orderId) : $freshOrder;
+        if ($verifiedOrder && is_object($verifiedOrder) && method_exists($verifiedOrder, 'get_status') && sanitize_key((string) $verifiedOrder->get_status()) === $targetStatus) {
+            return true;
+        }
+
+        if (function_exists('wp_update_post')) {
+            wp_update_post([
+                'ID' => $orderId,
+                'post_status' => 'wc-' . $targetStatus,
+            ]);
+        }
+
+        $verifiedOrder = function_exists('wc_get_order') ? wc_get_order($orderId) : $verifiedOrder;
+
+        return $verifiedOrder && is_object($verifiedOrder) && method_exists($verifiedOrder, 'get_status')
+            ? sanitize_key((string) $verifiedOrder->get_status()) === $targetStatus
+            : false;
     }
 
     public function maybe_mark_manual_renewal_paid(int $orderId): void {
