@@ -10611,7 +10611,7 @@ JS;
         $order->calculate_totals(false);
 
         $nextPayment = $this->calculate_next_payment_timestamp($subId);
-        $runtimeStatus = $requiresMandate ? '' : 'active';
+        $runtimeStatus = $requiresMandate ? 'payment_pending' : 'active';
         $order->update_meta_data(self::ORDER_META_RENEWAL_NEXT_PAYMENT, (string) $nextPayment);
 
         // Persist renewal markers before status hooks fire so renewal orders are
@@ -10679,8 +10679,9 @@ JS;
         $order->add_order_note(sprintf(__('HB UCS: Mollie recurring betaling gestart (%s).', 'hb-ucs'), $paymentId));
         $order->save();
 
-        if (method_exists($order, 'get_status') && (string) $order->get_status() !== 'on-hold') {
-            $order->update_status('on-hold', __('HB UCS: renewal wacht op SEPA incasso.', 'hb-ucs'));
+        $freshOrder = wc_get_order((int) $order->get_id());
+        if ($freshOrder && is_object($freshOrder) && method_exists($freshOrder, 'get_status') && (string) $freshOrder->get_status() !== 'on-hold') {
+            $freshOrder->update_status('on-hold', __('HB UCS: renewal wacht op SEPA incasso.', 'hb-ucs'));
         }
 
         $this->add_subscription_admin_note($subId, __('Abonnement blijft actief totdat betaling mislukt, omdat een SEPA incasso betaling enige tijd nodig heeft om te verwerken.', 'hb-ucs'));
@@ -10738,12 +10739,16 @@ JS;
             return 0;
         }
 
+        $openStatuses = function_exists('wc_get_order_statuses')
+            ? array_values(array_intersect(array_keys(wc_get_order_statuses()), ['wc-pending', 'wc-on-hold', 'wc-checkout-draft']))
+            : ['wc-pending', 'wc-on-hold', 'wc-checkout-draft'];
+
         $orderIds = wc_get_orders([
             'limit' => 1,
             'return' => 'ids',
             'orderby' => 'date',
             'order' => 'DESC',
-            'status' => ['pending', 'on-hold'],
+            'status' => $openStatuses,
             'meta_query' => [
                 [
                     'key' => self::ORDER_META_SUBSCRIPTION_ID,
