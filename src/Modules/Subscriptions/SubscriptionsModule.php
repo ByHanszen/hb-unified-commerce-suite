@@ -10626,7 +10626,12 @@ JS;
         $this->sync_subscription_order_type_record($subId);
 
         if ($requiresMandate) {
-            $order->update_status('on-hold', __('HB UCS: renewal aangemaakt, wacht op SEPA incasso.', 'hb-ucs'));
+            if (method_exists($order, 'set_status')) {
+                $order->set_status('on-hold', __('HB UCS: renewal aangemaakt, wacht op SEPA incasso.', 'hb-ucs'), true);
+                $order->save();
+            } else {
+                $order->update_status('on-hold', __('HB UCS: renewal aangemaakt, wacht op SEPA incasso.', 'hb-ucs'));
+            }
         } else {
             $order->update_status('processing', __('HB UCS: renewal aangemaakt en direct in verwerking gezet voor handmatige/offline betaalmethode.', 'hb-ucs'));
             $order->add_order_note(__('HB UCS: deze renewal gebruikt een handmatige/offline betaalmethode, vereist geen Mollie mandaat en staat direct op verwerken.', 'hb-ucs'));
@@ -10674,6 +10679,10 @@ JS;
         $order->add_order_note(sprintf(__('HB UCS: Mollie recurring betaling gestart (%s).', 'hb-ucs'), $paymentId));
         $order->save();
 
+        if (method_exists($order, 'get_status') && (string) $order->get_status() !== 'on-hold') {
+            $order->update_status('on-hold', __('HB UCS: renewal wacht op SEPA incasso.', 'hb-ucs'));
+        }
+
         $this->add_subscription_admin_note($subId, __('Abonnement blijft actief totdat betaling mislukt, omdat een SEPA incasso betaling enige tijd nodig heeft om te verwerken.', 'hb-ucs'));
         update_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, $paymentId);
 
@@ -10713,22 +10722,68 @@ JS;
     }
 
     private function get_open_renewal_order_id_for_subscription(int $subId): int {
-        $renewalOrderId = $this->get_latest_renewal_order_id_for_subscription($subId);
-        if ($renewalOrderId <= 0 || !function_exists('wc_get_order')) {
+        if ($subId <= 0 || !function_exists('wc_get_order')) {
             return 0;
         }
 
+        $lastOrderId = (int) get_post_meta($subId, self::SUB_META_LAST_ORDER_ID, true);
+        if ($lastOrderId > 0) {
+            $lastOrder = wc_get_order($lastOrderId);
+            if ($this->is_open_renewal_order_for_subscription($lastOrder, $subId)) {
+                return $lastOrderId;
+            }
+        }
+
+        if (!function_exists('wc_get_orders')) {
+            return 0;
+        }
+
+        $orderIds = wc_get_orders([
+            'limit' => 1,
+            'return' => 'ids',
+            'orderby' => 'date',
+            'order' => 'DESC',
+            'status' => ['pending', 'on-hold'],
+            'meta_query' => [
+                [
+                    'key' => self::ORDER_META_SUBSCRIPTION_ID,
+                    'value' => (string) $subId,
+                    'compare' => '=',
+                ],
+                [
+                    'key' => self::ORDER_META_RENEWAL,
+                    'value' => '1',
+                    'compare' => '=',
+                ],
+            ],
+        ]);
+
+        if (!is_array($orderIds) || empty($orderIds[0])) {
+            return 0;
+        }
+
+        $renewalOrderId = (int) $orderIds[0];
         $renewalOrder = wc_get_order($renewalOrderId);
-        if (!$renewalOrder || !is_object($renewalOrder) || !method_exists($renewalOrder, 'get_status')) {
-            return 0;
+
+        return $this->is_open_renewal_order_for_subscription($renewalOrder, $subId) ? $renewalOrderId : 0;
+    }
+
+    private function is_open_renewal_order_for_subscription($order, int $subId): bool {
+        if (!$order || !is_object($order) || !method_exists($order, 'get_status') || !method_exists($order, 'get_meta')) {
+            return false;
         }
 
-        $status = sanitize_key((string) $renewalOrder->get_status());
-        if (in_array($status, ['pending', 'on-hold', 'checkout-draft'], true)) {
-            return $renewalOrderId;
+        if ((int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true) !== $subId) {
+            return false;
         }
 
-        return 0;
+        if ((string) $order->get_meta(self::ORDER_META_RENEWAL, true) !== '1') {
+            return false;
+        }
+
+        $status = sanitize_key((string) $order->get_status());
+
+        return in_array($status, ['pending', 'on-hold', 'checkout-draft'], true);
     }
 
     public function maybe_mark_manual_renewal_paid(int $orderId): void {
