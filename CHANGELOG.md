@@ -4,6 +4,12 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.128] — 2026-04-06
+### Fixed
+- Abonnementen: due subscriptions die vastlopen in `payment_pending` of `pending_mandate` zonder open renewal-order krijgen nu een herstelpad in de minuutcron. Daardoor kunnen gemiste renewals weer doorstromen zodra er geen echte open renewal meer bestaat.
+- Abonnementen: open en laatste renewal-orders worden nu ook gezocht over gekoppelde legacy- en order-type subscription-id's heen. Dat verkleint de kans dat een bestaande renewal-order gemist wordt en dezelfde renewal opnieuw wordt aangemaakt.
+- Abonnementen: `last_order_id` en `last_order_date` worden nu consequent op gekoppelde subscription-records bijgewerkt, zodat duplicate guards en statusherstel op beide opslaglagen dezelfde ordercontext zien.
+
 ## [0.3.127] — 2026-04-06
 ### Fixed
 - Abonnementen: de orderlijst-indicator voor gewone WooCommerce bestellingen doet niet langer per orderregel extra subscription-opzoekqueries. Bestaande ordermeta wordt nu leidend gebruikt, zodat het backend bestellingenoverzicht merkbaar lichter blijft.

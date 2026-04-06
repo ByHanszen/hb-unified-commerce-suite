@@ -338,6 +338,29 @@ class SubscriptionsModule {
         return $changed;
     }
 
+    private function persist_subscription_last_order_state(int $subId, int $orderId, ?int $orderDate = null): bool {
+        if ($subId <= 0 || $orderId <= 0) {
+            return false;
+        }
+
+        $metaMap = [
+            self::SUB_META_LAST_ORDER_ID => (string) $orderId,
+        ];
+
+        if ($orderDate !== null && $orderDate > 0) {
+            $metaMap[self::SUB_META_LAST_ORDER_DATE] = (string) $orderDate;
+        }
+
+        $changed = false;
+        foreach ($this->get_subscription_runtime_state_target_ids($subId) as $targetId) {
+            foreach ($metaMap as $metaKey => $metaValue) {
+                $changed = $this->update_subscription_post_meta_if_changed($targetId, $metaKey, $metaValue) || $changed;
+            }
+        }
+
+        return $changed;
+    }
+
     private function update_subscription_post_meta_if_changed(int $postId, string $metaKey, $metaValue): bool {
         if ($postId <= 0 || $metaKey === '') {
             return false;
@@ -392,6 +415,32 @@ class SubscriptionsModule {
         }
 
         return array_values(array_unique(array_filter(array_map('intval', $targetIds))));
+    }
+
+    /**
+     * @return int[]
+     */
+    private function get_related_subscription_ids(int $subId): array {
+        if ($subId <= 0) {
+            return [];
+        }
+
+        $ids = [$subId];
+        $record = $this->get_subscription_repository()->find($subId);
+
+        if (is_array($record) && (($record['storage'] ?? '') === 'order_type')) {
+            $legacyPostId = $this->get_subscription_repository()->get_linked_legacy_post_id($subId);
+            if ($legacyPostId > 0) {
+                $ids[] = $legacyPostId;
+            }
+        } else {
+            $orderTypeRecord = $this->get_subscription_repository()->find_by_legacy_post_id($subId);
+            if (is_array($orderTypeRecord) && (int) ($orderTypeRecord['id'] ?? 0) > 0) {
+                $ids[] = (int) $orderTypeRecord['id'];
+            }
+        }
+
+        return array_values(array_unique(array_filter(array_map('intval', $ids))));
     }
 
     /**
@@ -8562,10 +8611,9 @@ class SubscriptionsModule {
                 $order->add_order_note(sprintf(__('HB UCS: Mollie recurring betaling %s is betaald.', 'hb-ucs'), $paymentId));
             }
             if ($subId > 0) {
-                update_post_meta($subId, self::SUB_META_LAST_ORDER_ID, (string) $orderId);
                 $paid = method_exists($order, 'get_date_paid') ? $order->get_date_paid() : null;
                 $paidTs = $paid ? (int) $paid->getTimestamp() : time();
-                update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $paidTs);
+                $this->persist_subscription_last_order_state($subId, $orderId, $paidTs);
                 $this->persist_subscription_runtime_state($subId, 'active', $this->get_recorded_renewal_next_payment($order, $subId));
                 $this->sync_subscription_order_type_record($subId);
             }
@@ -8574,10 +8622,9 @@ class SubscriptionsModule {
                 $order->update_status('failed', sprintf(__('HB UCS: Mollie recurring betaling %s is mislukt (%s).', 'hb-ucs'), $paymentId, $status));
             }
             if ($subId > 0) {
-                update_post_meta($subId, self::SUB_META_LAST_ORDER_ID, (string) $orderId);
                 $created = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
                 $createdTs = $created ? (int) $created->getTimestamp() : time();
-                update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $createdTs);
+                $this->persist_subscription_last_order_state($subId, $orderId, $createdTs);
                 $this->persist_subscription_runtime_state($subId, 'on-hold');
                 $this->sync_subscription_order_type_record($subId);
             }
@@ -10357,6 +10404,29 @@ JS;
             }
         }
 
+        $processedRecoveryIds = [];
+        while (count($processedRecoveryIds) < $maxPerRun) {
+            $recoverable = $this->get_recoverable_due_subscription_batch(
+                $now,
+                min($batchSize, $maxPerRun - count($processedRecoveryIds)),
+                array_keys($processedRecoveryIds)
+            );
+
+            if (empty($recoverable)) {
+                break;
+            }
+
+            foreach ($recoverable as $subId) {
+                $subId = (int) $subId;
+                if ($subId <= 0) {
+                    continue;
+                }
+
+                $processedRecoveryIds[$subId] = true;
+                $this->maybe_recover_due_subscription_state($subId);
+            }
+        }
+
         $processedDueIds = [];
         while (count($processedDueIds) < $maxPerRun) {
             $q = $this->get_due_renewal_subscription_batch(
@@ -10451,6 +10521,110 @@ JS;
         }
 
         return array_values(array_filter(array_map('intval', (array) wc_get_orders($queryArgs))));
+    }
+
+    private function get_recoverable_due_subscription_batch(int $now, int $limit, array $excludeIds = []): array {
+        if ($limit <= 0 || !function_exists('wc_get_orders')) {
+            return [];
+        }
+
+        $queryArgs = [
+            'type' => $this->get_subscription_order_type()->get_type(),
+            'limit' => $limit,
+            'return' => 'ids',
+            'status' => array_keys(wc_get_order_statuses()),
+            'meta_key' => self::SUB_META_NEXT_PAYMENT,
+            'orderby' => 'meta_value_num',
+            'order' => 'ASC',
+            'meta_query' => [
+                [
+                    'key' => self::SUB_META_STATUS,
+                    'value' => ['payment_pending', 'pending_mandate'],
+                    'compare' => 'IN',
+                ],
+                [
+                    'key' => self::SUB_META_NEXT_PAYMENT,
+                    'value' => (string) $now,
+                    'type' => 'NUMERIC',
+                    'compare' => '<=',
+                ],
+            ],
+        ];
+
+        $excludeIds = array_values(array_filter(array_map('intval', $excludeIds)));
+        if (!empty($excludeIds)) {
+            $queryArgs['exclude'] = $excludeIds;
+        }
+
+        return array_values(array_filter(array_map('intval', (array) wc_get_orders($queryArgs))));
+    }
+
+    private function maybe_recover_due_subscription_state(int $subId): void {
+        if ($subId <= 0) {
+            return;
+        }
+
+        $statuses = $this->get_subscription_runtime_statuses($subId);
+        if (empty($statuses)) {
+            return;
+        }
+
+        $hasPendingMandate = in_array('pending_mandate', $statuses, true);
+        $hasPaymentPending = in_array('payment_pending', $statuses, true);
+        if (!$hasPendingMandate && !$hasPaymentPending) {
+            return;
+        }
+
+        if ($this->get_open_renewal_order_id_for_subscription($subId) > 0) {
+            return;
+        }
+
+        $blockingStatus = $this->get_subscription_runtime_blocking_status($subId);
+        if ($blockingStatus !== '') {
+            return;
+        }
+
+        $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
+        $parentOrder = $parentOrderId > 0 ? wc_get_order($parentOrderId) : null;
+        $paymentMethod = (string) get_post_meta($subId, self::SUB_META_PAYMENT_METHOD, true);
+        $paymentMethodTitle = (string) get_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, true);
+        $resolvedPayment = $this->resolve_subscription_payment_method_for_renewal($subId, $paymentMethod, $paymentMethodTitle, $parentOrder);
+        $paymentMethod = (string) ($resolvedPayment['method'] ?? $paymentMethod);
+        $requiresMandate = $this->payment_method_requires_mandate($paymentMethod);
+        $customerId = (string) get_post_meta($subId, self::SUB_META_MOLLIE_CUSTOMER_ID, true);
+        $mandateId = (string) get_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID, true);
+
+        if ($hasPendingMandate) {
+            if (!$requiresMandate || ($customerId !== '' && $mandateId !== '')) {
+                $this->persist_subscription_runtime_state($subId, 'active');
+                $this->sync_subscription_order_type_record($subId);
+            }
+
+            return;
+        }
+
+        $latestRenewalOrderId = $this->get_latest_renewal_order_id_for_subscription($subId);
+        if ($latestRenewalOrderId > 0) {
+            $latestRenewalOrder = wc_get_order($latestRenewalOrderId);
+            $latestRenewalStatus = $latestRenewalOrder && is_object($latestRenewalOrder) && method_exists($latestRenewalOrder, 'get_status')
+                ? sanitize_key((string) $latestRenewalOrder->get_status())
+                : '';
+
+            if (in_array($latestRenewalStatus, ['failed', 'cancelled', 'refunded'], true)) {
+                $this->persist_subscription_runtime_state($subId, 'on-hold');
+                $this->sync_subscription_order_type_record($subId);
+                return;
+            }
+
+            if (in_array($latestRenewalStatus, ['processing', 'completed'], true)) {
+                $this->persist_subscription_runtime_state($subId, 'active', $this->get_recorded_renewal_next_payment($latestRenewalOrder, $subId));
+                $this->sync_subscription_order_type_record($subId);
+                return;
+            }
+        }
+
+        $this->persist_subscription_runtime_state($subId, 'active');
+        $this->sync_subscription_order_type_record($subId);
     }
 
     private function create_renewal_order_and_payment(int $subId, bool $force = false) {
@@ -10635,10 +10809,9 @@ JS;
         $order->save();
 
         $this->persist_subscription_runtime_state($subId, $runtimeStatus, $nextPayment);
-        update_post_meta($subId, self::SUB_META_LAST_ORDER_ID, (string) (int) $order->get_id());
         $created = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
         $createdTs = $created ? (int) $created->getTimestamp() : time();
-        update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $createdTs);
+        $this->persist_subscription_last_order_state($subId, (int) $order->get_id(), $createdTs);
         $this->sync_subscription_order_type_record($subId);
 
         if ($requiresMandate) {
@@ -10705,6 +10878,11 @@ JS;
             return 0;
         }
 
+        $relatedSubscriptionIds = $this->get_related_subscription_ids($subId);
+        if (empty($relatedSubscriptionIds)) {
+            return 0;
+        }
+
         $orderIds = wc_get_orders([
             'limit' => 1,
             'return' => 'ids',
@@ -10714,8 +10892,8 @@ JS;
             'meta_query' => [
                 [
                     'key' => self::ORDER_META_SUBSCRIPTION_ID,
-                    'value' => (string) $subId,
-                    'compare' => '=',
+                    'value' => array_map('strval', $relatedSubscriptionIds),
+                    'compare' => 'IN',
                 ],
                 [
                     'key' => self::ORDER_META_RENEWAL,
@@ -10734,6 +10912,11 @@ JS;
 
     private function get_open_renewal_order_id_for_subscription(int $subId): int {
         if ($subId <= 0 || !function_exists('wc_get_order')) {
+            return 0;
+        }
+
+        $relatedSubscriptionIds = $this->get_related_subscription_ids($subId);
+        if (empty($relatedSubscriptionIds)) {
             return 0;
         }
 
@@ -10762,8 +10945,8 @@ JS;
             'meta_query' => [
                 [
                     'key' => self::ORDER_META_SUBSCRIPTION_ID,
-                    'value' => (string) $subId,
-                    'compare' => '=',
+                    'value' => array_map('strval', $relatedSubscriptionIds),
+                    'compare' => 'IN',
                 ],
                 [
                     'key' => self::ORDER_META_RENEWAL,
@@ -10788,7 +10971,7 @@ JS;
             return false;
         }
 
-        if ((int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true) !== $subId) {
+        if (!in_array((int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true), $this->get_related_subscription_ids($subId), true)) {
             return false;
         }
 
@@ -10874,10 +11057,9 @@ JS;
         $order->update_meta_data(self::ORDER_META_RENEWAL_PROCESSED, '1');
         $order->save();
 
-        update_post_meta($subId, self::SUB_META_LAST_ORDER_ID, (string) $orderId);
         $paid = method_exists($order, 'get_date_paid') ? $order->get_date_paid() : null;
         $paidTs = $paid ? (int) $paid->getTimestamp() : time();
-        update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $paidTs);
+        $this->persist_subscription_last_order_state($subId, $orderId, $paidTs);
         $this->persist_subscription_runtime_state($subId, 'active', $this->get_recorded_renewal_next_payment($order, $subId));
         $this->sync_subscription_order_type_record($subId);
 
