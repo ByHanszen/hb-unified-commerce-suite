@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.129] — 2026-04-07
+### Fixed
+- Abonnementen: renewal-productregels herstellen nu ook voor gewone HB UCS-abonnementen automatisch fout opgeslagen bruto `unit_price` waarden naar netto-opslag zodra de bewaarde tax-breakdown laat zien dat de artikelprijs inclusief btw was. Daardoor tonen renewal-orders weer de juiste ex-btw productprijs, terwijl bestaande abonnementen direct vanuit hun opgeslagen itemdata worden gecorrigeerd.
+
 ## [0.3.128] — 2026-04-06
 ### Fixed
 - Abonnementen: due subscriptions die vastlopen in `payment_pending` of `pending_mandate` zonder open renewal-order krijgen nu een herstelpad in de minuutcron. Daardoor kunnen gemiste renewals weer doorstromen zodra er geen echte open renewal meer bestaat.

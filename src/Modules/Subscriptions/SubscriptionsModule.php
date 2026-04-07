@@ -4793,6 +4793,24 @@ class SubscriptionsModule {
                 $qty,
                 $taxes
             );
+        } elseif ($unitPrice > 0 && !empty($taxes['total'])) {
+            $productId = $baseVariationId > 0 ? $baseVariationId : $baseProductId;
+            if (
+                $productId > 0
+                && $this->should_subscription_item_price_be_treated_as_including_tax($productId, $unitPrice, $qty, $taxes)
+            ) {
+                $storageUnitPrice = $this->get_subscription_item_storage_unit_price([
+                    'base_product_id' => $baseProductId,
+                    'base_variation_id' => max(0, $baseVariationId),
+                    'unit_price' => $unitPrice,
+                    'price_includes_tax' => 1,
+                    'taxes' => $taxes,
+                ]);
+
+                if ($storageUnitPrice > 0 && abs($storageUnitPrice - $unitPrice) > 0.0001) {
+                    $unitPrice = $storageUnitPrice;
+                }
+            }
         }
 
         $normalized = [
@@ -4922,6 +4940,7 @@ class SubscriptionsModule {
     private function get_subscription_items(int $subId): array {
         $stored = get_post_meta($subId, self::SUB_META_ITEMS, true);
         $items = [];
+        $didRepairStoredItems = false;
 
         if (is_array($stored)) {
             foreach ($stored as $row) {
@@ -4930,13 +4949,23 @@ class SubscriptionsModule {
                 }
                 $item = $this->normalize_subscription_item($row);
                 if ($item) {
+                    $rawUnitPrice = isset($row['unit_price']) ? (float) wc_format_decimal((string) $row['unit_price']) : 0.0;
+                    $rawPriceIncludesTax = !empty($row['price_includes_tax']) ? 1 : 0;
+                    if (
+                        abs(((float) ($item['unit_price'] ?? 0.0)) - $rawUnitPrice) > 0.0001
+                        || (int) ($item['price_includes_tax'] ?? 0) !== $rawPriceIncludesTax
+                    ) {
+                        $didRepairStoredItems = true;
+                    }
                     $items[] = $item;
                 }
             }
         }
 
         if (!empty($items)) {
-            $items = $this->maybe_repair_migrated_wcs_subscription_items($subId, $items);
+            if ($didRepairStoredItems) {
+                $this->persist_subscription_items($subId, $items);
+            }
             $items = $this->maybe_repair_subscription_item_display_meta($subId, $items);
             return $items;
         }
@@ -5032,55 +5061,6 @@ class SubscriptionsModule {
         }
 
         return $items;
-    }
-
-    private function maybe_repair_migrated_wcs_subscription_items(int $subId, array $items): array {
-        if ($subId <= 0 || empty($items) || (int) get_post_meta($subId, self::SUB_META_WCS_SOURCE_ID, true) <= 0) {
-            return $items;
-        }
-
-        $repaired = [];
-        $didRepair = false;
-
-        foreach ($items as $item) {
-            if (!is_array($item)) {
-                continue;
-            }
-
-            $taxes = $this->normalize_subscription_item_taxes($item['taxes'] ?? []);
-            $qty = max(1, (int) ($item['qty'] ?? 1));
-            $unitPrice = isset($item['unit_price']) ? (float) wc_format_decimal((string) $item['unit_price']) : 0.0;
-            $productId = (int) (($item['base_variation_id'] ?? 0) ?: ($item['base_product_id'] ?? 0));
-
-            if (
-                empty($item['price_includes_tax'])
-                && $productId > 0
-                && $unitPrice > 0
-                && !empty($taxes['total'])
-                && $this->should_subscription_item_price_be_treated_as_including_tax($productId, $unitPrice, $qty, $taxes)
-            ) {
-                $storageUnitPrice = $this->get_subscription_item_storage_unit_price(array_merge($item, [
-                    'unit_price' => $unitPrice,
-                    'price_includes_tax' => 1,
-                    'taxes' => $taxes,
-                ]));
-
-                if ($storageUnitPrice > 0 && abs($storageUnitPrice - $unitPrice) > 0.0001) {
-                    $item['unit_price'] = $storageUnitPrice;
-                    $item['price_includes_tax'] = 0;
-                    $item['taxes'] = $taxes;
-                    $didRepair = true;
-                }
-            }
-
-            $repaired[] = $item;
-        }
-
-        if ($didRepair) {
-            $this->persist_subscription_items($subId, $repaired);
-        }
-
-        return $repaired;
     }
 
     private function maybe_repair_subscription_item_display_meta(int $subId, array $items): array {
