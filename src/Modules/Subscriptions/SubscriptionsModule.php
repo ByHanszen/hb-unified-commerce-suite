@@ -2371,7 +2371,7 @@ class SubscriptionsModule {
 
     private function render_account_subscription_list(int $userId): void {
         $subscriptionIds = $this->get_user_subscription_ids($userId);
-        $displayIncludingTax = $this->should_display_subscription_prices_including_tax();
+        $displayIncludingTax = $this->should_display_account_subscription_prices_including_tax();
 
         echo '<div class="woocommerce-account-hb-ucs-subscriptions hb-ucs-account-shell hb-ucs-account-shell--list">';
         echo '<div class="hb-ucs-account-hero">';
@@ -2473,7 +2473,7 @@ class SubscriptionsModule {
         $contact = $this->get_subscription_contact_snapshot($userId, null, $subId);
         $relatedOrders = $this->get_subscription_related_orders($subId, $userId);
         $manageDisabled = in_array($status, ['cancelled', 'expired'], true);
-        $totalAmount = $this->get_subscription_total_amount($subId, $this->should_display_subscription_prices_including_tax());
+        $totalAmount = $this->get_subscription_total_amount($subId, $this->should_display_account_subscription_prices_including_tax());
         $scheduleModalId = 'hb-ucs-schedule-modal-' . $subId;
         $contactPanelId = 'hb-ucs-panel-contact-' . $subId;
         $ordersPanelId = 'hb-ucs-panel-orders-' . $subId;
@@ -2605,7 +2605,7 @@ class SubscriptionsModule {
         $itemTemplateId = 'hb-ucs-subscription-item-template-' . $subId;
         echo '<div id="' . esc_attr($itemsListId) . '" class="hb-ucs-subscription-items-list hb-ucs-subscription-items-list--compact">';
         foreach ($items as $index => $item) {
-            $this->render_account_subscription_item_editor_row((string) $index, $item, $manageDisabled, $productOptions);
+            $this->render_account_subscription_item_editor_row((string) $index, $item, $manageDisabled, $productOptions, $subId);
         }
         echo '<div class="hb-ucs-products-add">';
         echo '<button type="button" class="button hb-ucs-products-add__button hb-ucs-open-product-modal" data-hb-ucs-add-item-template="' . esc_attr($itemTemplateId) . '" data-hb-ucs-add-item-list="' . esc_attr($itemsListId) . '" data-picker-title="' . esc_attr__('Kies een product', 'hb-ucs') . '" ' . disabled($manageDisabled, true, false) . '>' . esc_html__('＋ Product Toevoegen', 'hb-ucs') . '</button>';
@@ -2616,7 +2616,7 @@ class SubscriptionsModule {
             'display_label' => __('Nieuw product', 'hb-ucs'),
             'variation_summary' => __('Kies product en variaties via de modal.', 'hb-ucs'),
             'qty' => 1,
-        ], $manageDisabled, $productOptions);
+        ], $manageDisabled, $productOptions, $subId);
         echo '<template id="' . esc_attr($itemTemplateId) . '">' . ob_get_clean() . '</template>';
         $this->render_manageable_product_picker_modal($productOptions, $manageDisabled);
         echo '<div class="hb-ucs-subscription-items-footer hb-ucs-subscription-items-footer--dashboard">';
@@ -3810,12 +3810,17 @@ class SubscriptionsModule {
         return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"/></svg>';
     }
 
-    private function render_account_subscription_item_editor_row(string $rowKey, array $item, bool $manageDisabled, array $productOptions): void {
+    private function render_account_subscription_item_editor_row(string $rowKey, array $item, bool $manageDisabled, array $productOptions, int $subId = 0): void {
         $selectedId = (int) ($item['base_product_id'] ?? 0);
         $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
         $variationSummary = $this->get_subscription_item_variation_summary($item);
         $qty = max(1, (int) ($item['qty'] ?? 1));
-        $deliveryPrice = $this->get_subscription_item_display_amount($item, $qty, $this->should_display_subscription_prices_including_tax());
+        $deliveryPrice = $this->get_subscription_item_display_amount(
+            $item,
+            $qty,
+            $this->should_display_account_subscription_prices_including_tax(),
+            $subId > 0 ? $this->get_subscription_tax_customer($subId) : null
+        );
         $deliveryPriceHtml = $deliveryPrice > 0 ? (function_exists('wc_price') ? wc_price($deliveryPrice) : number_format($deliveryPrice, 2, '.', '')) : '';
         $itemLabel = isset($item['display_label']) && (string) $item['display_label'] !== '' ? (string) $item['display_label'] : ($selectedId > 0 ? $this->get_subscription_item_label($item) : __('Nieuw product', 'hb-ucs'));
         $productFieldName = 'items[' . $rowKey . '][product_id]';
@@ -6196,9 +6201,10 @@ class SubscriptionsModule {
     }
 
     private function get_account_subscription_price_breakdown(int $subId): array {
-        $includeTax = $this->should_display_subscription_prices_including_tax();
+        $includeTax = $this->should_display_account_subscription_prices_including_tax();
         $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
         $parentOrder = $parentOrderId > 0 ? wc_get_order($parentOrderId) : null;
+        $customer = $this->get_subscription_tax_customer($subId, $parentOrder);
         $rows = [];
 
         foreach ($this->get_subscription_items($subId) as $item) {
@@ -6214,7 +6220,7 @@ class SubscriptionsModule {
 
             $rows[] = [
                 'label' => $label,
-                'amount' => $this->get_subscription_item_display_amount($item, $qty, $includeTax),
+                'amount' => $this->get_subscription_item_display_amount($item, $qty, $includeTax, $customer),
             ];
         }
 
@@ -6263,6 +6269,14 @@ class SubscriptionsModule {
         return function_exists('wc_price') ? (string) wc_price($amount) : number_format($amount, 2, '.', '');
     }
 
+    private function should_display_account_subscription_prices_including_tax(): bool {
+        if (!function_exists('wc_tax_enabled') || !wc_tax_enabled()) {
+            return false;
+        }
+
+        return true;
+    }
+
     private function should_display_subscription_prices_including_tax(): bool {
         if (!function_exists('wc_tax_enabled') || !wc_tax_enabled()) {
             return false;
@@ -6271,7 +6285,7 @@ class SubscriptionsModule {
         return get_option('woocommerce_tax_display_shop', 'excl') === 'incl';
     }
 
-    private function get_subscription_item_display_amount(array $item, int $qty = 1, bool $includeTax = true): float {
+    private function get_subscription_item_display_amount(array $item, int $qty = 1, bool $includeTax = true, $customer = null): float {
         $qty = max(1, $qty);
         $unitSubtotal = $this->get_subscription_item_storage_unit_price($item);
         if ($unitSubtotal <= 0) {
@@ -6283,7 +6297,7 @@ class SubscriptionsModule {
             return $lineSubtotal;
         }
 
-        $taxBreakdown = $this->normalize_subscription_tax_amounts($this->get_subscription_item_taxes($item, null)['total']);
+        $taxBreakdown = $this->normalize_subscription_tax_amounts($this->get_subscription_item_taxes($item, $customer)['total']);
         $lineTax = (float) wc_format_decimal((string) array_sum($taxBreakdown));
         if ($lineTax > 0) {
             return (float) wc_format_decimal((string) ($lineSubtotal + $lineTax));
