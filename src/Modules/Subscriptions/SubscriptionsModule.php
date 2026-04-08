@@ -5231,6 +5231,14 @@ class SubscriptionsModule {
     }
 
     private function get_subscription_items(int $subId, bool $persistRepairs = true, bool $preserveStoredPricing = false): array {
+        $subscriptionOrder = $this->get_subscription_order_object($subId);
+        if ($subscriptionOrder) {
+            $orderItems = $this->extract_subscription_items_from_order($subscriptionOrder);
+            if (!empty($orderItems)) {
+                return $this->maybe_repair_subscription_item_display_meta($subId, $orderItems, false);
+            }
+        }
+
         $stored = get_post_meta($subId, self::SUB_META_ITEMS, true);
         $items = [];
         $didRepairStoredItems = false;
@@ -5267,18 +5275,6 @@ class SubscriptionsModule {
             }
             $items = $this->maybe_repair_subscription_item_display_meta($subId, $items, $persistRepairs);
             return $items;
-        }
-
-        $subscriptionOrder = $this->get_subscription_order_object($subId);
-        if ($subscriptionOrder) {
-            $orderItems = $this->extract_subscription_items_from_order($subscriptionOrder);
-            if (!empty($orderItems)) {
-                if ($persistRepairs) {
-                    $this->persist_subscription_items($subId, $orderItems);
-                }
-
-                return $this->maybe_repair_subscription_item_display_meta($subId, $orderItems, $persistRepairs);
-            }
         }
 
         $legacyItem = $this->normalize_subscription_item([
@@ -5523,6 +5519,7 @@ class SubscriptionsModule {
         }
 
         if (empty($normalized)) {
+            $this->persist_subscription_order_type_line_items($subId, []);
             delete_post_meta($subId, self::SUB_META_ITEMS);
             delete_post_meta($subId, self::SUB_META_BASE_PRODUCT_ID);
             delete_post_meta($subId, self::SUB_META_BASE_VARIATION_ID);
@@ -5530,6 +5527,8 @@ class SubscriptionsModule {
             delete_post_meta($subId, self::SUB_META_UNIT_PRICE);
             return;
         }
+
+        $this->persist_subscription_order_type_line_items($subId, $normalized);
 
         update_post_meta($subId, self::SUB_META_ITEMS, $normalized);
 
@@ -5696,6 +5695,11 @@ class SubscriptionsModule {
     }
 
     private function get_subscription_shipping_lines(int $subId): array {
+        $subscriptionOrder = $this->get_subscription_order_object($subId);
+        if ($subscriptionOrder) {
+            return $this->extract_subscription_shipping_lines($subscriptionOrder);
+        }
+
         $stored = get_post_meta($subId, self::SUB_META_SHIPPING_LINES, true);
         $lines = [];
         $seen = [];
@@ -5761,6 +5765,11 @@ class SubscriptionsModule {
     }
 
     private function get_subscription_fee_lines(int $subId): array {
+        $subscriptionOrder = $this->get_subscription_order_object($subId);
+        if ($subscriptionOrder) {
+            return $this->extract_subscription_fee_lines($subscriptionOrder);
+        }
+
         $stored = get_post_meta($subId, self::SUB_META_FEE_LINES, true);
         $lines = [];
         $seen = [];
@@ -5809,6 +5818,8 @@ class SubscriptionsModule {
             }
         }
 
+        $this->persist_subscription_order_type_fee_lines($subId, $normalized);
+
         update_post_meta($subId, self::SUB_META_FEE_LINES, $normalized);
     }
 
@@ -5846,20 +5857,14 @@ class SubscriptionsModule {
     }
 
     private function get_effective_subscription_shipping_lines(int $subId, $fallbackOrder = null, bool $persistRecovered = true): array {
+        $subscriptionOrder = $this->get_subscription_order_object($subId);
+        if ($subscriptionOrder) {
+            return $this->extract_subscription_shipping_lines($subscriptionOrder);
+        }
+
         $lines = $this->get_subscription_shipping_lines($subId);
         if (!empty($lines) || metadata_exists('post', $subId, self::SUB_META_SHIPPING_LINES)) {
             return $lines;
-        }
-
-        $subscriptionOrder = $this->get_subscription_order_object($subId);
-        if ($subscriptionOrder) {
-            $lines = $this->extract_subscription_shipping_lines($subscriptionOrder);
-            if (!empty($lines)) {
-                if ($persistRecovered) {
-                    $this->persist_subscription_shipping_lines($subId, $lines);
-                }
-                return $lines;
-            }
         }
 
         if (!$fallbackOrder) {
@@ -5871,20 +5876,14 @@ class SubscriptionsModule {
     }
 
     private function get_effective_subscription_fee_lines(int $subId, $fallbackOrder = null, bool $persistRecovered = true): array {
+        $subscriptionOrder = $this->get_subscription_order_object($subId);
+        if ($subscriptionOrder) {
+            return $this->extract_subscription_fee_lines($subscriptionOrder);
+        }
+
         $lines = $this->get_subscription_fee_lines($subId);
         if (!empty($lines) || metadata_exists('post', $subId, self::SUB_META_FEE_LINES)) {
             return $lines;
-        }
-
-        $subscriptionOrder = $this->get_subscription_order_object($subId);
-        if ($subscriptionOrder) {
-            $lines = $this->extract_subscription_fee_lines($subscriptionOrder);
-            if (!empty($lines)) {
-                if ($persistRecovered) {
-                    $this->persist_subscription_fee_lines($subId, $lines);
-                }
-                return $lines;
-            }
         }
 
         if (!$fallbackOrder) {
@@ -5915,7 +5914,163 @@ class SubscriptionsModule {
             }
         }
 
+        $this->persist_subscription_order_type_shipping_lines($subId, $normalized);
+
         update_post_meta($subId, self::SUB_META_SHIPPING_LINES, $normalized);
+    }
+
+    private function persist_subscription_order_type_line_items(int $subId, array $items): void {
+        $order = $this->get_subscription_order_object($subId);
+        if (!$order || !is_object($order) || !method_exists($order, 'get_items') || !method_exists($order, 'remove_item') || !method_exists($order, 'add_item')) {
+            return;
+        }
+
+        foreach ((array) $order->get_items('line_item') as $itemId => $existingItem) {
+            $order->remove_item($itemId);
+        }
+
+        $customer = $this->get_subscription_tax_customer($subId, $order);
+        $scheme = method_exists($order, 'get_meta') ? sanitize_key((string) $order->get_meta(self::SUB_META_SCHEME, true)) : '';
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $baseProductId = (int) ($item['base_product_id'] ?? 0);
+            $baseVariationId = (int) ($item['base_variation_id'] ?? 0);
+            $targetProductId = $baseVariationId > 0 ? $baseVariationId : $baseProductId;
+            $product = $targetProductId > 0 && function_exists('wc_get_product') ? wc_get_product($targetProductId) : false;
+            $qty = max(1, (int) ($item['qty'] ?? 1));
+            $lineTotals = $this->get_subscription_item_order_totals($item, $customer);
+            $itemTaxes = $this->normalize_subscription_item_taxes($item['taxes'] ?? []);
+            $lineTax = (float) wc_format_decimal((string) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['total'] ?? [])));
+            $subtotalTax = (float) wc_format_decimal((string) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['subtotal'] ?? [])));
+
+            $orderItem = new \WC_Order_Item_Product();
+            if ($product && is_object($product) && method_exists($orderItem, 'set_product')) {
+                $orderItem->set_product($product);
+            } else {
+                $orderItem->set_product_id($baseProductId);
+                $orderItem->set_variation_id($baseVariationId);
+            }
+
+            $orderItem->set_quantity($qty);
+            $orderItem->set_subtotal((float) ($lineTotals['line_subtotal'] ?? 0.0));
+            $orderItem->set_total((float) ($lineTotals['line_subtotal'] ?? 0.0));
+            if (method_exists($orderItem, 'set_subtotal_tax')) {
+                $orderItem->set_subtotal_tax($subtotalTax);
+            }
+            if (method_exists($orderItem, 'set_total_tax')) {
+                $orderItem->set_total_tax($lineTax);
+            }
+            if (method_exists($orderItem, 'set_taxes')) {
+                $orderItem->set_taxes($itemTaxes);
+            }
+
+            $orderItem->add_meta_data('_hb_ucs_subscription_base_product_id', $baseProductId, true);
+            if ($baseVariationId > 0) {
+                $orderItem->add_meta_data('_hb_ucs_subscription_base_variation_id', $baseVariationId, true);
+            }
+            if ((int) ($item['source_order_item_id'] ?? 0) > 0) {
+                $orderItem->add_meta_data(self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID, (int) $item['source_order_item_id'], true);
+            }
+            $orderItem->add_meta_data(self::ORDER_ITEM_META_CATALOG_UNIT_PRICE, $this->get_subscription_item_catalog_unit_price($item), true);
+            if ($scheme !== '') {
+                $orderItem->add_meta_data('_hb_ucs_subscription_scheme', $scheme, true);
+            }
+
+            $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
+            if (!empty($selectedAttributes)) {
+                $orderItem->add_meta_data(self::ORDER_ITEM_META_SELECTED_ATTRIBUTES, wp_json_encode($selectedAttributes), true);
+            }
+
+            foreach ($this->get_subscription_item_effective_display_meta($subId, $item) as $displayMetaRow) {
+                $label = (string) ($displayMetaRow['label'] ?? '');
+                $value = (string) ($displayMetaRow['value'] ?? '');
+                if ($label === '' || $value === '') {
+                    continue;
+                }
+
+                $orderItem->add_meta_data($label, $value, true);
+            }
+
+            $order->add_item($orderItem);
+        }
+
+        $this->persist_subscription_order_type_totals($order);
+    }
+
+    private function persist_subscription_order_type_fee_lines(int $subId, array $lines): void {
+        $order = $this->get_subscription_order_object($subId);
+        if (!$order || !is_object($order) || !method_exists($order, 'get_items') || !method_exists($order, 'remove_item') || !method_exists($order, 'add_item')) {
+            return;
+        }
+
+        foreach ((array) $order->get_items('fee') as $itemId => $existingItem) {
+            $order->remove_item($itemId);
+        }
+
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+
+            $lineTotals = $this->get_subscription_fee_line_totals($line);
+            $feeItem = new \WC_Order_Item_Fee();
+            $feeItem->set_name((string) ($line['name'] ?? __('Kosten', 'hb-ucs')));
+            $feeItem->set_total((float) ($lineTotals['line_subtotal'] ?? 0.0));
+            if (method_exists($feeItem, 'set_taxes')) {
+                $feeItem->set_taxes(isset($line['taxes']) && is_array($line['taxes']) ? (array) $line['taxes'] : []);
+            }
+            $order->add_item($feeItem);
+        }
+
+        $this->persist_subscription_order_type_totals($order);
+    }
+
+    private function persist_subscription_order_type_shipping_lines(int $subId, array $lines): void {
+        $order = $this->get_subscription_order_object($subId);
+        if (!$order || !is_object($order) || !method_exists($order, 'get_items') || !method_exists($order, 'remove_item') || !method_exists($order, 'add_item')) {
+            return;
+        }
+
+        foreach ((array) $order->get_items('shipping') as $itemId => $existingItem) {
+            $order->remove_item($itemId);
+        }
+
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+
+            $lineTotals = $this->get_subscription_shipping_line_totals($line);
+            $shippingItem = new \WC_Order_Item_Shipping();
+            $shippingItem->set_method_title((string) ($line['method_title'] ?? 'Shipping'));
+            $shippingItem->set_method_id((string) ($line['method_id'] ?? ''));
+            $shippingItem->set_instance_id((int) ($line['instance_id'] ?? 0));
+            $shippingItem->set_total((float) ($lineTotals['line_subtotal'] ?? 0.0));
+            if (method_exists($shippingItem, 'set_taxes')) {
+                $shippingItem->set_taxes(isset($line['taxes']) && is_array($line['taxes']) ? (array) $line['taxes'] : []);
+            }
+            $order->add_item($shippingItem);
+        }
+
+        $this->persist_subscription_order_type_totals($order);
+    }
+
+    private function persist_subscription_order_type_totals($order): void {
+        if (!$order || !is_object($order)) {
+            return;
+        }
+
+        if (method_exists($order, 'calculate_totals')) {
+            $order->calculate_totals(false);
+        }
+
+        if (method_exists($order, 'save')) {
+            $order->save();
+        }
     }
 
     private function get_subscription_shipping_line_hash(array $line): string {

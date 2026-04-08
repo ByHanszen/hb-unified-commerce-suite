@@ -4,6 +4,11 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.137] — 2026-04-08
+### Changed
+- Abonnementen: de online/live bron voor subscription items, toeslagen en verzendregels gebruikt nu eerst HPOS order items van het subscription order object in plaats van `_hb_ucs_sub_*` shadow-meta.
+- Abonnementen: wanneer deze module subscription items, toeslagen of verzendregels opslaat, worden de HPOS order items nu direct mee bijgewerkt. Daardoor kan een backend-save zonder inhoudelijke wijziging de frontend-prijzen niet meer via alleen shadow-meta laten verschuiven.
+
 ## [0.3.136] — 2026-04-08
 ### Changed
 - Abonnementen: de templated product-picker variant op Mijn Account gebruikt nu ook een neutralere focus-state. De standaard HB UCS focus-ring op de wrapper wordt niet meer toegepast; alleen een subtiele outline op de Elementor-output blijft over voor toetsenbordnavigatie.
