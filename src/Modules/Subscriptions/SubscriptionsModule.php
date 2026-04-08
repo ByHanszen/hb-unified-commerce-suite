@@ -2946,6 +2946,14 @@ class SubscriptionsModule {
                         $subId
                     );
                     $item = isset($preview['preview_item']) && is_array($preview['preview_item']) ? $preview['preview_item'] : null;
+                    $currentSelectedAttributes = $item ? $this->get_subscription_item_selected_attributes($item) : [];
+                    $currentVariationId = $item ? (int) ($item['base_variation_id'] ?? 0) : 0;
+                    $existingVariationId = $existingItem ? (int) ($existingItem['base_variation_id'] ?? 0) : 0;
+                    $canReuseExistingItemMeta = $existingItem
+                        && $existingSelectedId === $selectedId
+                        && $existingVariationId === $currentVariationId
+                        && $existingSelectedAttributes === $currentSelectedAttributes
+                        && $currentVariationId > 0;
 
                     if (!$item && $selectedId > 0 && function_exists('wc_get_product')) {
                         $selectedProduct = wc_get_product($selectedId);
@@ -2957,6 +2965,9 @@ class SubscriptionsModule {
                                 null,
                                 is_array($selectedAttributes) ? $selectedAttributes : []
                             );
+                            $currentSelectedAttributes = $item ? $this->get_subscription_item_selected_attributes($item) : [];
+                            $currentVariationId = $item ? (int) ($item['base_variation_id'] ?? 0) : 0;
+                            $canReuseExistingItemMeta = false;
                         }
                     }
 
@@ -2970,21 +2981,13 @@ class SubscriptionsModule {
 
                     if (!empty($postedDisplayMeta)) {
                         $item['display_meta'] = $postedDisplayMeta;
-                    } elseif (
-                        $existingItem
-                        && $existingSelectedId === $selectedId
-                        && $existingSelectedAttributes === $this->get_subscription_item_selected_attributes($item)
-                        && !empty($existingItem['display_meta'])
-                    ) {
+                    } elseif ($canReuseExistingItemMeta && !empty($existingItem['display_meta'])) {
                         $item['display_meta'] = $existingItem['display_meta'];
+                    } elseif ($currentVariationId <= 0) {
+                        $item['display_meta'] = [];
                     }
 
-                    if (
-                        $existingItem
-                        && $existingSelectedId === $selectedId
-                        && $existingSelectedAttributes === $this->get_subscription_item_selected_attributes($item)
-                        && !empty($existingItem['source_item_snapshot'])
-                    ) {
+                    if ($canReuseExistingItemMeta && !empty($existingItem['source_item_snapshot'])) {
                         $item['source_item_snapshot'] = $existingItem['source_item_snapshot'];
                     } else {
                         $item['source_item_snapshot'] = $this->build_subscription_item_source_snapshot(

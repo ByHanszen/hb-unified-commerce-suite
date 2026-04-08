@@ -9,6 +9,10 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 - Abonnement-variaties: bij het teruglezen van subscription order items zijn de opgeslagen selectie en de variatie zelf nu leidend. Ruwe order-item attribuutmeta vult alleen nog ontbrekende waarden aan en overschrijft geen actuele selectie meer.
 - Abonnement-variaties: HPOS subscription order items schrijven niet langer een extra WooCommerce `set_variation(...)` attribuutspoor weg. Daarmee verdwijnen dubbele backend-attribuutregels met `pa_`/zonder `pa_` en kan oude ruwe attribuutmeta de frontend-prijs of selectie niet meer vervuilen.
 
+## [0.3.147] — 2026-04-08
+### Fixed
+- Frontend abonnementen: bij opslaan op Mijn Account wordt oude `display_meta` of een oude item-snapshot alleen nog hergebruikt wanneer exact dezelfde variatie behouden blijft. Simpele producten krijgen daarbij geen oude attribuutregels meer mee, zodat attributen van een volgend variabel artikel niet meer bij een simpel artikel in de lijst verschijnen.
+
 ## [0.3.145] — 2026-04-08
 ### Fixed
 - Frontend abonnementen: bij het opbouwen van een subscription-item uit een gekozen variatie worden handmatig gekozen attributen niet meer overschreven door een mogelijk onvolledige attribuutset van de WooCommerce-variatie. De gebruikersselectie en variatie-attributen worden nu samengevoegd, zodat alle gekozen variatie-attributen behouden blijven.
