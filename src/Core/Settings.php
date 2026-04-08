@@ -167,6 +167,7 @@ class Settings {
             'engine' => 'manual',
             'recurring_enabled' => 0,
             'recurring_webhook_token' => '',
+            'product_picker_loop_template_id' => 0,
             'delete_data_on_uninstall' => 0,
             'frequencies' => [
                 '1w' => [
@@ -654,6 +655,8 @@ class Settings {
         $freqs = is_array($opt['frequencies'] ?? null) ? (array) $opt['frequencies'] : [];
         $recurringEnabled = !empty($opt['recurring_enabled']);
         $webhookToken = isset($opt['recurring_webhook_token']) ? (string) $opt['recurring_webhook_token'] : '';
+        $productPickerLoopTemplateId = isset($opt['product_picker_loop_template_id']) ? (int) $opt['product_picker_loop_template_id'] : 0;
+        $productPickerLoopTemplates = $this->get_subscriptions_elementor_loop_templates();
         if ($webhookToken === '') {
             // Only for display; actual generation happens on save.
             $webhookToken = '—';
@@ -794,6 +797,24 @@ class Settings {
             echo '</td>';
             echo '</tr>';
         }
+
+        echo '<tr>';
+        echo '<th scope="row"><label for="hb_ucs_subscriptions_product_picker_loop_template_id">' . esc_html__('Elementor loop item voor product-popup', 'hb-ucs') . '</label></th>';
+        echo '<td>';
+        if (empty($productPickerLoopTemplates)) {
+            echo '<p>' . esc_html__('Geen Elementor loop item templates gevonden.', 'hb-ucs') . '</p>';
+            echo '<p class="description">' . esc_html__('Laat dit leeg of maak eerst een Elementor Loop Item template aan. Zonder selectie blijft de standaard HB UCS productkaart actief.', 'hb-ucs') . '</p>';
+        } else {
+            echo '<select id="hb_ucs_subscriptions_product_picker_loop_template_id" name="hb_ucs_subscriptions[product_picker_loop_template_id]" class="regular-text">';
+            echo '<option value="0">' . esc_html__('Standaard HB UCS kaart gebruiken', 'hb-ucs') . '</option>';
+            foreach ($productPickerLoopTemplates as $templateId => $templateLabel) {
+                echo '<option value="' . esc_attr((string) $templateId) . '" ' . selected($productPickerLoopTemplateId, (int) $templateId, false) . '>' . esc_html((string) $templateLabel) . '</option>';
+            }
+            echo '</select>';
+            echo '<p class="description">' . esc_html__('Als hier een Elementor Loop Item template is gekozen, gebruikt de abonnementen-popup dat template voor elk product in de lijst. Laat dit leeg om de huidige ingebouwde kaartweergave als fallback te blijven gebruiken.', 'hb-ucs') . '</p>';
+        }
+        echo '</td>';
+        echo '</tr>';
 
         echo '<tr>';
         echo '<th scope="row">' . esc_html__('Data verwijderen bij uninstall', 'hb-ucs') . '</th>';
@@ -1146,6 +1167,7 @@ class Settings {
             'engine' => 'manual',
             'recurring_enabled' => empty($raw['recurring_enabled']) ? 0 : 1,
             'recurring_webhook_token' => $token,
+            'product_picker_loop_template_id' => isset($raw['product_picker_loop_template_id']) ? max(0, (int) $raw['product_picker_loop_template_id']) : 0,
             'delete_data_on_uninstall' => empty($raw['delete_data_on_uninstall']) ? 0 : 1,
             'frequencies' => $cleanFreqs,
         ];
@@ -1154,6 +1176,39 @@ class Settings {
         $redirect = add_query_arg(['page' => 'hb-ucs-subscriptions', 'updated' => 'true'], admin_url('admin.php'));
         wp_safe_redirect($redirect);
         exit;
+    }
+
+    private function get_subscriptions_elementor_loop_templates(): array {
+        if (!post_type_exists('elementor_library')) {
+            return [];
+        }
+
+        $templates = get_posts([
+            'post_type' => 'elementor_library',
+            'post_status' => 'publish',
+            'posts_per_page' => -1,
+            'orderby' => 'title',
+            'order' => 'ASC',
+            'meta_key' => '_elementor_template_type',
+            'meta_value' => 'loop-item',
+        ]);
+
+        $options = [];
+        foreach ((array) $templates as $template) {
+            if (!$template || !isset($template->ID, $template->post_title)) {
+                continue;
+            }
+
+            $templateId = (int) $template->ID;
+            if ($templateId <= 0) {
+                continue;
+            }
+
+            $title = trim((string) $template->post_title);
+            $options[$templateId] = $title !== '' ? sprintf('%s (#%d)', $title, $templateId) : sprintf(__('Template #%d', 'hb-ucs'), $templateId);
+        }
+
+        return $options;
     }
 
     // ====== Helper: recalc legacy meta ======

@@ -3489,28 +3489,107 @@ class SubscriptionsModule {
             $selectedAttributes = isset($item['selected_attributes']) && is_array($item['selected_attributes']) ? $item['selected_attributes'] : [];
             $imageHtml = isset($item['image_html']) ? (string) $item['image_html'] : '';
             $priceHtml = isset($item['price_html']) ? (string) $item['price_html'] : '';
+            $itemContentHtml = $this->render_manageable_product_picker_item_content_html($item, $imageHtml, $priceHtml, $summary, $categoryNames);
+            $itemClass = 'hb-ucs-product-modal__item';
+            if ($this->should_use_manageable_product_picker_loop_template()) {
+                $itemClass .= ' hb-ucs-product-modal__item--templated';
+            }
 
-            echo '<button type="button" class="hb-ucs-product-modal__item" data-product-id="' . esc_attr((string) $itemId) . '" data-target-product-id="' . esc_attr((string) $targetId) . '" data-product-label="' . esc_attr($itemLabel) . '" data-product-summary="' . esc_attr($summary) . '" data-product-price="' . esc_attr($priceHtml) . '" data-product-image="' . esc_attr(base64_encode($imageHtml)) . '" data-product-categories="' . esc_attr($categoryIds) . '" data-product-search="' . esc_attr($searchText) . '" data-selected-attributes="' . esc_attr(wp_json_encode($selectedAttributes)) . '" ' . disabled($disabled, true, false) . '>';
-            echo '<span class="hb-ucs-product-modal__item-media">' . wp_kses_post($imageHtml) . '</span>';
-            echo '<span class="hb-ucs-product-modal__item-body">';
-            echo '<span class="hb-ucs-product-modal__item-copy">';
-            echo '<strong class="hb-ucs-product-modal__item-title">' . esc_html($itemLabel) . '</strong>';
-            if ($priceHtml !== '') {
-                echo '<span class="hb-ucs-product-modal__item-price">' . esc_html($priceHtml) . '</span>';
-            }
-            if ($summary !== '') {
-                echo '<span class="hb-ucs-product-modal__item-summary">' . esc_html($summary) . '</span>';
-            }
-            if ($categoryNames !== '') {
-                echo '<span class="hb-ucs-product-modal__item-categories">' . esc_html($categoryNames) . '</span>';
-            }
-            echo '</span>';
-            echo '<span class="hb-ucs-product-modal__item-action">' . esc_html__('Selecteer', 'hb-ucs') . '</span>';
-            echo '</span>';
+            echo '<button type="button" class="' . esc_attr($itemClass) . '" data-product-id="' . esc_attr((string) $itemId) . '" data-target-product-id="' . esc_attr((string) $targetId) . '" data-product-label="' . esc_attr($itemLabel) . '" data-product-summary="' . esc_attr($summary) . '" data-product-price="' . esc_attr($priceHtml) . '" data-product-image="' . esc_attr(base64_encode($imageHtml)) . '" data-product-categories="' . esc_attr($categoryIds) . '" data-product-search="' . esc_attr($searchText) . '" data-selected-attributes="' . esc_attr(wp_json_encode($selectedAttributes)) . '" ' . disabled($disabled, true, false) . '>';
+            echo $itemContentHtml;
             echo '</button>';
         }
 
         return (string) ob_get_clean();
+    }
+
+    private function render_manageable_product_picker_item_content_html(array $item, string $imageHtml, string $priceHtml, string $summary, string $categoryNames): string {
+        $templateHtml = $this->render_manageable_product_picker_loop_template_html($item);
+        if ($templateHtml !== '') {
+            return '<span class="hb-ucs-product-modal__item-template">' . $templateHtml . '</span>';
+        }
+
+        ob_start();
+        echo '<span class="hb-ucs-product-modal__item-media">' . wp_kses_post($imageHtml) . '</span>';
+        echo '<span class="hb-ucs-product-modal__item-body">';
+        echo '<span class="hb-ucs-product-modal__item-copy">';
+        echo '<strong class="hb-ucs-product-modal__item-title">' . esc_html((string) ($item['label'] ?? '')) . '</strong>';
+        if ($priceHtml !== '') {
+            echo '<span class="hb-ucs-product-modal__item-price">' . esc_html($priceHtml) . '</span>';
+        }
+        if ($summary !== '') {
+            echo '<span class="hb-ucs-product-modal__item-summary">' . esc_html($summary) . '</span>';
+        }
+        if ($categoryNames !== '') {
+            echo '<span class="hb-ucs-product-modal__item-categories">' . esc_html($categoryNames) . '</span>';
+        }
+        echo '</span>';
+        echo '<span class="hb-ucs-product-modal__item-action">' . esc_html__('Selecteer', 'hb-ucs') . '</span>';
+        echo '</span>';
+
+        return (string) ob_get_clean();
+    }
+
+    private function should_use_manageable_product_picker_loop_template(): bool {
+        return $this->get_manageable_product_picker_loop_template_id() > 0;
+    }
+
+    private function get_manageable_product_picker_loop_template_id(): int {
+        $settings = $this->get_settings();
+        return isset($settings['product_picker_loop_template_id']) ? max(0, (int) $settings['product_picker_loop_template_id']) : 0;
+    }
+
+    private function render_manageable_product_picker_loop_template_html(array $item): string {
+        $templateId = $this->get_manageable_product_picker_loop_template_id();
+        if ($templateId <= 0 || !class_exists('Elementor\\Plugin')) {
+            return '';
+        }
+
+        $productId = (int) ($item['target_id'] ?? $item['id'] ?? 0);
+        if ($productId <= 0) {
+            return '';
+        }
+
+        $productPost = get_post($productId);
+        if (!$productPost || !($productPost instanceof \WP_Post)) {
+            return '';
+        }
+
+        $frontend = \Elementor\Plugin::instance()->frontend ?? null;
+        if (!$frontend || !method_exists($frontend, 'get_builder_content_for_display')) {
+            return '';
+        }
+
+        global $post, $product;
+
+        $previousPost = $post ?? null;
+        $previousProduct = $product ?? null;
+        $rendered = '';
+
+        $post = $productPost;
+        setup_postdata($productPost);
+        $product = function_exists('wc_get_product') ? wc_get_product($productId) : null;
+
+        try {
+            $rendered = (string) $frontend->get_builder_content_for_display($templateId, true);
+        } catch (\Throwable $exception) {
+            $rendered = '';
+        }
+
+        if ($previousPost instanceof \WP_Post) {
+            $post = $previousPost;
+            setup_postdata($previousPost);
+        } else {
+            unset($GLOBALS['post']);
+        }
+
+        if ($previousProduct) {
+            $product = $previousProduct;
+        } else {
+            unset($GLOBALS['product']);
+        }
+
+        return trim($rendered);
     }
 
     private function get_manageable_product_picker_filters(array $availableCategories): array {
@@ -9426,6 +9505,7 @@ JS;
             'engine' => $engine,
             'recurring_enabled' => $recurringEnabled,
             'recurring_webhook_token' => $webhookToken,
+            'product_picker_loop_template_id' => isset($opt['product_picker_loop_template_id']) ? max(0, (int) $opt['product_picker_loop_template_id']) : 0,
             'delete_data_on_uninstall' => empty($opt['delete_data_on_uninstall']) ? 0 : 1,
             'frequencies' => $freqs,
         ];

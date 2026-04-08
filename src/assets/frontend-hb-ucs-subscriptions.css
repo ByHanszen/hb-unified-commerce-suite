@@ -1116,6 +1116,21 @@
   transform: translateY(-2px);
 }
 
+.hb-ucs-product-modal__item--templated {
+  padding: 0;
+  overflow: hidden;
+}
+
+.hb-ucs-product-modal__item-template {
+  display: block;
+  width: 100%;
+}
+
+.hb-ucs-product-modal__item-template,
+.hb-ucs-product-modal__item-template * {
+  pointer-events: none;
+}
+
 .hb-ucs-product-modal__item-media {
   display: block;
   overflow: hidden;

@@ -4,6 +4,13 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.132] — 2026-04-08
+### Added
+- Abonnementen: in de subscriptions-instellingen kan nu optioneel een Elementor Loop Item template worden gekozen voor de product-picker popup op Mijn Account.
+
+### Changed
+- Abonnementen: als een Elementor Loop Item template is geselecteerd, gebruikt de product-picker popup dat template voor de productkaartweergave. Als er geen template is gekozen of Elementor niets rendert, blijft de bestaande HB UCS kaart automatisch als fallback actief.
+
 ## [0.3.131] — 2026-04-08
 ### Added
 - Abonnementen: nieuwe WordPress menu-locatie `HB UCS abonnementen productfilters` toegevoegd. Daarmee kunnen productcategorie-filters voor de frontend abonnementen-popup via het reguliere WordPress menu-beheer worden samengesteld en toegewezen.
