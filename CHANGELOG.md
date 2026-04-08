@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.157] — 2026-04-08
+### Fixed
+- Abonnement-attributen: aliassen zoals `attribute_pa_*` en `attribute_*` worden nu per product naar dezelfde canonieke attribuutkey teruggebracht. Daardoor blijft een gekozen variatie-attribuut zonder resolvable `variation_id` behouden en verdwijnt dubbele weergave van dezelfde keuze met en zonder `pa_`-variant.
+
 ## [0.3.156] — 2026-04-08
 ### Fixed
 - Abonnement-attributen: een gekozen variatie-attribuutset zonder aparte `variation_id` blijft nu bewaard op het parent product, zolang de verplichte variatie-attributen compleet zijn.

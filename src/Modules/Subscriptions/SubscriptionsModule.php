@@ -4119,6 +4119,54 @@ class SubscriptionsModule {
         return 'attribute_' . $key;
     }
 
+    private function get_selected_attribute_key_aliases(string $key): array {
+        $normalizedKey = $this->normalize_selected_attribute_key($key);
+        if ($normalizedKey === '' || $normalizedKey === 'attribute_') {
+            return [];
+        }
+
+        $aliases = [$normalizedKey];
+        $metaKey = str_replace('attribute_', '', $normalizedKey);
+        if ($metaKey !== '') {
+            $aliases[] = $metaKey;
+
+            if (strpos($metaKey, 'pa_') === 0) {
+                $suffix = substr($metaKey, 3);
+                if ($suffix !== '') {
+                    $aliases[] = 'attribute_' . $suffix;
+                    $aliases[] = $suffix;
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter(array_map('sanitize_key', $aliases))));
+    }
+
+    private function get_attribute_config_lookup(array $config): array {
+        $lookup = [];
+
+        foreach ($config as $attribute) {
+            if (!is_array($attribute)) {
+                continue;
+            }
+
+            $canonicalKey = (string) ($attribute['key'] ?? '');
+            if ($canonicalKey === '' || $canonicalKey === 'attribute_') {
+                continue;
+            }
+
+            foreach ($this->get_selected_attribute_key_aliases($canonicalKey) as $aliasKey) {
+                if ($aliasKey === '') {
+                    continue;
+                }
+
+                $lookup[$aliasKey] = $attribute;
+            }
+        }
+
+        return $lookup;
+    }
+
     private function is_subscription_selected_attribute_meta_key(string $metaKey): bool {
         $normalizedKey = ltrim(sanitize_key($metaKey), '_');
 
@@ -4524,7 +4572,13 @@ class SubscriptionsModule {
                         continue;
                     }
 
-                    $configByMetaKey[str_replace('attribute_', '', $key)] = $attribute;
+                    foreach ($this->get_selected_attribute_key_aliases($key) as $aliasKey) {
+                        if ($aliasKey === '') {
+                            continue;
+                        }
+
+                        $configByMetaKey[$aliasKey] = $attribute;
+                    }
                 }
             }
         }
@@ -4627,6 +4681,10 @@ class SubscriptionsModule {
 
                 $selectedAttributes[$key] = $normalizedValue;
             }
+        }
+
+        if ($product && is_object($product) && method_exists($product, 'is_type') && $product->is_type('variable')) {
+            return $this->normalize_selected_attributes_for_product($product, $selectedAttributes);
         }
 
         return $this->sanitize_selected_attributes_map($selectedAttributes);
@@ -4875,7 +4933,7 @@ class SubscriptionsModule {
         $product = $baseProductId > 0 && function_exists('wc_get_product') ? wc_get_product($baseProductId) : null;
         $config = $product && is_object($product) ? $this->get_variable_product_attribute_config($product) : [];
         $configByCanonicalKey = [];
-        $configByMetaKey = [];
+        $configLookup = $this->get_attribute_config_lookup($config);
 
         foreach ($config as $attribute) {
             $canonicalKey = (string) ($attribute['key'] ?? '');
@@ -4884,7 +4942,6 @@ class SubscriptionsModule {
             }
 
             $configByCanonicalKey[$canonicalKey] = $attribute;
-            $configByMetaKey[str_replace('attribute_', '', $canonicalKey)] = $attribute;
         }
 
         $normalized = [];
@@ -4903,11 +4960,20 @@ class SubscriptionsModule {
             if (strpos($sanitizedKey, 'attribute_') === 0 && isset($configByCanonicalKey[$sanitizedKey])) {
                 $canonicalKey = $sanitizedKey;
                 $attribute = $configByCanonicalKey[$sanitizedKey];
-            } elseif (isset($configByMetaKey[$sanitizedKey])) {
-                $attribute = $configByMetaKey[$sanitizedKey];
-                $canonicalKey = (string) ($attribute['key'] ?? '');
             } elseif (strpos($sanitizedKey, 'attribute_') === 0) {
                 $canonicalKey = $sanitizedKey;
+            }
+
+            if ($attribute === null) {
+                foreach ($this->get_selected_attribute_key_aliases($sanitizedKey) as $aliasKey) {
+                    if (!isset($configLookup[$aliasKey]) || !is_array($configLookup[$aliasKey])) {
+                        continue;
+                    }
+
+                    $attribute = $configLookup[$aliasKey];
+                    $canonicalKey = (string) ($attribute['key'] ?? '');
+                    break;
+                }
             }
 
             if ($canonicalKey === '' || $canonicalKey === 'attribute_') {
@@ -4958,6 +5024,14 @@ class SubscriptionsModule {
     private function get_subscription_item_selected_attributes(array $item): array {
         $stored = isset($item['selected_attributes']) && is_array($item['selected_attributes']) ? $item['selected_attributes'] : [];
         if (!empty($stored)) {
+            $baseProductId = (int) ($item['base_product_id'] ?? 0);
+            if ($baseProductId > 0 && function_exists('wc_get_product')) {
+                $product = wc_get_product($baseProductId);
+                if ($product && is_object($product) && method_exists($product, 'is_type') && $product->is_type('variable')) {
+                    return $this->normalize_selected_attributes_for_product($product, $stored);
+                }
+            }
+
             return $this->sanitize_selected_attributes_map($stored);
         }
 
@@ -4982,12 +5056,30 @@ class SubscriptionsModule {
         $selectedAttributes = $this->sanitize_selected_attributes_map($selectedAttributes);
         $normalized = [];
         $config = $this->get_variable_product_attribute_config($product, $variationOnly);
+        $configLookup = $this->get_attribute_config_lookup($config);
         foreach ($config as $attribute) {
             $key = (string) ($attribute['key'] ?? '');
             if ($key === '') {
                 continue;
             }
-            $value = isset($selectedAttributes[$key]) ? sanitize_title((string) $selectedAttributes[$key]) : '';
+
+            $value = '';
+            foreach ($this->get_selected_attribute_key_aliases($key) as $aliasKey) {
+                if (!isset($selectedAttributes[$aliasKey])) {
+                    continue;
+                }
+
+                $rawValue = (string) $selectedAttributes[$aliasKey];
+                $value = $this->normalize_selected_attribute_value_from_config($rawValue, $attribute);
+                if ($value !== '') {
+                    break;
+                }
+            }
+
+            if ($value === '' && isset($configLookup[$key]) && is_array($configLookup[$key])) {
+                $value = isset($selectedAttributes[$key]) ? sanitize_title((string) $selectedAttributes[$key]) : '';
+            }
+
             if ($value !== '') {
                 $normalized[$key] = $value;
             }
