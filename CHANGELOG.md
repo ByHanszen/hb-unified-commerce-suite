@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.145] — 2026-04-08
+### Fixed
+- Frontend abonnementen: bij het opbouwen van een subscription-item uit een gekozen variatie worden handmatig gekozen attributen niet meer overschreven door een mogelijk onvolledige attribuutset van de WooCommerce-variatie. De gebruikersselectie en variatie-attributen worden nu samengevoegd, zodat alle gekozen variatie-attributen behouden blijven.
+
 ## [0.3.144] — 2026-04-08
 ### Fixed
 - Backend abonnementitems: de extra handmatige `attribute_*` order-item meta voor gekozen variatie-attributen wordt niet meer apart weggeschreven. Daardoor verschijnt in de backend geen tweede, potentieel verouderde `PA_*` attribuutregel meer naast de actuele WooCommerce-variatiegegevens.

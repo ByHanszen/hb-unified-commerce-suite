@@ -6385,6 +6385,7 @@ class SubscriptionsModule {
             return null;
         }
 
+        $selectedAttributes = $this->sanitize_selected_attributes_map($selectedAttributes);
         $product = wc_get_product($selectedId);
         if (!$product || !is_object($product)) {
             return null;
@@ -6395,12 +6396,32 @@ class SubscriptionsModule {
         if (method_exists($product, 'is_type') && $product->is_type('variation')) {
             $baseVariationId = $selectedId;
             $baseProductId = method_exists($product, 'get_parent_id') ? (int) $product->get_parent_id() : 0;
-            $selectedAttributes = $this->get_selected_attributes_from_variation($product);
+            $variationAttributes = $this->get_selected_attributes_from_variation($product);
+            $selectedAttributes = array_merge($variationAttributes, $selectedAttributes);
+
+            if ($baseProductId > 0) {
+                $parentProduct = wc_get_product($baseProductId);
+                if ($parentProduct && is_object($parentProduct)) {
+                    $selectedAttributes = $this->normalize_selected_attributes_for_product($parentProduct, $selectedAttributes);
+                } else {
+                    $selectedAttributes = $this->sanitize_selected_attributes_map($selectedAttributes);
+                }
+            } else {
+                $selectedAttributes = $this->sanitize_selected_attributes_map($selectedAttributes);
+            }
         } elseif (method_exists($product, 'is_type') && $product->is_type('variable')) {
             $selectedAttributes = $this->normalize_selected_attributes_for_product($product, $selectedAttributes);
             $baseVariationId = $this->resolve_variation_id_from_attributes($product, $selectedAttributes);
             if ($baseVariationId <= 0) {
                 return null;
+            }
+
+            $variationProduct = wc_get_product($baseVariationId);
+            if ($variationProduct && is_object($variationProduct)) {
+                $selectedAttributes = $this->normalize_selected_attributes_for_product(
+                    $product,
+                    array_merge($this->get_selected_attributes_from_variation($variationProduct), $selectedAttributes)
+                );
             }
         }
 
