@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.138] — 2026-04-08
+### Changed
+- Frontend abonnementen: productregels, toeslagen, verzendkosten en totalen op Mijn Account volgen nu dezelfde standaard WooCommerce prijsweergave-instelling als de rest van de shop (`incl.` of `excl.` btw), in plaats van een aparte account-specifieke btw-weergave af te dwingen.
+
 ## [0.3.137] — 2026-04-08
 ### Changed
 - Abonnementen: de online/live bron voor subscription items, toeslagen en verzendregels gebruikt nu eerst HPOS order items van het subscription order object in plaats van `_hb_ucs_sub_*` shadow-meta.

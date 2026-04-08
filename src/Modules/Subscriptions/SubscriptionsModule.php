@@ -6425,11 +6425,7 @@ class SubscriptionsModule {
     }
 
     private function should_display_account_subscription_prices_including_tax(): bool {
-        if (!function_exists('wc_tax_enabled') || !wc_tax_enabled()) {
-            return false;
-        }
-
-        return true;
+        return $this->should_display_subscription_prices_including_tax();
     }
 
     private function should_display_subscription_prices_including_tax(): bool {
