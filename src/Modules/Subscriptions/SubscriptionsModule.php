@@ -11348,6 +11348,8 @@ JS;
     public function filter_order_item_formatted_meta_data(array $formattedMeta, $item): array {
         $isAdminContext = is_admin();
         $isSubscriptionItem = $this->is_subscription_order_item($item);
+        [$baseProductId] = $isSubscriptionItem ? $this->get_subscription_order_item_base_ids($item, true) : [0, 0];
+        $attributeDisplayLabels = $isSubscriptionItem ? $this->get_subscription_item_attribute_display_meta_labels($baseProductId) : [];
         $seen = [];
         foreach ($formattedMeta as $metaId => $meta) {
             if (!is_object($meta) || !isset($meta->key)) {
@@ -11366,6 +11368,12 @@ JS;
 
             $label = isset($meta->display_key) ? trim(wp_strip_all_tags((string) $meta->display_key, true)) : '';
             $value = isset($meta->display_value) ? trim(html_entity_decode(wp_strip_all_tags((string) $meta->display_value, true), ENT_QUOTES, 'UTF-8')) : '';
+            $normalizedLabel = ltrim(sanitize_key($this->normalize_subscription_item_display_label($label)), '_');
+            if ($isSubscriptionItem && $normalizedLabel !== '' && in_array($normalizedLabel, $attributeDisplayLabels, true)) {
+                unset($formattedMeta[$metaId]);
+                continue;
+            }
+
             if (!$isAdminContext || $label === '' || $value === '') {
                 continue;
             }
@@ -11421,27 +11429,39 @@ JS;
         }
 
         $selectedAttributes = $this->get_selected_attributes_from_order_item($item, $baseProductId, $baseVariationId, false);
-        $displayMeta = $this->get_display_meta_rows_from_order_item($item, $baseProductId, $selectedAttributes, false);
-        if (!empty($displayMeta)) {
-            return $displayMeta;
-        }
-
-        $sourceOrderItemId = (int) $item->get_meta(self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID, true);
-        if ($sourceOrderItemId > 0 && function_exists('WC') && WC() && isset(WC()->order_factory)) {
-            $sourceItem = WC()->order_factory->get_order_item($sourceOrderItemId);
-            if ($sourceItem && is_object($sourceItem)) {
-                if (empty($selectedAttributes)) {
-                    $selectedAttributes = $this->get_selected_attributes_from_order_item($sourceItem, $baseProductId, $baseVariationId, false);
-                }
-
-                $displayMeta = $this->get_display_meta_rows_from_order_item($sourceItem, $baseProductId, $selectedAttributes, false);
-                if (!empty($displayMeta)) {
-                    return $displayMeta;
-                }
+        $rows = $this->get_selected_attribute_display_rows($baseProductId, $selectedAttributes);
+        $seen = [];
+        foreach ($rows as $row) {
+            $label = (string) ($row['label'] ?? '');
+            $value = (string) ($row['value'] ?? '');
+            if ($label === '' || $value === '') {
+                continue;
             }
+
+            $seen[$this->get_subscription_item_display_row_hash($label, $value)] = true;
         }
 
-        return $this->get_selected_attribute_display_rows($baseProductId, $selectedAttributes);
+        $displayMeta = $this->get_display_meta_rows_from_order_item($item, $baseProductId, $selectedAttributes, false);
+        foreach ($displayMeta as $displayMetaRow) {
+            $label = (string) ($displayMetaRow['label'] ?? '');
+            $value = (string) ($displayMetaRow['value'] ?? '');
+            if ($label === '' || $value === '') {
+                continue;
+            }
+
+            $hash = $this->get_subscription_item_display_row_hash($label, $value);
+            if (isset($seen[$hash])) {
+                continue;
+            }
+
+            $seen[$hash] = true;
+            $rows[] = [
+                'label' => $label,
+                'value' => $value,
+            ];
+        }
+
+        return $rows;
     }
 
     public function maybe_restore_base_stock($order): void {

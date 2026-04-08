@@ -4,6 +4,11 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.151] — 2026-04-08
+### Fixed
+- Backend abonnementitems: admin-meta voor subscription order items filtert nu ook attribuutlabels zelf weg wanneer WooCommerce die al als geformatteerde meta zou tonen. Daardoor verdwijnen dubbele attribuutregels met en zonder `pa_` prefix in de backend.
+- Backend abonnementitems: de custom meta-injectie bouwt attribuutregels nu altijd eerst op uit de actuele geselecteerde attributen en voegt alleen nog niet-attribuutmeta aanvullend toe. Daardoor blijven alle actuele gekozen variatie-attributen zichtbaar zonder terugval op verouderde bronmeta.
+
 ## [0.3.150] — 2026-04-08
 ### Fixed
 - Abonnementen: nieuw opgebouwde subscription-items zonder echte bestaande orderregel bewaren niet langer automatisch nulwaardes als `line_subtotal`, `line_tax` en `line_total`. Daardoor worden verse productwijzigingen weer normaal uit actuele prijs- en belastingdata berekend en verschijnt de productprijs niet meer ten onrechte als korting in de backend.
