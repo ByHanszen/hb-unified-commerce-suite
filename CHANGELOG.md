@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.150] — 2026-04-08
+### Fixed
+- Abonnementen: nieuw opgebouwde subscription-items zonder echte bestaande orderregel bewaren niet langer automatisch nulwaardes als `line_subtotal`, `line_tax` en `line_total`. Daardoor worden verse productwijzigingen weer normaal uit actuele prijs- en belastingdata berekend en verschijnt de productprijs niet meer ten onrechte als korting in de backend.
+
 ## [0.3.149] — 2026-04-08
 ### Fixed
 - Frontend abonnementen: bij het teruglezen van gewijzigde subscription-items wordt niet langer de oude bron-orderregel via `source_order_item_id` gebruikt voor prijs- of metaweergave. De frontend blijft daardoor na een productwijziging op de actuele subscription-item data.

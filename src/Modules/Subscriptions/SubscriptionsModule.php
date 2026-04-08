@@ -5163,11 +5163,16 @@ class SubscriptionsModule {
         $selectedAttributes = isset($item['selected_attributes']) && is_array($item['selected_attributes']) ? $item['selected_attributes'] : [];
         $displayMeta = isset($item['display_meta']) && is_array($item['display_meta']) ? $item['display_meta'] : [];
         $taxes = $this->normalize_subscription_item_taxes($item['taxes'] ?? []);
-        $lineTotals = $this->sanitize_subscription_item_order_totals_snapshot([
-            'line_subtotal' => $item['line_subtotal'] ?? null,
-            'line_tax' => $item['line_tax'] ?? null,
-            'line_total' => $item['line_total'] ?? null,
-        ]);
+        $hasExplicitLineTotals = array_key_exists('line_subtotal', $item)
+            || array_key_exists('line_tax', $item)
+            || array_key_exists('line_total', $item);
+        $lineTotals = $hasExplicitLineTotals
+            ? $this->sanitize_subscription_item_order_totals_snapshot([
+                'line_subtotal' => $item['line_subtotal'] ?? null,
+                'line_tax' => $item['line_tax'] ?? null,
+                'line_total' => $item['line_total'] ?? null,
+            ])
+            : [];
 
         if ($baseProductId <= 0) {
             return null;
@@ -5216,10 +5221,13 @@ class SubscriptionsModule {
             'taxes' => $taxes,
             'selected_attributes' => $normalizedAttributes,
             'display_meta' => $normalizedDisplayMeta,
-            'line_subtotal' => (float) ($lineTotals['line_subtotal'] ?? 0.0),
-            'line_tax' => (float) ($lineTotals['line_tax'] ?? 0.0),
-            'line_total' => (float) ($lineTotals['line_total'] ?? 0.0),
         ];
+
+        if (!empty($lineTotals)) {
+            $normalized['line_subtotal'] = (float) ($lineTotals['line_subtotal'] ?? 0.0);
+            $normalized['line_tax'] = (float) ($lineTotals['line_tax'] ?? 0.0);
+            $normalized['line_total'] = (float) ($lineTotals['line_total'] ?? 0.0);
+        }
 
         $normalized['catalog_unit_price'] = $this->resolve_subscription_item_catalog_unit_price($item, $normalized);
 
