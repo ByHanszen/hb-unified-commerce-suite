@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.134] — 2026-04-08
+### Changed
+- Abonnementen: wanneer de product-picker popup een Elementor Loop Item template gebruikt, wordt de resterende HB UCS kaartstyling op die templated variant niet meer toegepast. Daardoor blijft alleen de Elementor-opmaak zichtbaar.
+
 ## [0.3.133] — 2026-04-08
 ### Changed
 - Abonnementen: frontend prijzen op Mijn Account gebruiken nu dezelfde btw-inclusieve prijsbasis en abonnementsklant-taxcontext als de backend, zodat lijstweergave, detailsamenvatting, prijsopbouw en productregels dezelfde bedragen tonen.

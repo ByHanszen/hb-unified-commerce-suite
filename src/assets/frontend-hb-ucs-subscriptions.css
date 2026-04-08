@@ -1117,8 +1117,22 @@
 }
 
 .hb-ucs-product-modal__item--templated {
+  appearance: none;
   padding: 0;
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   overflow: hidden;
+}
+
+.hb-ucs-product-modal__item--templated:hover,
+.hb-ucs-product-modal__item--templated:focus {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
 }
 
 .hb-ucs-product-modal__item-template {
