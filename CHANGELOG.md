@@ -4,6 +4,11 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.156] — 2026-04-08
+### Fixed
+- Abonnement-attributen: een gekozen variatie-attribuutset zonder aparte `variation_id` blijft nu bewaard op het parent product, zolang de verplichte variatie-attributen compleet zijn.
+- Abonnement-backend: gekozen variatie-attributen worden niet langer dubbel getoond als zowel variatiesamenvatting als losse meta-regels op dezelfde orderregel.
+
 ## [0.3.155] — 2026-04-08
 ### Fixed
 - Abonnement-attributen: de productpicker en attribuutweergave tonen nu weer alleen attributen die echt als variatie-attribuut zijn gemarkeerd. Optionele productattributen blijven daarmee buiten de zichtbare abonnement-selectie.

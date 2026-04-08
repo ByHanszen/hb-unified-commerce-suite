@@ -1201,6 +1201,10 @@ class SubscriptionsModule {
                     break;
                 }
             }
+
+            if (!$requiresSelection && $resolvedSelectionId <= 0) {
+                $resolvedSelectionId = $selectedId;
+            }
         }
 
         $attributeConfig = $this->get_variable_product_attribute_config($attributeProduct);
@@ -1940,7 +1944,7 @@ class SubscriptionsModule {
         }
 
         $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
-        $displayMetaRows = $this->get_subscription_item_attribute_display_rows($item);
+        $displayMetaRows = $this->get_subscription_item_display_meta($item);
         $variationSummary = $this->get_subscription_item_variation_summary($item);
 
         $this->render_admin_template('subscription-order-item.php', [
@@ -6325,11 +6329,7 @@ class SubscriptionsModule {
         } elseif (method_exists($product, 'is_type') && $product->is_type('variable')) {
             $selectedAttributes = $this->normalize_selected_attributes_for_product($product, $selectedAttributes);
             $baseVariationId = $this->resolve_variation_id_from_attributes($product, $selectedAttributes);
-            if ($baseVariationId <= 0) {
-                return null;
-            }
-
-            $variationProduct = wc_get_product($baseVariationId);
+            $variationProduct = $baseVariationId > 0 ? wc_get_product($baseVariationId) : null;
             if ($variationProduct && is_object($variationProduct)) {
                 $selectedAttributes = $this->normalize_selected_attributes_for_product(
                     $product,
