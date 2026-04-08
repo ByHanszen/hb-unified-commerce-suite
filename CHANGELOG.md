@@ -15,7 +15,7 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ### Fixed
 - Abonnementen: renewal-creatie leest subscription-items nu zonder automatische repair-writeback en resolved de renewal-betaalmethode zonder direct het abonnement zelf te herschrijven. Daardoor kan het aanmaken van een renewal-order niet meer onbedoeld opgeslagen abonnementsprijzen of betaaldata muteren.
-- Abonnementen: de frontend accountweergave valideert eigenaarschap van abonnementen nu expliciet via WooCommerce customer-id en interne eigenaar-meta. Daardoor kunnen klanten niet langer abonnementen van andere accounts zien als een order-query te breed uitvalt.
+- Abonnementen: de frontend accountweergave valideert eigenaarschap van abonnementen nu expliciet via WooCommerce customer-id en interne eigenaar-meta. Ook gerelateerde bestellingen op de detailpagina worden alleen nog getoond als ze bij dezelfde account horen. Daardoor kunnen klanten niet langer abonnementen of gekoppelde orderdata van andere accounts zien als een query of datakoppeling te breed uitvalt.
 
 ### Removed
 - Abonnementen: WCS migratie- en exporthooks worden niet meer geregistreerd en runtime-context leest geen fallback-data meer uit gekoppelde WCS bronabonnementen. Dat verkleint de kans op sync- en herstelverschillen met oude externe brondata.

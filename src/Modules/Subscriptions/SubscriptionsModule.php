@@ -2467,7 +2467,7 @@ class SubscriptionsModule {
         $items = $this->get_subscription_items($subId);
         $productOptions = $this->get_manageable_subscription_product_options($scheme);
         $contact = $this->get_subscription_contact_snapshot($userId, null, $subId);
-        $relatedOrders = $this->get_subscription_related_orders($subId);
+        $relatedOrders = $this->get_subscription_related_orders($subId, $userId);
         $manageDisabled = in_array($status, ['cancelled', 'expired'], true);
         $totalAmount = $this->get_subscription_total_amount($subId, $this->should_display_subscription_prices_including_tax());
         $scheduleModalId = 'hb-ucs-schedule-modal-' . $subId;
@@ -6112,12 +6112,12 @@ class SubscriptionsModule {
         return abs($storedTaxTotal - $expectedTaxWhenIncluding) <= abs($storedTaxTotal - $expectedTaxWhenExcluding);
     }
 
-    private function get_subscription_related_orders(int $subId): array {
+    private function get_subscription_related_orders(int $subId, int $userId = 0): array {
         $rows = [];
         $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
         if ($parentOrderId > 0) {
             $parent = wc_get_order($parentOrderId);
-            if ($parent && is_object($parent)) {
+            if ($parent && is_object($parent) && $this->order_belongs_to_user($parent, $userId)) {
                 $rows[] = ['type' => __('Start', 'hb-ucs'), 'order' => $parent];
             }
         }
@@ -6132,7 +6132,7 @@ class SubscriptionsModule {
 
         if (is_array($orders)) {
             foreach ($orders as $order) {
-                if (!$order || !is_object($order)) {
+                if (!$order || !is_object($order) || !$this->order_belongs_to_user($order, $userId)) {
                     continue;
                 }
                 $rows[] = ['type' => __('Renewal', 'hb-ucs'), 'order' => $order];
@@ -6140,6 +6140,32 @@ class SubscriptionsModule {
         }
 
         return $rows;
+    }
+
+    private function order_belongs_to_user($order, int $userId): bool {
+        if ($userId <= 0 || !$order || !is_object($order)) {
+            return false;
+        }
+
+        $customerId = method_exists($order, 'get_customer_id') ? (int) $order->get_customer_id() : 0;
+        if ($customerId > 0) {
+            return $customerId === $userId;
+        }
+
+        $orderId = method_exists($order, 'get_id') ? (int) $order->get_id() : 0;
+        $fallbackCustomerId = $orderId > 0 ? (int) get_post_meta($orderId, '_customer_user', true) : 0;
+        if ($fallbackCustomerId > 0) {
+            return $fallbackCustomerId === $userId;
+        }
+
+        $user = get_user_by('id', $userId);
+        $userEmail = $user && is_object($user) ? strtolower(trim((string) $user->user_email)) : '';
+        if ($userEmail === '') {
+            return false;
+        }
+
+        $billingEmail = method_exists($order, 'get_billing_email') ? strtolower(trim((string) $order->get_billing_email())) : '';
+        return $billingEmail !== '' && $billingEmail === $userEmail;
     }
 
     private function subscription_has_locked_orders(int $subId): bool {
