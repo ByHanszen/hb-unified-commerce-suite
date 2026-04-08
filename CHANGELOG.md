@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.139] — 2026-04-08
+### Changed
+- Frontend abonnementen: productregels op Mijn Account gebruiken nu, net als verzendkosten, rechtstreeks de HPOS order-line totals wanneer die beschikbaar zijn. Daardoor worden productprijzen niet meer apart herberekend zonder btw terwijl verzending al inclusief btw uit orderregels kwam.
+
 ## [0.3.138] — 2026-04-08
 ### Changed
 - Frontend abonnementen: productregels, toeslagen, verzendkosten en totalen op Mijn Account volgen nu dezelfde standaard WooCommerce prijsweergave-instelling als de rest van de shop (`incl.` of `excl.` btw), in plaats van een aparte account-specifieke btw-weergave af te dwingen.
