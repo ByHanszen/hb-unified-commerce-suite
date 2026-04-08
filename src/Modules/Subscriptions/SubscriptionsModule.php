@@ -4763,6 +4763,7 @@ class SubscriptionsModule {
 
         $rows = [];
         $seen = [];
+        $attributeDisplayLabels = $this->get_subscription_item_attribute_display_meta_labels($baseProductId);
         $selectedRows = $this->get_subscription_item_attribute_display_rows([
             'base_product_id' => $baseProductId,
             'selected_attributes' => $selectedAttributes,
@@ -4791,8 +4792,14 @@ class SubscriptionsModule {
                 $metaKey = isset($meta->key) ? (string) $meta->key : '';
                 $label = isset($meta->display_key) ? trim(wp_strip_all_tags((string) $meta->display_key, true)) : '';
                 $value = isset($meta->display_value) ? trim(html_entity_decode(wp_strip_all_tags((string) $meta->display_value, true), ENT_QUOTES, 'UTF-8')) : '';
+                $normalizedLabel = ltrim(sanitize_key($this->normalize_subscription_item_display_label($label)), '_');
 
-                if ($label === '' || $value === '' || $this->should_skip_formatted_order_item_display_meta($metaKey, $label)) {
+                if (
+                    $label === ''
+                    || $value === ''
+                    || $this->should_skip_formatted_order_item_display_meta($metaKey, $label)
+                    || ($normalizedLabel !== '' && in_array($normalizedLabel, $attributeDisplayLabels, true))
+                ) {
                     continue;
                 }
 
@@ -4824,7 +4831,8 @@ class SubscriptionsModule {
                 }
 
                 $label = $this->get_order_item_display_meta_label($metaKey);
-                if ($label === '') {
+                $normalizedLabel = ltrim(sanitize_key($this->normalize_subscription_item_display_label($label)), '_');
+                if ($label === '' || ($normalizedLabel !== '' && in_array($normalizedLabel, $attributeDisplayLabels, true))) {
                     continue;
                 }
 

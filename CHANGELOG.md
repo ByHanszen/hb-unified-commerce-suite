@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.153] — 2026-04-08
+### Fixed
+- Abonnement-attributen: order-item meta met attribuutachtige labels wordt niet langer opnieuw als gewone `display_meta` ingelezen. Daardoor blijft attribuutweergave volledig gebaseerd op de actuele `selected_attributes` opslag, zonder dubbele `pa_`/`attribute_pa_` varianten of ontbrekende combinaties door vervuilde meta.
+
 ## [0.3.152] — 2026-04-08
 ### Fixed
 - Abonnement-attributen: labels als `attribute_pa_*`, `pa_*` en nette attribuutlabels worden nu allemaal naar dezelfde attribuutnaam genormaliseerd. Daardoor worden dubbele attribuutregels met en zonder prefix eindelijk als hetzelfde attribuut herkend en correct weggefilterd in frontend en backend.
