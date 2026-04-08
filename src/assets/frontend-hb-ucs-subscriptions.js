@@ -66,20 +66,60 @@
   }
 
   function normalizeText(value) {
-    return String(value || '').toLowerCase().trim();
+    var normalized = String(value || '').toLowerCase().trim();
+    if (typeof normalized.normalize === 'function') {
+      normalized = normalized.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    }
+
+    return normalized;
+  }
+
+  function parseCategoryIds(value) {
+    return String(value || '')
+      .split(',')
+      .map(function (part) {
+        return String(part || '').trim();
+      })
+      .filter(function (part) {
+        return part !== '';
+      });
+  }
+
+  function getActiveCategoryFilterIds($modal) {
+    var $activeButton = $modal.find('.hb-ucs-product-modal__menu-button.is-active').first();
+    if (!$activeButton.length) {
+      return [];
+    }
+
+    return parseCategoryIds($activeButton.attr('data-filter-categories'));
+  }
+
+  function setActiveCategoryFilter($modal, $button) {
+    if (!$modal || !$modal.length) {
+      return;
+    }
+
+    var $buttons = $modal.find('.hb-ucs-product-modal__menu-button');
+    $buttons.removeClass('is-active').attr('aria-pressed', 'false');
+
+    if ($button && $button.length) {
+      $button.addClass('is-active').attr('aria-pressed', 'true');
+    }
   }
 
   function filterProductModal($modal) {
     var term = normalizeText($modal.find('.hb-ucs-product-modal__search').val());
-    var category = String($modal.find('.hb-ucs-product-modal__category').val() || '');
+    var activeCategoryIds = getActiveCategoryFilterIds($modal);
     var visible = 0;
 
     $modal.find('.hb-ucs-product-modal__item').each(function () {
       var $item = $(this);
       var haystack = normalizeText($item.data('productSearch'));
-      var categories = String($item.data('productCategories') || '');
+      var categories = parseCategoryIds($item.attr('data-product-categories'));
       var matchesTerm = !term || haystack.indexOf(term) !== -1;
-      var matchesCategory = !category || categories.split(',').indexOf(category) !== -1;
+      var matchesCategory = !activeCategoryIds.length || activeCategoryIds.some(function (categoryId) {
+        return categories.indexOf(categoryId) !== -1;
+      });
       var show = matchesTerm && matchesCategory;
 
       $item.prop('hidden', !show);
@@ -127,8 +167,13 @@
     if (!$modal || !$modal.length) {
       return;
     }
+
+    var $defaultFilter = $modal.find('.hb-ucs-product-modal__menu-button[data-filter-default="1"]').first();
+
     $modal.data('activeInput', inputId || '');
     $modal.find('#hb-ucs-product-modal-title').text(title || 'Kies een product');
+    $modal.find('.hb-ucs-product-modal__search').val('');
+    setActiveCategoryFilter($modal, $defaultFilter);
     $modal.removeAttr('hidden').attr('aria-hidden', 'false');
     $('body').addClass('hb-ucs-product-modal-open');
     filterProductModal($modal);
@@ -473,8 +518,15 @@
       closeProductModal($modal);
     });
 
-    $modal.off('input.hbUcsProductModalFilter change.hbUcsProductModalFilter', '.hb-ucs-product-modal__search, .hb-ucs-product-modal__category');
-    $modal.on('input.hbUcsProductModalFilter change.hbUcsProductModalFilter', '.hb-ucs-product-modal__search, .hb-ucs-product-modal__category', function () {
+    $modal.off('input.hbUcsProductModalFilter', '.hb-ucs-product-modal__search');
+    $modal.on('input.hbUcsProductModalFilter', '.hb-ucs-product-modal__search', function () {
+      filterProductModal($modal);
+    });
+
+    $modal.off('click.hbUcsProductModalCategory', '.hb-ucs-product-modal__menu-button');
+    $modal.on('click.hbUcsProductModalCategory', '.hb-ucs-product-modal__menu-button', function (event) {
+      event.preventDefault();
+      setActiveCategoryFilter($modal, $(this));
       filterProductModal($modal);
     });
 
