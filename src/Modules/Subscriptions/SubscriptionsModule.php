@@ -3875,16 +3875,12 @@ class SubscriptionsModule {
             echo '</div>';
         }
         echo '<div class="hb-ucs-product-modal__results">';
-        if (empty($items)) {
-            echo '<p class="hb-ucs-product-modal__empty">' . esc_html__('Er zijn geen geschikte producten beschikbaar.', 'hb-ucs') . '</p>';
-        } else {
-            foreach ($items as $item) {
         echo $this->render_manageable_product_picker_items_html($items, $disabled);
+        echo '<p class="hb-ucs-product-modal__no-results" hidden>' . esc_html__('Geen producten gevonden voor deze filters.', 'hb-ucs') . '</p>';
+        echo '</div>';
+        echo '</div>';
+        echo '</div>';
     }
-
-    private function get_variation_option_label($variation, int $fallbackId = 0): string {
-        if ($variation instanceof \WC_Product_Variation) {
-            $parts = [];
 
     public function handle_subscription_product_picker_search_ajax(): void {
         check_ajax_referer('hb_ucs_subscription_frontend', 'nonce');
@@ -3905,6 +3901,10 @@ class SubscriptionsModule {
             'count' => count($items),
         ]);
     }
+
+    private function get_variation_option_label($variation, int $fallbackId = 0): string {
+        if ($variation instanceof \WC_Product_Variation) {
+            $parts = [];
             $parentId = (int) $variation->get_parent_id();
             $parent = $parentId > 0 ? wc_get_product($parentId) : null;
             $variationAttributes = (array) $variation->get_variation_attributes();
@@ -3919,10 +3919,12 @@ class SubscriptionsModule {
                     if ($attributeName === '') {
                         continue;
                     }
+
                     $attributeKey = 'attribute_' . sanitize_title($attributeName);
                     if ($attributeKey === 'attribute_') {
                         continue;
                     }
+
                     $attributeValue = isset($variationAttributes[$attributeKey]) ? (string) $variationAttributes[$attributeKey] : '';
                     if ($attributeValue === '' && method_exists($variation, 'get_attribute')) {
                         $attributeValue = (string) $variation->get_attribute($attributeName);
