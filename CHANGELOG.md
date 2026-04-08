@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.160] — 2026-04-08
+### Fixed
+- Abonnement-frontend: het opslaan van artikelwijzigingen in Mijn Account bouwt subscription-items nu weer direct op uit de geposte selectie, in plaats van via de previewlaag. Daardoor blijven gekozen variatie-attributen zoals `Maling` behouden in dezelfde save/readback-stroom die eerder al correct werkte.
+
 ## [0.3.159] — 2026-04-08
 ### Fixed
 - Abonnement-opslag: bij opslaan van frontend artikelwijzigingen blijft de geposte attribuutselectie nu leidend op het subscription-item, zodat gekozen opties zoals `Maling` niet meer wegvallen tijdens preview of persist.

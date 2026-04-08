@@ -2935,64 +2935,28 @@ class SubscriptionsModule {
                     $existingItem = isset($existingItems[$index]) && is_array($existingItems[$index]) ? $existingItems[$index] : null;
                     $existingSelectedId = $existingItem ? (int) ($existingItem['base_product_id'] ?? 0) : 0;
                     $existingSelectedAttributes = $existingItem ? $this->get_subscription_item_selected_attributes($existingItem) : [];
+                    $fallbackUnit = ($existingItem && $existingSelectedId === $selectedId) ? (float) ($existingItem['unit_price'] ?? 0.0) : null;
 
                     if ($existingItem && $existingSelectedId === $selectedId && empty($selectedAttributes)) {
                         $selectedAttributes = $this->get_subscription_item_selected_attributes($existingItem);
                     }
 
-                    $preview = $this->get_subscription_admin_item_preview_details(
+                    $item = $this->build_subscription_item_from_selection(
                         $selectedId,
                         $scheduleScheme,
                         $qty,
-                        is_array($selectedAttributes) ? $selectedAttributes : [],
-                        null,
-                        true,
-                        $subId
+                        $fallbackUnit,
+                        is_array($selectedAttributes) ? $selectedAttributes : []
                     );
-                    $item = isset($preview['preview_item']) && is_array($preview['preview_item']) ? $preview['preview_item'] : null;
                     $currentSelectedAttributes = $item ? $this->get_subscription_item_selected_attributes($item) : [];
                     $currentVariationId = $item ? (int) ($item['base_variation_id'] ?? 0) : 0;
                     $existingVariationId = $existingItem ? (int) ($existingItem['base_variation_id'] ?? 0) : 0;
-
-                    if ($item && $selectedId > 0 && function_exists('wc_get_product')) {
-                        $selectedProduct = wc_get_product($selectedId);
-                        if ($selectedProduct && is_object($selectedProduct) && method_exists($selectedProduct, 'is_type') && $selectedProduct->is_type('variable')) {
-                            $authoritativeSelectedAttributes = $this->normalize_selected_attributes_for_product(
-                                $selectedProduct,
-                                array_merge(
-                                    $currentSelectedAttributes,
-                                    is_array($selectedAttributes) ? $selectedAttributes : []
-                                )
-                            );
-
-                            if (!empty($authoritativeSelectedAttributes)) {
-                                $item['selected_attributes'] = $authoritativeSelectedAttributes;
-                                $currentSelectedAttributes = $authoritativeSelectedAttributes;
-                            }
-                        }
-                    }
 
                     $canReuseExistingItemMeta = $existingItem
                         && $existingSelectedId === $selectedId
                         && $existingVariationId === $currentVariationId
                         && $existingSelectedAttributes === $currentSelectedAttributes
                         && $currentVariationId > 0;
-
-                    if (!$item && $selectedId > 0 && function_exists('wc_get_product')) {
-                        $selectedProduct = wc_get_product($selectedId);
-                        if ($selectedProduct && is_object($selectedProduct) && (!method_exists($selectedProduct, 'is_type') || !$selectedProduct->is_type('variable'))) {
-                            $item = $this->build_subscription_item_from_selection(
-                                $selectedId,
-                                $scheduleScheme,
-                                $qty,
-                                null,
-                                is_array($selectedAttributes) ? $selectedAttributes : []
-                            );
-                            $currentSelectedAttributes = $item ? $this->get_subscription_item_selected_attributes($item) : [];
-                            $currentVariationId = $item ? (int) ($item['base_variation_id'] ?? 0) : 0;
-                            $canReuseExistingItemMeta = false;
-                        }
-                    }
 
                     if (!$item) {
                         if ($selectedId > 0) {
