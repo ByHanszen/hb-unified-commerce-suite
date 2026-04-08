@@ -2953,6 +2953,25 @@ class SubscriptionsModule {
                     $currentSelectedAttributes = $item ? $this->get_subscription_item_selected_attributes($item) : [];
                     $currentVariationId = $item ? (int) ($item['base_variation_id'] ?? 0) : 0;
                     $existingVariationId = $existingItem ? (int) ($existingItem['base_variation_id'] ?? 0) : 0;
+
+                    if ($item && $selectedId > 0 && function_exists('wc_get_product')) {
+                        $selectedProduct = wc_get_product($selectedId);
+                        if ($selectedProduct && is_object($selectedProduct) && method_exists($selectedProduct, 'is_type') && $selectedProduct->is_type('variable')) {
+                            $authoritativeSelectedAttributes = $this->normalize_selected_attributes_for_product(
+                                $selectedProduct,
+                                array_merge(
+                                    $currentSelectedAttributes,
+                                    is_array($selectedAttributes) ? $selectedAttributes : []
+                                )
+                            );
+
+                            if (!empty($authoritativeSelectedAttributes)) {
+                                $item['selected_attributes'] = $authoritativeSelectedAttributes;
+                                $currentSelectedAttributes = $authoritativeSelectedAttributes;
+                            }
+                        }
+                    }
+
                     $canReuseExistingItemMeta = $existingItem
                         && $existingSelectedId === $selectedId
                         && $existingVariationId === $currentVariationId
@@ -4167,6 +4186,16 @@ class SubscriptionsModule {
         return $lookup;
     }
 
+    private function has_selected_attribute_value(array $selectedAttributes, string $key): bool {
+        foreach ($this->get_selected_attribute_key_aliases($key) as $aliasKey) {
+            if (!empty($selectedAttributes[$aliasKey])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function is_subscription_selected_attribute_meta_key(string $metaKey): bool {
         $normalizedKey = ltrim(sanitize_key($metaKey), '_');
 
@@ -4554,7 +4583,7 @@ class SubscriptionsModule {
         if ($baseVariationId > 0 && function_exists('wc_get_product')) {
             $variation = wc_get_product($baseVariationId);
             foreach ($this->get_selected_attributes_from_variation($variation) as $attributeKey => $attributeValue) {
-                if ($attributeKey === '' || $attributeValue === '' || !empty($selectedAttributes[$attributeKey])) {
+                if ($attributeKey === '' || $attributeValue === '' || $this->has_selected_attribute_value($selectedAttributes, $attributeKey)) {
                     continue;
                 }
 
@@ -4606,13 +4635,13 @@ class SubscriptionsModule {
             }
 
             if (strpos($key, 'attribute_') === 0) {
-                if (empty($selectedAttributes[$key])) {
+                if (!$this->has_selected_attribute_value($selectedAttributes, $key)) {
                     $selectedAttributes[$key] = $value;
                 }
             } elseif (isset($configByMetaKey[$key]) && is_array($configByMetaKey[$key])) {
                 $canonicalKey = (string) ($configByMetaKey[$key]['key'] ?? '');
                 $normalizedValue = $this->normalize_selected_attribute_value_from_config($rawValue, $configByMetaKey[$key]);
-                if ($canonicalKey !== '' && $normalizedValue !== '' && empty($selectedAttributes[$canonicalKey])) {
+                if ($canonicalKey !== '' && $normalizedValue !== '' && !$this->has_selected_attribute_value($selectedAttributes, $canonicalKey)) {
                     $selectedAttributes[$canonicalKey] = $normalizedValue;
                 }
             }

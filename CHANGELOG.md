@@ -4,6 +4,11 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.159] — 2026-04-08
+### Fixed
+- Abonnement-opslag: bij opslaan van frontend artikelwijzigingen blijft de geposte attribuutselectie nu leidend op het subscription-item, zodat gekozen opties zoals `Maling` niet meer wegvallen tijdens preview of persist.
+- Abonnement-readback: aliassen van hetzelfde variatie-attribuut worden bij het teruglezen uit order-item meta niet meer opnieuw naast elkaar toegevoegd.
+
 ## [0.3.158] — 2026-04-08
 ### Fixed
 - Abonnement-frontend: zodra een gekozen attribuutset matcht op een variatie, blijft de live samenvatting op de kaart nu gebaseerd op alle gekozen selectors in plaats van alleen op de WooCommerce-variatiesamenvatting. Daardoor blijven extra gekozen variatie-attributen zoals `Maling` zichtbaar tijdens bewerken.
