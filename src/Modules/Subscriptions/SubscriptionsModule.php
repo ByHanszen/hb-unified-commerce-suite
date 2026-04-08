@@ -4538,11 +4538,13 @@ class SubscriptionsModule {
             }
 
             if (strpos($key, 'attribute_') === 0) {
-                $selectedAttributes[$key] = $value;
+                if (empty($selectedAttributes[$key])) {
+                    $selectedAttributes[$key] = $value;
+                }
             } elseif (isset($configByMetaKey[$key]) && is_array($configByMetaKey[$key])) {
                 $canonicalKey = (string) ($configByMetaKey[$key]['key'] ?? '');
                 $normalizedValue = $this->normalize_selected_attribute_value_from_config($rawValue, $configByMetaKey[$key]);
-                if ($canonicalKey !== '' && $normalizedValue !== '') {
+                if ($canonicalKey !== '' && $normalizedValue !== '' && empty($selectedAttributes[$canonicalKey])) {
                     $selectedAttributes[$canonicalKey] = $normalizedValue;
                 }
             }
@@ -6089,10 +6091,6 @@ class SubscriptionsModule {
             if ($baseVariationId > 0 && method_exists($orderItem, 'set_variation_id')) {
                 $orderItem->set_variation_id($baseVariationId);
             }
-            if (!empty($selectedAttributes) && method_exists($orderItem, 'set_variation')) {
-                $orderItem->set_variation($selectedAttributes);
-            }
-
             $orderItem->set_quantity($qty);
             $orderItem->set_subtotal((float) ($lineTotals['line_subtotal'] ?? 0.0));
             $orderItem->set_total((float) ($lineTotals['line_subtotal'] ?? 0.0));
