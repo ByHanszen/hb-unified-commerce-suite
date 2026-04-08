@@ -621,6 +621,9 @@
     $modal.on('click.hbUcsProductModalPick', '.hb-ucs-product-modal__item', function (event) {
       event.preventDefault();
       var $item = $(this);
+      if ($item.attr('aria-disabled') === 'true') {
+        return;
+      }
       var inputId = String($modal.data('activeInput') || '');
       var targetProductId = String($item.data('targetProductId') || $item.data('productId') || '');
       var selectedAttributes = {};
@@ -654,6 +657,16 @@
       updateRowVariationPreview($field);
       cleanupPendingSubscriptionRow($modal);
       closeProductModal($modal);
+    });
+
+    $modal.off('keydown.hbUcsProductModalPick', '.hb-ucs-product-modal__item');
+    $modal.on('keydown.hbUcsProductModalPick', '.hb-ucs-product-modal__item', function (event) {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return;
+      }
+
+      event.preventDefault();
+      $(this).trigger('click');
     });
 
     $(document).off('change.hbUcsProductAttributes', '.hb-ucs-product-picker-attributes select');

@@ -3495,9 +3495,9 @@ class SubscriptionsModule {
                 $itemClass .= ' hb-ucs-product-modal__item--templated';
             }
 
-            echo '<button type="button" class="' . esc_attr($itemClass) . '" data-product-id="' . esc_attr((string) $itemId) . '" data-target-product-id="' . esc_attr((string) $targetId) . '" data-product-label="' . esc_attr($itemLabel) . '" data-product-summary="' . esc_attr($summary) . '" data-product-price="' . esc_attr($priceHtml) . '" data-product-image="' . esc_attr(base64_encode($imageHtml)) . '" data-product-categories="' . esc_attr($categoryIds) . '" data-product-search="' . esc_attr($searchText) . '" data-selected-attributes="' . esc_attr(wp_json_encode($selectedAttributes)) . '" ' . disabled($disabled, true, false) . '>';
+            echo '<div class="' . esc_attr($itemClass) . '" role="button" tabindex="' . esc_attr($disabled ? '-1' : '0') . '" aria-disabled="' . esc_attr($disabled ? 'true' : 'false') . '" data-product-id="' . esc_attr((string) $itemId) . '" data-target-product-id="' . esc_attr((string) $targetId) . '" data-product-label="' . esc_attr($itemLabel) . '" data-product-summary="' . esc_attr($summary) . '" data-product-price="' . esc_attr($priceHtml) . '" data-product-image="' . esc_attr(base64_encode($imageHtml)) . '" data-product-categories="' . esc_attr($categoryIds) . '" data-product-search="' . esc_attr($searchText) . '" data-selected-attributes="' . esc_attr(wp_json_encode($selectedAttributes)) . '">';
             echo $itemContentHtml;
-            echo '</button>';
+            echo '</div>';
         }
 
         return (string) ob_get_clean();

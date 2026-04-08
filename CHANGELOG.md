@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.135] — 2026-04-08
+### Changed
+- Abonnementen: productkaarten in de frontend product-picker popup gebruiken bij Elementor Loop Item weergave niet langer een `button` wrapper, maar neutrale interactieve markup met dezelfde klik- en toetsenbordbediening. Daardoor lekt er geen browser- of thema-buttonstyling meer door naar loop items.
+
 ## [0.3.134] — 2026-04-08
 ### Changed
 - Abonnementen: wanneer de product-picker popup een Elementor Loop Item template gebruikt, wordt de resterende HB UCS kaartstyling op die templated variant niet meer toegepast. Daardoor blijft alleen de Elementor-opmaak zichtbaar.
