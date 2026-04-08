@@ -4,6 +4,11 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.140] — 2026-04-08
+### Fixed
+- Frontend abonnementen: het opslaan van toegevoegde producten op Mijn Account gebruikt nu dezelfde selectie-resolutie als de preview, inclusief fallback naar bestaande variatie-attributen wanneer alleen het aantal wijzigt.
+- Frontend abonnementen: de product-preview toont een variatie pas zodra alle verplichte opties van een variabel product zijn gekozen. Daardoor ontstaat geen schijnbaar geldige keuze meer die server-side alsnog wordt afgekeurd.
+
 ## [0.3.139] — 2026-04-08
 ### Changed
 - Frontend abonnementen: productregels op Mijn Account gebruiken nu, net als verzendkosten, rechtstreeks de HPOS order-line totals wanneer die beschikbaar zijn. Daardoor worden productprijzen niet meer apart herberekend zonder btw terwijl verzending al inclusief btw uit orderregels kwam.

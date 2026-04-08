@@ -1239,6 +1239,7 @@ class SubscriptionsModule {
         }
 
         return [
+            'preview_item' => $previewItem,
             'label' => $label,
             'sku' => $sku,
             'unit_price' => $totals['unit_subtotal'],
@@ -2928,8 +2929,23 @@ class SubscriptionsModule {
                     $postedDisplayMeta = isset($row['meta']) && is_array($row['meta']) ? $row['meta'] : [];
                     $qty = isset($row['qty']) ? (int) absint((string) $row['qty']) : 1;
                     $existingItem = isset($existingItems[$index]) && is_array($existingItems[$index]) ? $existingItems[$index] : null;
-                    $existingSelectedId = $existingItem ? (int) (($existingItem['base_variation_id'] ?? 0) > 0 ? $existingItem['base_variation_id'] : ($existingItem['base_product_id'] ?? 0)) : 0;
-                    $item = $this->build_subscription_item_from_selection($selectedId, $scheduleScheme, $qty, null, is_array($selectedAttributes) ? $selectedAttributes : []);
+                    $existingSelectedId = $existingItem ? (int) ($existingItem['base_product_id'] ?? 0) : 0;
+
+                    if ($existingItem && $existingSelectedId === $selectedId && empty($selectedAttributes)) {
+                        $selectedAttributes = $this->get_subscription_item_selected_attributes($existingItem);
+                    }
+
+                    $preview = $this->get_subscription_admin_item_preview_details(
+                        $selectedId,
+                        $scheduleScheme,
+                        $qty,
+                        is_array($selectedAttributes) ? $selectedAttributes : [],
+                        null,
+                        true,
+                        $subId
+                    );
+                    $item = isset($preview['preview_item']) && is_array($preview['preview_item']) ? $preview['preview_item'] : null;
+
                     if (!$item) {
                         if ($selectedId > 0) {
                             $hasInvalidSelection = true;

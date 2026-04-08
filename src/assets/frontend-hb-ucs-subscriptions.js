@@ -361,10 +361,23 @@
   function findMatchingVariationData(productId, selectedAttributes) {
     var config = getProductPickerConfig();
     var variationLookup = config && config.variationLookup ? config.variationLookup : {};
+    var variableConfigs = config && config.variableConfigs ? config.variableConfigs : {};
     var variations = variationLookup[String(productId)] || variationLookup[productId] || [];
+    var attributesConfig = variableConfigs[String(productId)] || variableConfigs[productId] || [];
     var selectedKeys = Object.keys(selectedAttributes || {});
 
     if (!variations.length || !selectedKeys.length) {
+      return null;
+    }
+
+    for (var configIndex = 0; configIndex < attributesConfig.length; configIndex += 1) {
+      var requiredKey = String(attributesConfig[configIndex] && attributesConfig[configIndex].key ? attributesConfig[configIndex].key : '');
+      if (requiredKey && !String(selectedAttributes[requiredKey] || '')) {
+        return null;
+      }
+    }
+
+    if (!attributesConfig.length) {
       return null;
     }
 
