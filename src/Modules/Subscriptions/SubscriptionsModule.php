@@ -1194,7 +1194,7 @@ class SubscriptionsModule {
             $normalizedAttributes = $this->normalize_selected_attributes_for_product($product, $selectedAttributes);
             $resolvedSelectionId = $this->resolve_variation_id_from_attributes($product, $normalizedAttributes);
 
-            foreach ($this->get_variable_product_attribute_config($product) as $attributeConfig) {
+            foreach ($this->get_variable_product_attribute_config($product, true) as $attributeConfig) {
                 $key = (string) ($attributeConfig['key'] ?? '');
                 if ($key === '' || empty($normalizedAttributes[$key])) {
                     $requiresSelection = true;
@@ -3369,6 +3369,7 @@ class SubscriptionsModule {
                 'categories' => [],
                 'menu_filters' => [],
                 'variable_configs' => [],
+                'variation_attribute_configs' => [],
                 'variation_lookup' => [],
             ];
         }
@@ -3391,6 +3392,7 @@ class SubscriptionsModule {
             'categories' => [],
             'menu_filters' => [],
             'variable_configs' => [],
+            'variation_attribute_configs' => [],
             'variation_lookup' => [],
         ];
 
@@ -3438,6 +3440,10 @@ class SubscriptionsModule {
                 $variableConfig = $this->get_variable_product_attribute_config($product);
                 if (!empty($variableConfig)) {
                     $options['variable_configs'][$productId] = $variableConfig;
+                }
+                $variationAttributeConfig = $this->get_variable_product_attribute_config($product, true);
+                if (!empty($variationAttributeConfig)) {
+                    $options['variation_attribute_configs'][$productId] = $variationAttributeConfig;
                 }
                 $options['variation_lookup'][$productId] = $this->get_variable_product_variation_lookup($product, $scheme);
                 $entry = [
@@ -3962,10 +3968,12 @@ class SubscriptionsModule {
         $menuFilters = isset($productOptions['menu_filters']) && is_array($productOptions['menu_filters']) ? $productOptions['menu_filters'] : [];
         $items = isset($productOptions['items']) && is_array($productOptions['items']) ? $productOptions['items'] : [];
         $variableConfigs = isset($productOptions['variable_configs']) && is_array($productOptions['variable_configs']) ? $productOptions['variable_configs'] : [];
+        $variationAttributeConfigs = isset($productOptions['variation_attribute_configs']) && is_array($productOptions['variation_attribute_configs']) ? $productOptions['variation_attribute_configs'] : [];
 
         echo '<script type="application/json" id="hb-ucs-product-picker-config">' . wp_json_encode([
             'scheme' => (string) ($productOptions['scheme'] ?? ''),
             'variableConfigs' => $variableConfigs,
+            'variationAttributeConfigs' => $variationAttributeConfigs,
             'variationLookup' => isset($productOptions['variation_lookup']) && is_array($productOptions['variation_lookup']) ? $productOptions['variation_lookup'] : [],
             'chooseOptionLabel' => __('Kies een optie…', 'hb-ucs'),
             'noResultsLabel' => __('Geen producten gevonden voor deze filters.', 'hb-ucs'),
@@ -4331,14 +4339,17 @@ class SubscriptionsModule {
         return trim(wp_strip_all_tags(ucwords($label), true));
     }
 
-    private function get_variable_product_attribute_config($product): array {
+    private function get_variable_product_attribute_config($product, bool $variationOnly = false): array {
         if (!$product || !is_object($product) || !method_exists($product, 'is_type') || !$product->is_type('variable') || !method_exists($product, 'get_attributes')) {
             return [];
         }
 
         $config = [];
         foreach ((array) $product->get_attributes() as $attributeObject) {
-            if (!is_object($attributeObject) || !method_exists($attributeObject, 'get_variation') || !$attributeObject->get_variation() || !method_exists($attributeObject, 'get_name')) {
+            if (!is_object($attributeObject) || !method_exists($attributeObject, 'get_name')) {
+                continue;
+            }
+            if ($variationOnly && method_exists($attributeObject, 'get_variation') && !$attributeObject->get_variation()) {
                 continue;
             }
 
@@ -4956,13 +4967,17 @@ class SubscriptionsModule {
     }
 
     private function normalize_selected_attributes_for_product($product, array $selectedAttributes): array {
+        return $this->normalize_selected_attributes_for_product_scope($product, $selectedAttributes, false);
+    }
+
+    private function normalize_selected_attributes_for_product_scope($product, array $selectedAttributes, bool $variationOnly = false): array {
         if (!$product || !is_object($product) || !method_exists($product, 'is_type') || !$product->is_type('variable')) {
             return [];
         }
 
         $selectedAttributes = $this->sanitize_selected_attributes_map($selectedAttributes);
         $normalized = [];
-        $config = $this->get_variable_product_attribute_config($product);
+        $config = $this->get_variable_product_attribute_config($product, $variationOnly);
         foreach ($config as $attribute) {
             $key = (string) ($attribute['key'] ?? '');
             if ($key === '') {
@@ -4982,12 +4997,12 @@ class SubscriptionsModule {
             return 0;
         }
 
-        $normalized = $this->normalize_selected_attributes_for_product($product, $selectedAttributes);
+        $normalized = $this->normalize_selected_attributes_for_product_scope($product, $selectedAttributes, true);
         if (empty($normalized)) {
             return 0;
         }
 
-        $config = $this->get_variable_product_attribute_config($product);
+        $config = $this->get_variable_product_attribute_config($product, true);
         foreach ($config as $attribute) {
             $key = (string) ($attribute['key'] ?? '');
             if ($key === '' || empty($normalized[$key])) {

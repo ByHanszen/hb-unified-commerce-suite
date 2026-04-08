@@ -12,7 +12,7 @@
       return productPickerConfig;
     }
 
-    productPickerConfig = { variableConfigs: {}, variationLookup: {}, chooseOptionLabel: 'Kies een optie…' };
+    productPickerConfig = { variableConfigs: {}, variationAttributeConfigs: {}, variationLookup: {}, chooseOptionLabel: 'Kies een optie…' };
     var element = document.getElementById('hb-ucs-product-picker-config');
     if (!element) {
       return productPickerConfig;
@@ -21,7 +21,7 @@
     try {
       productPickerConfig = JSON.parse(element.textContent || '{}') || productPickerConfig;
     } catch (e) {
-      productPickerConfig = { variableConfigs: {}, variationLookup: {}, chooseOptionLabel: 'Kies een optie…' };
+      productPickerConfig = { variableConfigs: {}, variationAttributeConfigs: {}, variationLookup: {}, chooseOptionLabel: 'Kies een optie…' };
     }
 
     return productPickerConfig;
@@ -362,22 +362,24 @@
     var config = getProductPickerConfig();
     var variationLookup = config && config.variationLookup ? config.variationLookup : {};
     var variableConfigs = config && config.variableConfigs ? config.variableConfigs : {};
+    var variationAttributeConfigs = config && config.variationAttributeConfigs ? config.variationAttributeConfigs : {};
     var variations = variationLookup[String(productId)] || variationLookup[productId] || [];
     var attributesConfig = variableConfigs[String(productId)] || variableConfigs[productId] || [];
+    var requiredAttributeConfig = variationAttributeConfigs[String(productId)] || variationAttributeConfigs[productId] || [];
     var selectedKeys = Object.keys(selectedAttributes || {});
 
     if (!variations.length || !selectedKeys.length) {
       return null;
     }
 
-    for (var configIndex = 0; configIndex < attributesConfig.length; configIndex += 1) {
-      var requiredKey = String(attributesConfig[configIndex] && attributesConfig[configIndex].key ? attributesConfig[configIndex].key : '');
+    for (var configIndex = 0; configIndex < requiredAttributeConfig.length; configIndex += 1) {
+      var requiredKey = String(requiredAttributeConfig[configIndex] && requiredAttributeConfig[configIndex].key ? requiredAttributeConfig[configIndex].key : '');
       if (requiredKey && !String(selectedAttributes[requiredKey] || '')) {
         return null;
       }
     }
 
-    if (!attributesConfig.length) {
+    if (!requiredAttributeConfig.length) {
       return null;
     }
 
