@@ -2946,6 +2946,19 @@ class SubscriptionsModule {
                     );
                     $item = isset($preview['preview_item']) && is_array($preview['preview_item']) ? $preview['preview_item'] : null;
 
+                    if (!$item && $selectedId > 0 && function_exists('wc_get_product')) {
+                        $selectedProduct = wc_get_product($selectedId);
+                        if ($selectedProduct && is_object($selectedProduct) && (!method_exists($selectedProduct, 'is_type') || !$selectedProduct->is_type('variable'))) {
+                            $item = $this->build_subscription_item_from_selection(
+                                $selectedId,
+                                $scheduleScheme,
+                                $qty,
+                                null,
+                                is_array($selectedAttributes) ? $selectedAttributes : []
+                            );
+                        }
+                    }
+
                     if (!$item) {
                         if ($selectedId > 0) {
                             $hasInvalidSelection = true;

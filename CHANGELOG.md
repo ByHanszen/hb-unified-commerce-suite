@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.141] — 2026-04-08
+### Fixed
+- Frontend abonnementen: het opslaan van een toegevoegd simpel product op Mijn Account valt nu terug op directe item-opbouw wanneer de preview-resolutie geen preview-item teruggeeft. Daardoor worden geldige simpele producten niet meer onterecht afgekeurd met de variatie-foutmelding.
+
 ## [0.3.140] — 2026-04-08
 ### Fixed
 - Frontend abonnementen: het opslaan van toegevoegde producten op Mijn Account gebruikt nu dezelfde selectie-resolutie als de preview, inclusief fallback naar bestaande variatie-attributen wanneer alleen het aantal wijzigt.
