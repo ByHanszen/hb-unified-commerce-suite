@@ -4,11 +4,19 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.131] — 2026-04-08
+### Added
+- Abonnementen: nieuwe WordPress menu-locatie `HB UCS abonnementen productfilters` toegevoegd. Daarmee kunnen productcategorie-filters voor de frontend abonnementen-popup via het reguliere WordPress menu-beheer worden samengesteld en toegewezen.
+
+### Fixed
+- Abonnementen: de product-picker popup op Mijn Account toont producten nu als duidelijke kaarten met afbeelding, prijs en een consistente themastijl.
+- Abonnementen: de categorie-filter gebruikt nu menu-gestuurde knoppen in plaats van de oude, onduidelijke dropdown.
+- Abonnementen: de product-picker popup gebruikt nu een echte server-side live search. Zoeken en klikken op een menu-filter halen nu direct vanaf de server alleen producten op die voor abonnementsvormen zijn ingeschakeld en binnen de gekozen categorie vallen.
+
 ## [0.3.130] — 2026-04-08
 ### Added
 - Abonnementen: nieuwe WP-CLI command `wp hb-ucs subscriptions backfill-order-meta` toegevoegd om in productie veilig de canonieke subscription-meta op WooCommerce order-type records te backfillen vanuit legacy-named meta op hetzelfde record.
 - Documentatie: nieuw bestand `docs/DEPENDENCIES.md` toegevoegd met de volledige dependency-matrix van modules, optionele integraties, WooCommerce/HPOS gebruik en release-afhankelijkheden.
-- Abonnementen: nieuwe WordPress menu-locatie `HB UCS abonnementen productfilters` toegevoegd. Daarmee kunnen productcategorie-filters voor de frontend abonnementen-popup via het reguliere WordPress menu-beheer worden samengesteld en toegewezen.
 
 ### Changed
 - Abonnementen: de module draait nu alleen nog op de eigen HB UCS subscription-engine. De instellingen en runtime vallen niet langer terug op WooCommerce Subscriptions, zodat nieuwe abonnementen en renewals nog maar één interne bron van waarheid gebruiken.
@@ -17,8 +25,6 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 ### Fixed
 - Abonnementen: renewal-creatie leest subscription-items nu zonder automatische repair-writeback en resolved de renewal-betaalmethode zonder direct het abonnement zelf te herschrijven. Daardoor kan het aanmaken van een renewal-order niet meer onbedoeld opgeslagen abonnementsprijzen of betaaldata muteren.
 - Abonnementen: de frontend accountweergave valideert eigenaarschap van abonnementen nu expliciet via WooCommerce customer-id en interne eigenaar-meta. Ook gerelateerde bestellingen op de detailpagina worden alleen nog getoond als ze bij dezelfde account horen. Daardoor kunnen klanten niet langer abonnementen of gekoppelde orderdata van andere accounts zien als een query of datakoppeling te breed uitvalt.
-- Abonnementen: de product-picker popup op Mijn Account toont producten nu als duidelijke kaarten met afbeelding, prijs en een consistente themastijl. De categorie-filter gebruikt nu menu-gestuurde knoppen in plaats van de oude, onduidelijke dropdown en de filterlogica werkt weer betrouwbaar.
-- Abonnementen: de product-picker popup gebruikt nu een echte server-side live search. Zoeken en klikken op een menu-filter halen nu direct vanaf de server alleen producten op die voor abonnementsvormen zijn ingeschakeld en binnen de gekozen categorie vallen.
 
 ### Removed
 - Abonnementen: WCS migratie- en exporthooks worden niet meer geregistreerd en runtime-context leest geen fallback-data meer uit gekoppelde WCS bronabonnementen. Dat verkleint de kans op sync- en herstelverschillen met oude externe brondata.
