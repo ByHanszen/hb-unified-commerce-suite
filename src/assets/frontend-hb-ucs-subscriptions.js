@@ -478,7 +478,7 @@
       if (variation.image_html) {
         $row.find('.hb-ucs-subscription-item-card__media').first().html(String(variation.image_html));
       }
-      var variationSummary = String(variation.summary || selectedSummary || '');
+      var variationSummary = String(selectedSummary || variation.summary || '');
       $row.find('.hb-ucs-product-card__variation-summary').first().text(variationSummary);
       updateProductPickerLabel($field, variationSummary);
       return;

@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.158] — 2026-04-08
+### Fixed
+- Abonnement-frontend: zodra een gekozen attribuutset matcht op een variatie, blijft de live samenvatting op de kaart nu gebaseerd op alle gekozen selectors in plaats van alleen op de WooCommerce-variatiesamenvatting. Daardoor blijven extra gekozen variatie-attributen zoals `Maling` zichtbaar tijdens bewerken.
+
 ## [0.3.157] — 2026-04-08
 ### Fixed
 - Abonnement-attributen: aliassen zoals `attribute_pa_*` en `attribute_*` worden nu per product naar dezelfde canonieke attribuutkey teruggebracht. Daardoor blijft een gekozen variatie-attribuut zonder resolvable `variation_id` behouden en verdwijnt dubbele weergave van dezelfde keuze met en zonder `pa_`-variant.
