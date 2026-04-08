@@ -6120,15 +6120,6 @@ class SubscriptionsModule {
 
             if (!empty($selectedAttributes)) {
                 $orderItem->add_meta_data(self::ORDER_ITEM_META_SELECTED_ATTRIBUTES, wp_json_encode($selectedAttributes), true);
-                foreach ($selectedAttributes as $attributeKey => $attributeValue) {
-                    $normalizedAttributeKey = $this->normalize_selected_attribute_key((string) $attributeKey);
-                    $normalizedAttributeValue = sanitize_title((string) $attributeValue);
-                    if ($normalizedAttributeKey === '' || $normalizedAttributeValue === '') {
-                        continue;
-                    }
-
-                    $orderItem->add_meta_data($normalizedAttributeKey, $normalizedAttributeValue, true);
-                }
             }
 
             foreach ($this->get_subscription_item_effective_display_meta($subId, $item) as $displayMetaRow) {

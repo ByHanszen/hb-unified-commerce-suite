@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.144] — 2026-04-08
+### Fixed
+- Backend abonnementitems: de extra handmatige `attribute_*` order-item meta voor gekozen variatie-attributen wordt niet meer apart weggeschreven. Daardoor verschijnt in de backend geen tweede, potentieel verouderde `PA_*` attribuutregel meer naast de actuele WooCommerce-variatiegegevens.
+
 ## [0.3.143] — 2026-04-08
 ### Fixed
 - Frontend abonnementen: bestaande variabele artikelen tonen in de attribute-samenvatting op Mijn Account nu alleen de actuele gekozen variatie-attributen. Oude attribuutregels uit achtergebleven display-meta worden daar niet langer opnieuw weergegeven.
