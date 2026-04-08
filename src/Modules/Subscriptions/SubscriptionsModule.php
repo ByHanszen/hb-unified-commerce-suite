@@ -2930,6 +2930,7 @@ class SubscriptionsModule {
                     $qty = isset($row['qty']) ? (int) absint((string) $row['qty']) : 1;
                     $existingItem = isset($existingItems[$index]) && is_array($existingItems[$index]) ? $existingItems[$index] : null;
                     $existingSelectedId = $existingItem ? (int) ($existingItem['base_product_id'] ?? 0) : 0;
+                    $existingSelectedAttributes = $existingItem ? $this->get_subscription_item_selected_attributes($existingItem) : [];
 
                     if ($existingItem && $existingSelectedId === $selectedId && empty($selectedAttributes)) {
                         $selectedAttributes = $this->get_subscription_item_selected_attributes($existingItem);
@@ -2969,11 +2970,21 @@ class SubscriptionsModule {
 
                     if (!empty($postedDisplayMeta)) {
                         $item['display_meta'] = $postedDisplayMeta;
-                    } elseif ($existingItem && $existingSelectedId === $selectedId && !empty($existingItem['display_meta'])) {
+                    } elseif (
+                        $existingItem
+                        && $existingSelectedId === $selectedId
+                        && $existingSelectedAttributes === $this->get_subscription_item_selected_attributes($item)
+                        && !empty($existingItem['display_meta'])
+                    ) {
                         $item['display_meta'] = $existingItem['display_meta'];
                     }
 
-                    if ($existingItem && $existingSelectedId === $selectedId && !empty($existingItem['source_item_snapshot'])) {
+                    if (
+                        $existingItem
+                        && $existingSelectedId === $selectedId
+                        && $existingSelectedAttributes === $this->get_subscription_item_selected_attributes($item)
+                        && !empty($existingItem['source_item_snapshot'])
+                    ) {
                         $item['source_item_snapshot'] = $existingItem['source_item_snapshot'];
                     } else {
                         $item['source_item_snapshot'] = $this->build_subscription_item_source_snapshot(
@@ -6039,6 +6050,14 @@ class SubscriptionsModule {
                 $orderItem->set_variation_id($baseVariationId);
             }
 
+            $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
+            if ($baseVariationId > 0 && method_exists($orderItem, 'set_variation_id')) {
+                $orderItem->set_variation_id($baseVariationId);
+            }
+            if (!empty($selectedAttributes) && method_exists($orderItem, 'set_variation')) {
+                $orderItem->set_variation($selectedAttributes);
+            }
+
             $orderItem->set_quantity($qty);
             $orderItem->set_subtotal((float) ($lineTotals['line_subtotal'] ?? 0.0));
             $orderItem->set_total((float) ($lineTotals['line_subtotal'] ?? 0.0));
@@ -6064,9 +6083,17 @@ class SubscriptionsModule {
                 $orderItem->add_meta_data('_hb_ucs_subscription_scheme', $scheme, true);
             }
 
-            $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
             if (!empty($selectedAttributes)) {
                 $orderItem->add_meta_data(self::ORDER_ITEM_META_SELECTED_ATTRIBUTES, wp_json_encode($selectedAttributes), true);
+                foreach ($selectedAttributes as $attributeKey => $attributeValue) {
+                    $normalizedAttributeKey = $this->normalize_selected_attribute_key((string) $attributeKey);
+                    $normalizedAttributeValue = sanitize_title((string) $attributeValue);
+                    if ($normalizedAttributeKey === '' || $normalizedAttributeValue === '') {
+                        continue;
+                    }
+
+                    $orderItem->add_meta_data($normalizedAttributeKey, $normalizedAttributeValue, true);
+                }
             }
 
             foreach ($this->get_subscription_item_effective_display_meta($subId, $item) as $displayMetaRow) {

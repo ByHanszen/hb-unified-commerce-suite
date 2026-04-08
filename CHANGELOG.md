@@ -4,6 +4,11 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.142] — 2026-04-08
+### Fixed
+- Frontend abonnementen: gekozen variatie-attributen worden nu expliciet op het HPOS subscription order item opgeslagen, zowel als JSON-snapshot als per individueel `attribute_*` order-item meta veld. Daardoor blijven alle gekozen variatie-opties bij een volgende bewerking beschikbaar.
+- Frontend abonnementen: bij opslaan wordt een oude snapshot of oude display-meta niet meer hergebruikt wanneer alleen de variatiekeuze onder hetzelfde parent-product is veranderd.
+
 ## [0.3.141] — 2026-04-08
 ### Fixed
 - Frontend abonnementen: het opslaan van een toegevoegd simpel product op Mijn Account valt nu terug op directe item-opbouw wanneer de preview-resolutie geen preview-item teruggeeft. Daardoor worden geldige simpele producten niet meer onterecht afgekeurd met de variatie-foutmelding.
