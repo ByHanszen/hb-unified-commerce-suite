@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.155] — 2026-04-08
+### Fixed
+- Abonnement-attributen: de productpicker en attribuutweergave tonen nu weer alleen attributen die echt als variatie-attribuut zijn gemarkeerd. Optionele productattributen blijven daarmee buiten de zichtbare abonnement-selectie.
+
 ## [0.3.154] — 2026-04-08
 ### Fixed
 - Abonnement-attributen: optionele, niet-variatie-attributen van variabele producten blijven nu beschikbaar in de productpicker, worden niet meer weggenormaliseerd tijdens preview en opslag, en blijven zichtbaar naast de echte variatie-attributen. Alleen de echte variatie-attributen worden nog gebruikt om een WooCommerce-variatie te resolven.
