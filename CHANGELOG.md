@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.143] — 2026-04-08
+### Fixed
+- Frontend abonnementen: bestaande variabele artikelen tonen in de attribute-samenvatting op Mijn Account nu alleen de actuele gekozen variatie-attributen. Oude attribuutregels uit achtergebleven display-meta worden daar niet langer opnieuw weergegeven.
+
 ## [0.3.142] — 2026-04-08
 ### Fixed
 - Frontend abonnementen: gekozen variatie-attributen worden nu expliciet op het HPOS subscription order item opgeslagen, zowel als JSON-snapshot als per individueel `attribute_*` order-item meta veld. Daardoor blijven alle gekozen variatie-opties bij een volgende bewerking beschikbaar.

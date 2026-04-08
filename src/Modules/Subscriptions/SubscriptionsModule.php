@@ -4681,6 +4681,35 @@ class SubscriptionsModule {
         return $rows;
     }
 
+    private function get_subscription_item_attribute_display_meta_labels(int $baseProductId): array {
+        $labels = [];
+
+        if ($baseProductId <= 0 || !function_exists('wc_get_product')) {
+            return $labels;
+        }
+
+        $product = wc_get_product($baseProductId);
+        if (!$product || !is_object($product)) {
+            return $labels;
+        }
+
+        foreach ($this->get_variable_product_attribute_config($product) as $attribute) {
+            $key = (string) ($attribute['key'] ?? '');
+            $label = (string) ($attribute['label'] ?? '');
+
+            if ($label !== '') {
+                $labels[] = ltrim(sanitize_key($this->normalize_subscription_item_display_label($label)), '_');
+            }
+
+            if ($key !== '') {
+                $labels[] = ltrim(sanitize_key($this->get_order_item_display_meta_label($key)), '_');
+                $labels[] = ltrim(sanitize_key(str_replace('attribute_', '', $key)), '_');
+            }
+        }
+
+        return array_values(array_unique(array_filter($labels)));
+    }
+
     private function build_subscription_item_source_snapshot(array $selectedAttributes = [], array $displayMeta = [], int $baseProductId = 0, array $orderTotals = []): array {
         $supplementalDisplayMeta = $this->get_selected_attribute_display_rows($baseProductId, $selectedAttributes);
         return [
@@ -5107,6 +5136,7 @@ class SubscriptionsModule {
         $baseProductId = (int) ($item['base_product_id'] ?? 0);
         $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
         $rows = $this->get_selected_attribute_display_rows($baseProductId, $selectedAttributes);
+        $attributeDisplayLabels = $this->get_subscription_item_attribute_display_meta_labels($baseProductId);
 
         $seen = [];
         foreach ($rows as $row) {
@@ -5123,6 +5153,11 @@ class SubscriptionsModule {
             $label = (string) ($row['label'] ?? '');
             $value = (string) ($row['value'] ?? '');
             if ($label === '' || $value === '') {
+                continue;
+            }
+
+             $normalizedLabel = ltrim(sanitize_key($this->normalize_subscription_item_display_label($label)), '_');
+            if ($normalizedLabel !== '' && in_array($normalizedLabel, $attributeDisplayLabels, true)) {
                 continue;
             }
 
