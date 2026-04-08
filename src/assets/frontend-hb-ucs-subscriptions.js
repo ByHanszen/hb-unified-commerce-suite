@@ -3,6 +3,9 @@
   'use strict';
 
   var productPickerConfig = null;
+  var frontendConfig = window.hbUcsSubscriptionsFrontend || {};
+  var productPickerRequest = null;
+  var productPickerSearchTimer = null;
 
   function getProductPickerConfig() {
     if (productPickerConfig !== null) {
@@ -131,10 +134,90 @@
     $modal.find('.hb-ucs-product-modal__no-results').prop('hidden', visible > 0);
   }
 
+  function renderProductModalResults($modal, html, count) {
+    if (!$modal || !$modal.length) {
+      return;
+    }
+
+    var config = getProductPickerConfig();
+    var noResultsLabel = String((config && config.noResultsLabel) || 'Geen producten gevonden voor deze filters.');
+    var markup = String(html || '');
+
+    if (!markup) {
+      markup = '<p class="hb-ucs-product-modal__empty">' + $('<div>').text(noResultsLabel).html() + '</p>';
+    }
+
+    markup += '<p class="hb-ucs-product-modal__no-results"' + ((count || 0) > 0 ? ' hidden' : '') + '>' + $('<div>').text(noResultsLabel).html() + '</p>';
+    $modal.find('.hb-ucs-product-modal__results').html(markup);
+  }
+
+  function requestProductModalResults($modal) {
+    if (!$modal || !$modal.length || !frontendConfig.ajaxUrl || !frontendConfig.searchAction) {
+      filterProductModal($modal);
+      return;
+    }
+
+    var config = getProductPickerConfig();
+    var term = String($modal.find('.hb-ucs-product-modal__search').val() || '');
+    var categoryIds = getActiveCategoryFilterIds($modal);
+    var loadingLabel = String((config && config.loadingLabel) || 'Producten laden…');
+
+    if (productPickerRequest && typeof productPickerRequest.abort === 'function') {
+      productPickerRequest.abort();
+    }
+
+    $modal.find('.hb-ucs-product-modal__results').html('<p class="hb-ucs-product-modal__empty">' + $('<div>').text(loadingLabel).html() + '</p>');
+
+    productPickerRequest = $.ajax({
+      url: frontendConfig.ajaxUrl,
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        action: frontendConfig.searchAction,
+        nonce: frontendConfig.nonce || '',
+        scheme: String((config && config.scheme) || ''),
+        term: term,
+        category_ids: categoryIds
+      }
+    }).done(function (response) {
+      if (!response || response.success !== true || !response.data) {
+        filterProductModal($modal);
+        return;
+      }
+
+      renderProductModalResults($modal, String(response.data.html || ''), parseInt(String(response.data.count || '0'), 10) || 0);
+    }).fail(function () {
+      filterProductModal($modal);
+    }).always(function () {
+      productPickerRequest = null;
+    });
+  }
+
+  function scheduleProductModalRequest($modal, immediate) {
+    var delay = immediate ? 0 : parseInt(String(frontendConfig.searchDebounceMs || 220), 10);
+    if (productPickerSearchTimer) {
+      window.clearTimeout(productPickerSearchTimer);
+    }
+
+    productPickerSearchTimer = window.setTimeout(function () {
+      requestProductModalResults($modal);
+    }, Math.max(0, delay));
+  }
+
   function closeProductModal($modal) {
     if (!$modal || !$modal.length) {
       return;
     }
+
+    if (productPickerSearchTimer) {
+      window.clearTimeout(productPickerSearchTimer);
+      productPickerSearchTimer = null;
+    }
+    if (productPickerRequest && typeof productPickerRequest.abort === 'function') {
+      productPickerRequest.abort();
+      productPickerRequest = null;
+    }
+
     $modal.attr('hidden', 'hidden').attr('aria-hidden', 'true').removeData('activeInput');
     $('body').removeClass('hb-ucs-product-modal-open');
   }
@@ -176,7 +259,7 @@
     setActiveCategoryFilter($modal, $defaultFilter);
     $modal.removeAttr('hidden').attr('aria-hidden', 'false');
     $('body').addClass('hb-ucs-product-modal-open');
-    filterProductModal($modal);
+    scheduleProductModalRequest($modal, true);
     window.setTimeout(function () {
       $modal.find('.hb-ucs-product-modal__search').trigger('focus');
     }, 10);
@@ -520,14 +603,14 @@
 
     $modal.off('input.hbUcsProductModalFilter', '.hb-ucs-product-modal__search');
     $modal.on('input.hbUcsProductModalFilter', '.hb-ucs-product-modal__search', function () {
-      filterProductModal($modal);
+      scheduleProductModalRequest($modal, false);
     });
 
     $modal.off('click.hbUcsProductModalCategory', '.hb-ucs-product-modal__menu-button');
     $modal.on('click.hbUcsProductModalCategory', '.hb-ucs-product-modal__menu-button', function (event) {
       event.preventDefault();
       setActiveCategoryFilter($modal, $(this));
-      filterProductModal($modal);
+      scheduleProductModalRequest($modal, true);
     });
 
     $modal.off('click.hbUcsProductModalPick', '.hb-ucs-product-modal__item');

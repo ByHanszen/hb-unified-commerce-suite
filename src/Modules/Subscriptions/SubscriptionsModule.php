@@ -165,6 +165,8 @@ class SubscriptionsModule {
         add_action('template_redirect', [$this, 'maybe_handle_mollie_webhook']);
         add_action('template_redirect', [$this, 'maybe_handle_renewals_cron_request']);
         add_action('template_redirect', [$this, 'maybe_handle_account_subscription_action']);
+        add_action('wp_ajax_hb_ucs_subscription_product_picker_search', [$this, 'handle_subscription_product_picker_search_ajax']);
+        add_action('wp_ajax_nopriv_hb_ucs_subscription_product_picker_search', [$this, 'handle_subscription_product_picker_search_ajax']);
 
         add_filter('woocommerce_account_menu_items', [$this, 'add_account_menu_item']);
         add_action('woocommerce_account_' . self::ACCOUNT_ENDPOINT . '_endpoint', [$this, 'render_account_endpoint']);
@@ -3316,6 +3318,7 @@ class SubscriptionsModule {
     private function get_manageable_subscription_product_options(string $scheme = ''): array {
         if (!function_exists('wc_get_products')) {
             return [
+                'scheme' => $scheme,
                 'items' => [],
                 'lookup' => [],
                 'categories' => [],
@@ -3337,6 +3340,7 @@ class SubscriptionsModule {
         }
 
         $options = [
+            'scheme' => $scheme,
             'items' => [],
             'lookup' => [],
             'categories' => [],
@@ -3431,6 +3435,82 @@ class SubscriptionsModule {
         });
 
         return $options;
+    }
+
+    private function filter_manageable_product_picker_items(array $items, string $searchTerm = '', array $categoryIds = []): array {
+        $normalizedSearchTerm = trim($searchTerm);
+        $normalizedSearchTerm = function_exists('mb_strtolower') ? mb_strtolower($normalizedSearchTerm, 'UTF-8') : strtolower($normalizedSearchTerm);
+        $searchNeedle = function_exists('remove_accents') ? remove_accents($normalizedSearchTerm) : $normalizedSearchTerm;
+        $categoryIds = array_values(array_filter(array_map('intval', $categoryIds)));
+
+        return array_values(array_filter($items, static function (array $item) use ($searchNeedle, $categoryIds): bool {
+            $itemCategoryIds = isset($item['categories']) && is_array($item['categories'])
+                ? array_values(array_filter(array_map('intval', $item['categories'])))
+                : [];
+
+            if (!empty($categoryIds) && empty(array_intersect($categoryIds, $itemCategoryIds))) {
+                return false;
+            }
+
+            if ($searchNeedle === '') {
+                return true;
+            }
+
+            $haystackParts = [
+                (string) ($item['label'] ?? ''),
+                (string) ($item['summary'] ?? ''),
+                implode(' ', array_map('strval', isset($item['category_names']) && is_array($item['category_names']) ? $item['category_names'] : [])),
+            ];
+
+            $haystack = implode(' ', $haystackParts);
+            $haystack = function_exists('mb_strtolower') ? mb_strtolower($haystack, 'UTF-8') : strtolower($haystack);
+            $haystack = function_exists('remove_accents') ? remove_accents($haystack) : $haystack;
+
+            return strpos($haystack, $searchNeedle) !== false;
+        }));
+    }
+
+    private function render_manageable_product_picker_items_html(array $items, bool $disabled): string {
+        ob_start();
+
+        if (empty($items)) {
+            echo '<p class="hb-ucs-product-modal__empty">' . esc_html__('Er zijn geen geschikte producten beschikbaar.', 'hb-ucs') . '</p>';
+            return (string) ob_get_clean();
+        }
+
+        foreach ($items as $item) {
+            $itemId = (int) ($item['id'] ?? 0);
+            $itemLabel = (string) ($item['label'] ?? '');
+            $categoryIds = isset($item['categories']) && is_array($item['categories']) ? implode(',', array_map('intval', $item['categories'])) : '';
+            $categoryNames = isset($item['category_names']) && is_array($item['category_names']) ? implode(', ', array_map('strval', $item['category_names'])) : '';
+            $summary = isset($item['summary']) ? (string) $item['summary'] : '';
+            $searchText = strtolower(trim($itemLabel . ' ' . $categoryNames . ' ' . $summary));
+            $targetId = (int) ($item['target_id'] ?? $itemId);
+            $selectedAttributes = isset($item['selected_attributes']) && is_array($item['selected_attributes']) ? $item['selected_attributes'] : [];
+            $imageHtml = isset($item['image_html']) ? (string) $item['image_html'] : '';
+            $priceHtml = isset($item['price_html']) ? (string) $item['price_html'] : '';
+
+            echo '<button type="button" class="hb-ucs-product-modal__item" data-product-id="' . esc_attr((string) $itemId) . '" data-target-product-id="' . esc_attr((string) $targetId) . '" data-product-label="' . esc_attr($itemLabel) . '" data-product-summary="' . esc_attr($summary) . '" data-product-price="' . esc_attr($priceHtml) . '" data-product-image="' . esc_attr(base64_encode($imageHtml)) . '" data-product-categories="' . esc_attr($categoryIds) . '" data-product-search="' . esc_attr($searchText) . '" data-selected-attributes="' . esc_attr(wp_json_encode($selectedAttributes)) . '" ' . disabled($disabled, true, false) . '>';
+            echo '<span class="hb-ucs-product-modal__item-media">' . wp_kses_post($imageHtml) . '</span>';
+            echo '<span class="hb-ucs-product-modal__item-body">';
+            echo '<span class="hb-ucs-product-modal__item-copy">';
+            echo '<strong class="hb-ucs-product-modal__item-title">' . esc_html($itemLabel) . '</strong>';
+            if ($priceHtml !== '') {
+                echo '<span class="hb-ucs-product-modal__item-price">' . esc_html($priceHtml) . '</span>';
+            }
+            if ($summary !== '') {
+                echo '<span class="hb-ucs-product-modal__item-summary">' . esc_html($summary) . '</span>';
+            }
+            if ($categoryNames !== '') {
+                echo '<span class="hb-ucs-product-modal__item-categories">' . esc_html($categoryNames) . '</span>';
+            }
+            echo '</span>';
+            echo '<span class="hb-ucs-product-modal__item-action">' . esc_html__('Selecteer', 'hb-ucs') . '</span>';
+            echo '</span>';
+            echo '</button>';
+        }
+
+        return (string) ob_get_clean();
     }
 
     private function get_manageable_product_picker_filters(array $availableCategories): array {
@@ -3755,9 +3835,12 @@ class SubscriptionsModule {
         $variableConfigs = isset($productOptions['variable_configs']) && is_array($productOptions['variable_configs']) ? $productOptions['variable_configs'] : [];
 
         echo '<script type="application/json" id="hb-ucs-product-picker-config">' . wp_json_encode([
+            'scheme' => (string) ($productOptions['scheme'] ?? ''),
             'variableConfigs' => $variableConfigs,
             'variationLookup' => isset($productOptions['variation_lookup']) && is_array($productOptions['variation_lookup']) ? $productOptions['variation_lookup'] : [],
             'chooseOptionLabel' => __('Kies een optie…', 'hb-ucs'),
+            'noResultsLabel' => __('Geen producten gevonden voor deze filters.', 'hb-ucs'),
+            'loadingLabel' => __('Producten laden…', 'hb-ucs'),
         ]) . '</script>';
 
         echo '<div class="hb-ucs-product-modal" id="hb-ucs-product-modal" hidden aria-hidden="true">';
@@ -3796,45 +3879,32 @@ class SubscriptionsModule {
             echo '<p class="hb-ucs-product-modal__empty">' . esc_html__('Er zijn geen geschikte producten beschikbaar.', 'hb-ucs') . '</p>';
         } else {
             foreach ($items as $item) {
-                $itemId = (int) ($item['id'] ?? 0);
-                $itemLabel = (string) ($item['label'] ?? '');
-                $categoryIds = isset($item['categories']) && is_array($item['categories']) ? implode(',', array_map('intval', $item['categories'])) : '';
-                $categoryNames = isset($item['category_names']) && is_array($item['category_names']) ? implode(', ', array_map('strval', $item['category_names'])) : '';
-                $summary = isset($item['summary']) ? (string) $item['summary'] : '';
-                $searchText = strtolower(trim($itemLabel . ' ' . $categoryNames . ' ' . $summary));
-                $targetId = (int) ($item['target_id'] ?? $itemId);
-                $selectedAttributes = isset($item['selected_attributes']) && is_array($item['selected_attributes']) ? $item['selected_attributes'] : [];
-                $imageHtml = isset($item['image_html']) ? (string) $item['image_html'] : '';
-                $priceHtml = isset($item['price_html']) ? (string) $item['price_html'] : '';
-                echo '<button type="button" class="hb-ucs-product-modal__item" data-product-id="' . esc_attr((string) $itemId) . '" data-target-product-id="' . esc_attr((string) $targetId) . '" data-product-label="' . esc_attr($itemLabel) . '" data-product-summary="' . esc_attr($summary) . '" data-product-price="' . esc_attr($priceHtml) . '" data-product-image="' . esc_attr(base64_encode($imageHtml)) . '" data-product-categories="' . esc_attr($categoryIds) . '" data-product-search="' . esc_attr($searchText) . '" data-selected-attributes="' . esc_attr(wp_json_encode($selectedAttributes)) . '" ' . disabled($disabled, true, false) . '>';
-                echo '<span class="hb-ucs-product-modal__item-media">' . wp_kses_post($imageHtml) . '</span>';
-                echo '<span class="hb-ucs-product-modal__item-body">';
-                echo '<span class="hb-ucs-product-modal__item-copy">';
-                echo '<strong class="hb-ucs-product-modal__item-title">' . esc_html($itemLabel) . '</strong>';
-                if ($priceHtml !== '') {
-                    echo '<span class="hb-ucs-product-modal__item-price">' . esc_html($priceHtml) . '</span>';
-                }
-                if ($summary !== '') {
-                    echo '<span class="hb-ucs-product-modal__item-summary">' . esc_html($summary) . '</span>';
-                }
-                if ($categoryNames !== '') {
-                    echo '<span class="hb-ucs-product-modal__item-categories">' . esc_html($categoryNames) . '</span>';
-                }
-                echo '</span>';
-                echo '<span class="hb-ucs-product-modal__item-action">' . esc_html__('Selecteer', 'hb-ucs') . '</span>';
-                echo '</span>';
-                echo '</button>';
-            }
-        }
-        echo '<p class="hb-ucs-product-modal__no-results" hidden>' . esc_html__('Geen producten gevonden voor deze filters.', 'hb-ucs') . '</p>';
-        echo '</div>';
-        echo '</div>';
-        echo '</div>';
+        echo $this->render_manageable_product_picker_items_html($items, $disabled);
     }
 
     private function get_variation_option_label($variation, int $fallbackId = 0): string {
         if ($variation instanceof \WC_Product_Variation) {
             $parts = [];
+
+    public function handle_subscription_product_picker_search_ajax(): void {
+        check_ajax_referer('hb_ucs_subscription_frontend', 'nonce');
+
+        $scheme = isset($_REQUEST['scheme']) ? sanitize_key((string) wp_unslash($_REQUEST['scheme'])) : '';
+        $searchTerm = isset($_REQUEST['term']) ? sanitize_text_field((string) wp_unslash($_REQUEST['term'])) : '';
+        $rawCategoryIds = isset($_REQUEST['category_ids']) ? (array) wp_unslash($_REQUEST['category_ids']) : [];
+        if (count($rawCategoryIds) === 1 && is_string($rawCategoryIds[0]) && strpos($rawCategoryIds[0], ',') !== false) {
+            $rawCategoryIds = explode(',', $rawCategoryIds[0]);
+        }
+
+        $categoryIds = array_values(array_filter(array_map('intval', $rawCategoryIds)));
+        $options = $this->get_manageable_subscription_product_options($scheme);
+        $items = $this->filter_manageable_product_picker_items((array) ($options['items'] ?? []), $searchTerm, $categoryIds);
+
+        wp_send_json_success([
+            'html' => $this->render_manageable_product_picker_items_html($items, false),
+            'count' => count($items),
+        ]);
+    }
             $parentId = (int) $variation->get_parent_id();
             $parent = $parentId > 0 ? wc_get_product($parentId) : null;
             $variationAttributes = (array) $variation->get_variation_attributes();
@@ -9062,6 +9132,12 @@ JS;
 
         wp_enqueue_style('hb-ucs-subscriptions-frontend-style', $base . 'frontend-hb-ucs-subscriptions.css', [], $assetVersion);
         wp_enqueue_script('hb-ucs-subscriptions-frontend', $base . 'frontend-hb-ucs-subscriptions.js', $deps, $assetVersion, true);
+        wp_localize_script('hb-ucs-subscriptions-frontend', 'hbUcsSubscriptionsFrontend', [
+            'ajaxUrl' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('hb_ucs_subscription_frontend'),
+            'searchAction' => 'hb_ucs_subscription_product_picker_search',
+            'searchDebounceMs' => 220,
+        ]);
     }
 
     private function current_page_has_subscriptions_shortcode(): bool {
