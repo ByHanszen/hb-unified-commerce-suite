@@ -4188,26 +4188,38 @@ class SubscriptionsModule {
         return $clean;
     }
 
+    private function exclude_subscription_item_attribute_display_meta(array $rows, int $baseProductId): array {
+        $rows = $this->sanitize_subscription_item_display_meta($rows);
+        if ($baseProductId <= 0) {
+            return $rows;
+        }
+
+        $attributeDisplayLabels = $this->get_subscription_item_attribute_display_meta_labels($baseProductId);
+        if (empty($attributeDisplayLabels)) {
+            return $rows;
+        }
+
+        $filtered = [];
+        foreach ($rows as $row) {
+            $label = (string) ($row['label'] ?? '');
+            $normalizedLabel = ltrim(sanitize_key($this->normalize_subscription_item_display_label($label)), '_');
+            if ($normalizedLabel !== '' && in_array($normalizedLabel, $attributeDisplayLabels, true)) {
+                continue;
+            }
+
+            $filtered[] = $row;
+        }
+
+        return $filtered;
+    }
+
     private function get_subscription_item_display_meta(array $item): array {
         $stored = isset($item['display_meta']) && is_array($item['display_meta']) ? $item['display_meta'] : [];
 
-        $sourceOrderItemId = (int) ($item['source_order_item_id'] ?? 0);
-        if ($sourceOrderItemId > 0 && function_exists('WC') && WC()->order_factory) {
-            $sourceItem = WC()->order_factory->get_order_item($sourceOrderItemId);
-            if ($sourceItem && is_object($sourceItem)) {
-                $sourceDisplayMeta = $this->get_display_meta_rows_from_order_item(
-                    $sourceItem,
-                    (int) ($item['base_product_id'] ?? 0),
-                    $this->get_subscription_item_selected_attributes($item)
-                );
-
-                if (!empty($sourceDisplayMeta)) {
-                    return $this->sanitize_subscription_item_display_meta($sourceDisplayMeta);
-                }
-            }
-        }
-
-        return $this->sanitize_subscription_item_display_meta($stored);
+        return $this->exclude_subscription_item_attribute_display_meta(
+            $stored,
+            (int) ($item['base_product_id'] ?? 0)
+        );
     }
 
     private function should_skip_order_item_display_meta_key(string $metaKey): bool {
@@ -5165,7 +5177,7 @@ class SubscriptionsModule {
         }
 
         $normalizedAttributes = $this->sanitize_selected_attributes_map($selectedAttributes);
-        $normalizedDisplayMeta = $this->sanitize_subscription_item_display_meta($displayMeta);
+        $normalizedDisplayMeta = $this->exclude_subscription_item_attribute_display_meta($displayMeta, $baseProductId);
 
         if ($priceIncludesTax && $unitPrice > 0) {
             $priceIncludesTax = $this->should_subscription_item_price_be_treated_as_including_tax(
@@ -5455,15 +5467,10 @@ class SubscriptionsModule {
     }
 
     private function maybe_repair_subscription_item_display_meta(int $subId, array $items, bool $persistRepairs = true): array {
-        $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
         if ($subId <= 0 || empty($items)) {
             return $items;
         }
 
-        $parentOrder = ($parentOrderId > 0 && function_exists('wc_get_order')) ? wc_get_order($parentOrderId) : null;
-        $orderItems = ($parentOrder && is_object($parentOrder) && method_exists($parentOrder, 'get_items'))
-            ? array_values((array) $parentOrder->get_items('line_item'))
-            : [];
         $didRepair = false;
 
         foreach ($items as $index => $item) {
@@ -5481,78 +5488,13 @@ class SubscriptionsModule {
                 $didRepair = true;
             }
 
-            $sourceItem = null;
-            $sourceOrderItemId = (int) ($item['source_order_item_id'] ?? 0);
-
-            if ($sourceOrderItemId > 0 && function_exists('WC') && WC()->order_factory) {
-                $candidate = WC()->order_factory->get_order_item($sourceOrderItemId);
-                if ($candidate && is_object($candidate)) {
-                    $sourceItem = $candidate;
-                }
-            }
-
-            if ((!$sourceItem || !is_object($sourceItem)) && $sourceOrderItemId > 0 && $parentOrder && method_exists($parentOrder, 'get_item')) {
-                $candidate = $parentOrder->get_item($sourceOrderItemId);
-                if ($candidate && is_object($candidate)) {
-                    $sourceItem = $candidate;
-                }
-            }
-
-            if (!$sourceItem || !is_object($sourceItem)) {
-                $sourceItem = !empty($orderItems) ? ($orderItems[$index] ?? null) : null;
-            }
-
-            if (!$sourceItem || !is_object($sourceItem)) {
-                foreach ($orderItems as $candidate) {
-                    if (!$candidate || !is_object($candidate)) {
-                        continue;
-                    }
-
-                    $candidateProductId = method_exists($candidate, 'get_product_id') ? (int) $candidate->get_product_id() : 0;
-                    $candidateVariationId = method_exists($candidate, 'get_variation_id') ? (int) $candidate->get_variation_id() : 0;
-
-                    if (
-                        $candidateProductId === (int) ($item['base_product_id'] ?? 0)
-                        && $candidateVariationId === (int) ($item['base_variation_id'] ?? 0)
-                    ) {
-                        $sourceItem = $candidate;
-                        break;
-                    }
-                }
-            }
-
-            if (!$sourceItem || !is_object($sourceItem)) {
-                continue;
-            }
-
-            $resolvedSourceOrderItemId = method_exists($sourceItem, 'get_id') ? (int) $sourceItem->get_id() : 0;
-            $displayMeta = $this->get_display_meta_rows_from_order_item(
-                $sourceItem,
-                (int) ($item['base_product_id'] ?? 0),
-                $this->get_subscription_item_selected_attributes($item)
+            $currentDisplayMeta = isset($item['display_meta']) && is_array($item['display_meta']) ? $item['display_meta'] : [];
+            $normalizedDisplayMeta = $this->exclude_subscription_item_attribute_display_meta(
+                $currentDisplayMeta,
+                (int) ($item['base_product_id'] ?? 0)
             );
-            $liveTotals = $this->get_subscription_item_order_totals_from_order_item($sourceItem);
-
-            if ($resolvedSourceOrderItemId > 0 && $resolvedSourceOrderItemId !== $sourceOrderItemId) {
-                $item['source_order_item_id'] = $resolvedSourceOrderItemId;
-                $didRepair = true;
-            }
-
-            $currentDisplayMeta = $this->sanitize_subscription_item_display_meta((array) ($item['display_meta'] ?? []));
-            if (!empty($displayMeta) && $displayMeta !== $currentDisplayMeta) {
-                $item['display_meta'] = $displayMeta;
-                $didRepair = true;
-            }
-
-            $currentTotals = $this->sanitize_subscription_item_order_totals_snapshot([
-                'line_subtotal' => $item['line_subtotal'] ?? null,
-                'line_tax' => $item['line_tax'] ?? null,
-                'line_total' => $item['line_total'] ?? null,
-            ]);
-            if ($liveTotals !== $currentTotals) {
-                $item['line_subtotal'] = (float) ($liveTotals['line_subtotal'] ?? 0.0);
-                $item['line_tax'] = (float) ($liveTotals['line_tax'] ?? 0.0);
-                $item['line_total'] = (float) ($liveTotals['line_total'] ?? 0.0);
+            if ($normalizedDisplayMeta !== $currentDisplayMeta) {
+                $item['display_meta'] = $normalizedDisplayMeta;
                 $didRepair = true;
             }
 
@@ -5567,25 +5509,7 @@ class SubscriptionsModule {
     }
 
     private function get_subscription_item_effective_display_meta(int $subId, array $item): array {
-        $displayMeta = $this->get_subscription_item_display_meta($item);
-        $sourceOrderItemId = (int) ($item['source_order_item_id'] ?? 0);
-
-        if ($sourceOrderItemId > 0 && function_exists('WC') && WC()->order_factory) {
-            $sourceItem = WC()->order_factory->get_order_item($sourceOrderItemId);
-            if ($sourceItem && is_object($sourceItem)) {
-                $sourceDisplayMeta = $this->get_display_meta_rows_from_order_item(
-                    $sourceItem,
-                    (int) ($item['base_product_id'] ?? 0),
-                    $this->get_subscription_item_selected_attributes($item)
-                );
-
-                if (!empty($sourceDisplayMeta)) {
-                    return $sourceDisplayMeta;
-                }
-            }
-        }
-
-        return $displayMeta;
+        return $this->get_subscription_item_display_meta($item);
     }
 
     private function persist_subscription_items(int $subId, array $items): void {

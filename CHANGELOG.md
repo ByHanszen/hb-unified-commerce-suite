@@ -4,6 +4,11 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.149] — 2026-04-08
+### Fixed
+- Frontend abonnementen: bij het teruglezen van gewijzigde subscription-items wordt niet langer de oude bron-orderregel via `source_order_item_id` gebruikt voor prijs- of metaweergave. De frontend blijft daardoor na een productwijziging op de actuele subscription-item data.
+- Frontend abonnementen: `display_meta` bewaart geen productattribuutregels meer. Gekozen variatie-attributen worden daardoor niet meer dubbel getoond naast order-item meta en alle actuele gekozen attributen komen uit de actuele selectie.
+
 ## [0.3.146] — 2026-04-08
 ### Fixed
 - Abonnement-variaties: bij het teruglezen van subscription order items zijn de opgeslagen selectie en de variatie zelf nu leidend. Ruwe order-item attribuutmeta vult alleen nog ontbrekende waarden aan en overschrijft geen actuele selectie meer.
