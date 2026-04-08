@@ -3008,7 +3008,7 @@ class SubscriptionsModule {
             return null;
         }
 
-        if (!in_array($subId, $this->get_user_subscription_ids($userId), true)) {
+        if (!$this->subscription_belongs_to_user($subId, $userId)) {
             return null;
         }
 
@@ -3023,22 +3023,19 @@ class SubscriptionsModule {
         $subscriptionIds = function_exists('wc_get_orders')
             ? wc_get_orders([
                 'type' => $this->get_subscription_order_type()->get_type(),
-                'limit' => 100,
+                'limit' => -1,
                 'return' => 'ids',
                 'orderby' => 'date',
                 'order' => 'DESC',
                 'status' => array_keys(wc_get_order_statuses()),
-                'meta_query' => [
-                    [
-                        'key' => self::SUB_META_USER_ID,
-                        'value' => (string) $userId,
-                        'compare' => '=',
-                    ],
-                ],
             ])
             : [];
 
         $subscriptionIds = array_map('intval', is_array($subscriptionIds) ? $subscriptionIds : []);
+
+        $subscriptionIds = array_values(array_filter($subscriptionIds, function (int $subId) use ($userId): bool {
+            return $this->subscription_belongs_to_user($subId, $userId);
+        }));
 
         $claimableIds = $this->find_claimable_subscription_ids_for_user($userId);
         if (!empty($claimableIds)) {
@@ -3060,6 +3057,34 @@ class SubscriptionsModule {
         ]);
 
         return $subscriptionIds;
+    }
+
+    private function subscription_belongs_to_user(int $subId, int $userId): bool {
+        if ($subId <= 0 || $userId <= 0 || !function_exists('wc_get_order')) {
+            return false;
+        }
+
+        $order = wc_get_order($subId);
+        if (!$order || !is_object($order) || !method_exists($order, 'get_type') || (string) $order->get_type() !== $this->get_subscription_order_type()->get_type()) {
+            return false;
+        }
+
+        $customerId = method_exists($order, 'get_customer_id') ? (int) $order->get_customer_id() : 0;
+        if ($customerId > 0) {
+            return $customerId === $userId;
+        }
+
+        $ownerId = (int) get_post_meta($subId, self::SUB_META_USER_ID, true);
+        if ($ownerId > 0) {
+            return $ownerId === $userId;
+        }
+
+        $fallbackCustomerId = (int) get_post_meta($subId, '_customer_user', true);
+        if ($fallbackCustomerId > 0) {
+            return $fallbackCustomerId === $userId;
+        }
+
+        return false;
     }
 
     private function find_claimable_subscription_ids_for_user(int $userId): array {
@@ -3092,6 +3117,19 @@ class SubscriptionsModule {
             }
 
             $ownerId = (int) get_post_meta($subId, self::SUB_META_USER_ID, true);
+            $customerId = function_exists('wc_get_order') && ($order = wc_get_order($subId)) && is_object($order) && method_exists($order, 'get_customer_id')
+                ? (int) $order->get_customer_id()
+                : 0;
+
+            if ($customerId === $userId) {
+                $matches[] = $subId;
+                continue;
+            }
+
+            if ($customerId > 0) {
+                continue;
+            }
+
             if ($ownerId === $userId) {
                 $matches[] = $subId;
                 continue;
@@ -3109,6 +3147,14 @@ class SubscriptionsModule {
             }
 
             update_post_meta($subId, self::SUB_META_USER_ID, (string) $userId);
+
+            if ($order && is_object($order) && method_exists($order, 'set_customer_id') && method_exists($order, 'save')) {
+                $order->set_customer_id($userId);
+                $order->save();
+            } else {
+                update_post_meta($subId, '_customer_user', (string) $userId);
+            }
+
             $matches[] = $subId;
         }
 

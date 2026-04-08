@@ -19,7 +19,8 @@ Bij elke wijziging die je wilt uitrollen:
    - Constante `HB_UCS_VERSION` = `X.Y.Z`
 2. Update `CHANGELOG.md`:
    - Voeg of werk de sectie `[X.Y.Z]` bij
-3. Doe dit voor iedere functionele codewijziging, ook bij kleine admin- of bugfixes, zodat GitHub-updaters altijd een hogere detecteerbare versie zien.
+3. Update `docs/DEPENDENCIES.md` als module-afhankelijkheden, integraties, vereiste APIs of deploymentvereisten zijn gewijzigd.
+4. Doe dit voor iedere functionele codewijziging, ook bij kleine admin- of bugfixes, zodat GitHub-updaters altijd een hogere detecteerbare versie zien.
 
 ## 3) Tag + release
 Maak een tag met exact dezelfde versie als de plugin:
@@ -34,6 +35,12 @@ git push --tags
 ```
 
 Maak daarna een GitHub Release op basis van die tag (Release notes kun je uit `CHANGELOG.md` kopiëren).
+
+## Release checklist
+- Versie in `hb-unified-commerce-suite.php` bijgewerkt
+- `CHANGELOG.md` bijgewerkt
+- `docs/DEPENDENCIES.md` gecontroleerd en bijgewerkt als afhankelijkheden of integraties veranderden
+- Tag naam exact gelijk aan pluginversie
 
 ## 4) Productie update via Git Updater
 1. Installeer **Git Updater** op productie.

@@ -7,12 +7,15 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 ## [0.3.130] — 2026-04-08
 ### Added
 - Abonnementen: nieuwe WP-CLI command `wp hb-ucs subscriptions backfill-order-meta` toegevoegd om in productie veilig de canonieke subscription-meta op WooCommerce order-type records te backfillen vanuit legacy-named meta op hetzelfde record.
+- Documentatie: nieuw bestand `docs/DEPENDENCIES.md` toegevoegd met de volledige dependency-matrix van modules, optionele integraties, WooCommerce/HPOS gebruik en release-afhankelijkheden.
 
 ### Changed
 - Abonnementen: de module draait nu alleen nog op de eigen HB UCS subscription-engine. De instellingen en runtime vallen niet langer terug op WooCommerce Subscriptions, zodat nieuwe abonnementen en renewals nog maar één interne bron van waarheid gebruiken.
+- Releaseproces: `docs/RELEASING.md` vereist nu ook controle en update van `docs/DEPENDENCIES.md` als afhankelijkheden of integraties wijzigen.
 
 ### Fixed
 - Abonnementen: renewal-creatie leest subscription-items nu zonder automatische repair-writeback en resolved de renewal-betaalmethode zonder direct het abonnement zelf te herschrijven. Daardoor kan het aanmaken van een renewal-order niet meer onbedoeld opgeslagen abonnementsprijzen of betaaldata muteren.
+- Abonnementen: de frontend accountweergave valideert eigenaarschap van abonnementen nu expliciet via WooCommerce customer-id en interne eigenaar-meta. Daardoor kunnen klanten niet langer abonnementen van andere accounts zien als een order-query te breed uitvalt.
 
 ### Removed
 - Abonnementen: WCS migratie- en exporthooks worden niet meer geregistreerd en runtime-context leest geen fallback-data meer uit gekoppelde WCS bronabonnementen. Dat verkleint de kans op sync- en herstelverschillen met oude externe brondata.

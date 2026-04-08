@@ -25,6 +25,9 @@ Zie `docs/RELEASING.md` voor het volledige stappenplan.
 ## Architectuur-notitie
 - Voor de migratie van abonnementen van de huidige CPT-editor naar een WooCommerce order type / HPOS-achtige editor, zie `docs/subscription-hpos-migration-plan.md`.
 
+## Afhankelijkheden
+- Voor de volledige dependency-matrix van modules, optionele integraties, WooCommerce/HPOS gebruik en release-afhankelijkheden, zie `docs/DEPENDENCIES.md`.
+
 ## Belangrijk
 - Updates overschrijven bestanden, maar verwijderen geen data uit de database.
 - Verwijderen (uninstall) doet alleen cleanup als per module `delete_data_on_uninstall` aan staat.
