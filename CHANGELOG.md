@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.152] — 2026-04-08
+### Fixed
+- Abonnement-attributen: labels als `attribute_pa_*`, `pa_*` en nette attribuutlabels worden nu allemaal naar dezelfde attribuutnaam genormaliseerd. Daardoor worden dubbele attribuutregels met en zonder prefix eindelijk als hetzelfde attribuut herkend en correct weggefilterd in frontend en backend.
+
 ## [0.3.151] — 2026-04-08
 ### Fixed
 - Backend abonnementitems: admin-meta voor subscription order items filtert nu ook attribuutlabels zelf weg wanneer WooCommerce die al als geformatteerde meta zou tonen. Daardoor verdwijnen dubbele attribuutregels met en zonder `pa_` prefix in de backend.

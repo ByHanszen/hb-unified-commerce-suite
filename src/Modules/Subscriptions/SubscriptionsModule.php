@@ -4141,7 +4141,7 @@ class SubscriptionsModule {
         }
 
         $normalizedLabel = ltrim(sanitize_key($label), '_');
-        if (strpos($normalizedLabel, 'pa_') === 0) {
+        if (strpos($normalizedLabel, 'attribute_') === 0 || strpos($normalizedLabel, 'pa_') === 0) {
             $label = $this->get_order_item_display_meta_label($normalizedLabel);
         }
 
@@ -4703,6 +4703,7 @@ class SubscriptionsModule {
             }
 
             if ($key !== '') {
+                $labels[] = ltrim(sanitize_key($key), '_');
                 $labels[] = ltrim(sanitize_key($this->get_order_item_display_meta_label($key)), '_');
                 $labels[] = ltrim(sanitize_key(str_replace('attribute_', '', $key)), '_');
             }
