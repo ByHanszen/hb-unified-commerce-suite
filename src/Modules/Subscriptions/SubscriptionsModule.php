@@ -2987,16 +2987,6 @@ class SubscriptionsModule {
                         $item['display_meta'] = [];
                     }
 
-                    if ($canReuseExistingItemMeta && !empty($existingItem['source_item_snapshot'])) {
-                        $item['source_item_snapshot'] = $existingItem['source_item_snapshot'];
-                    } else {
-                        $item['source_item_snapshot'] = $this->build_subscription_item_source_snapshot(
-                            isset($item['selected_attributes']) && is_array($item['selected_attributes']) ? $item['selected_attributes'] : [],
-                            isset($item['display_meta']) && is_array($item['display_meta']) ? $item['display_meta'] : [],
-                            (int) ($item['base_product_id'] ?? 0)
-                        );
-                    }
-
                     $newItems[] = $item;
                 }
 
@@ -4200,9 +4190,6 @@ class SubscriptionsModule {
 
     private function get_subscription_item_display_meta(array $item): array {
         $stored = isset($item['display_meta']) && is_array($item['display_meta']) ? $item['display_meta'] : [];
-        if (!empty($stored)) {
-            return $this->sanitize_subscription_item_display_meta($stored);
-        }
 
         $sourceOrderItemId = (int) ($item['source_order_item_id'] ?? 0);
         if ($sourceOrderItemId > 0 && function_exists('WC') && WC()->order_factory) {
@@ -4220,10 +4207,7 @@ class SubscriptionsModule {
             }
         }
 
-        $snapshot = $this->get_subscription_item_source_snapshot($item);
-        $snapshotDisplayMeta = isset($snapshot['display_meta']) && is_array($snapshot['display_meta']) ? $snapshot['display_meta'] : [];
-
-        return $this->sanitize_subscription_item_display_meta($snapshotDisplayMeta);
+        return $this->sanitize_subscription_item_display_meta($stored);
     }
 
     private function should_skip_order_item_display_meta_key(string $metaKey): bool {
@@ -4715,32 +4699,6 @@ class SubscriptionsModule {
         return array_values(array_unique(array_filter($labels)));
     }
 
-    private function build_subscription_item_source_snapshot(array $selectedAttributes = [], array $displayMeta = [], int $baseProductId = 0, array $orderTotals = []): array {
-        $supplementalDisplayMeta = $this->get_selected_attribute_display_rows($baseProductId, $selectedAttributes);
-        return [
-            'selected_attributes' => $this->sanitize_selected_attributes_map($selectedAttributes),
-            'display_meta' => $this->sanitize_subscription_item_display_meta(array_merge($supplementalDisplayMeta, $displayMeta)),
-            'order_totals' => $this->sanitize_subscription_item_order_totals_snapshot($orderTotals),
-        ];
-    }
-
-    private function get_subscription_item_source_snapshot(array $item): array {
-        $snapshot = isset($item['source_item_snapshot']) && is_array($item['source_item_snapshot']) ? $item['source_item_snapshot'] : [];
-        $selectedAttributes = isset($snapshot['selected_attributes']) && is_array($snapshot['selected_attributes']) ? $snapshot['selected_attributes'] : [];
-        $displayMeta = isset($snapshot['display_meta']) && is_array($snapshot['display_meta']) ? $snapshot['display_meta'] : [];
-        $orderTotals = isset($snapshot['order_totals']) && is_array($snapshot['order_totals']) ? $snapshot['order_totals'] : [];
-
-        return $this->build_subscription_item_source_snapshot($selectedAttributes, $displayMeta, (int) ($item['base_product_id'] ?? 0), $orderTotals);
-    }
-
-    private function build_subscription_item_source_snapshot_from_order_item($item, int $baseProductId = 0, int $baseVariationId = 0): array {
-        $selectedAttributes = $this->get_selected_attributes_from_order_item($item, $baseProductId, $baseVariationId);
-        $displayMeta = $this->get_display_meta_rows_from_order_item($item, $baseProductId, $selectedAttributes);
-        $orderTotals = $this->get_subscription_item_order_totals_from_order_item($item);
-
-        return $this->build_subscription_item_source_snapshot($selectedAttributes, $displayMeta, $baseProductId, $orderTotals);
-    }
-
     private function sanitize_subscription_item_order_totals_snapshot(array $orderTotals): array {
         $normalized = [];
 
@@ -4772,10 +4730,17 @@ class SubscriptionsModule {
     }
 
     private function get_subscription_item_live_order_totals(array $item): array {
-        $sourceSnapshot = $this->get_subscription_item_source_snapshot($item);
-        return isset($sourceSnapshot['order_totals']) && is_array($sourceSnapshot['order_totals'])
-            ? $this->sanitize_subscription_item_order_totals_snapshot($sourceSnapshot['order_totals'])
-            : [];
+        $liveTotals = [];
+
+        foreach (['line_subtotal', 'line_tax', 'line_total'] as $key) {
+            if (!array_key_exists($key, $item)) {
+                continue;
+            }
+
+            $liveTotals[$key] = $item[$key];
+        }
+
+        return $this->sanitize_subscription_item_order_totals_snapshot($liveTotals);
     }
 
     private function get_display_meta_rows_from_order_item($item, int $baseProductId = 0, array $selectedAttributes = [], bool $includeFormattedMeta = true): array {
@@ -4958,11 +4923,6 @@ class SubscriptionsModule {
         $stored = isset($item['selected_attributes']) && is_array($item['selected_attributes']) ? $item['selected_attributes'] : [];
         if (!empty($stored)) {
             return $this->sanitize_selected_attributes_map($stored);
-        }
-
-        $snapshot = $this->get_subscription_item_source_snapshot($item);
-        if (!empty($snapshot['selected_attributes']) && is_array($snapshot['selected_attributes'])) {
-            return $this->sanitize_selected_attributes_map($snapshot['selected_attributes']);
         }
 
         $variationId = (int) ($item['base_variation_id'] ?? 0);
@@ -5190,8 +5150,12 @@ class SubscriptionsModule {
         $priceIncludesTax = !empty($item['price_includes_tax']);
         $selectedAttributes = isset($item['selected_attributes']) && is_array($item['selected_attributes']) ? $item['selected_attributes'] : [];
         $displayMeta = isset($item['display_meta']) && is_array($item['display_meta']) ? $item['display_meta'] : [];
-        $sourceSnapshot = isset($item['source_item_snapshot']) && is_array($item['source_item_snapshot']) ? $item['source_item_snapshot'] : [];
         $taxes = $this->normalize_subscription_item_taxes($item['taxes'] ?? []);
+        $lineTotals = $this->sanitize_subscription_item_order_totals_snapshot([
+            'line_subtotal' => $item['line_subtotal'] ?? null,
+            'line_tax' => $item['line_tax'] ?? null,
+            'line_total' => $item['line_total'] ?? null,
+        ]);
 
         if ($baseProductId <= 0) {
             return null;
@@ -5201,18 +5165,7 @@ class SubscriptionsModule {
         }
 
         $normalizedAttributes = $this->sanitize_selected_attributes_map($selectedAttributes);
-    $normalizedDisplayMeta = $this->sanitize_subscription_item_display_meta($displayMeta);
-        $normalizedSourceSnapshot = $this->build_subscription_item_source_snapshot(
-            isset($sourceSnapshot['selected_attributes']) && is_array($sourceSnapshot['selected_attributes'])
-                ? $sourceSnapshot['selected_attributes']
-                : $normalizedAttributes,
-            isset($sourceSnapshot['display_meta']) && is_array($sourceSnapshot['display_meta'])
-                ? $sourceSnapshot['display_meta']
-                : $normalizedDisplayMeta
-        , $baseProductId,
-            isset($sourceSnapshot['order_totals']) && is_array($sourceSnapshot['order_totals'])
-                ? $sourceSnapshot['order_totals']
-                : []);
+        $normalizedDisplayMeta = $this->sanitize_subscription_item_display_meta($displayMeta);
 
         if ($priceIncludesTax && $unitPrice > 0) {
             $priceIncludesTax = $this->should_subscription_item_price_be_treated_as_including_tax(
@@ -5251,7 +5204,9 @@ class SubscriptionsModule {
             'taxes' => $taxes,
             'selected_attributes' => $normalizedAttributes,
             'display_meta' => $normalizedDisplayMeta,
-            'source_item_snapshot' => $normalizedSourceSnapshot,
+            'line_subtotal' => (float) ($lineTotals['line_subtotal'] ?? 0.0),
+            'line_tax' => (float) ($lineTotals['line_tax'] ?? 0.0),
+            'line_total' => (float) ($lineTotals['line_total'] ?? 0.0),
         ];
 
         $normalized['catalog_unit_price'] = $this->resolve_subscription_item_catalog_unit_price($item, $normalized);
@@ -5468,10 +5423,11 @@ class SubscriptionsModule {
             }
 
             $lineTotal = method_exists($item, 'get_total') ? (float) $item->get_total() : 0.0;
+            $lineSubtotal = method_exists($item, 'get_subtotal') ? (float) $item->get_subtotal() : $lineTotal;
+            $lineTax = method_exists($item, 'get_total_tax') ? (float) $item->get_total_tax() : 0.0;
             $unitPrice = $qty > 0 ? (float) wc_format_decimal((string) ($lineTotal / $qty)) : 0.0;
             $selectedAttributes = $this->get_selected_attributes_from_order_item($item, $baseProductId, $baseVariationId);
             $displayMeta = $this->get_display_meta_rows_from_order_item($item, $baseProductId, $selectedAttributes);
-            $sourceSnapshot = $this->build_subscription_item_source_snapshot_from_order_item($item, $baseProductId, $baseVariationId);
 
             $normalized = $this->normalize_subscription_item([
                 'base_product_id' => $baseProductId,
@@ -5485,7 +5441,9 @@ class SubscriptionsModule {
                 'taxes' => method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : [],
                 'selected_attributes' => $selectedAttributes,
                 'display_meta' => $displayMeta,
-                'source_item_snapshot' => $sourceSnapshot,
+                'line_subtotal' => $lineSubtotal,
+                'line_tax' => $lineTax,
+                'line_total' => $lineTotal + $lineTax,
             ]);
 
             if ($normalized) {
@@ -5568,12 +5526,12 @@ class SubscriptionsModule {
             }
 
             $resolvedSourceOrderItemId = method_exists($sourceItem, 'get_id') ? (int) $sourceItem->get_id() : 0;
-            $sourceSnapshot = $this->build_subscription_item_source_snapshot_from_order_item(
+            $displayMeta = $this->get_display_meta_rows_from_order_item(
                 $sourceItem,
                 (int) ($item['base_product_id'] ?? 0),
-                (int) ($item['base_variation_id'] ?? 0)
+                $this->get_subscription_item_selected_attributes($item)
             );
-            $displayMeta = isset($sourceSnapshot['display_meta']) && is_array($sourceSnapshot['display_meta']) ? $sourceSnapshot['display_meta'] : [];
+            $liveTotals = $this->get_subscription_item_order_totals_from_order_item($sourceItem);
 
             if ($resolvedSourceOrderItemId > 0 && $resolvedSourceOrderItemId !== $sourceOrderItemId) {
                 $item['source_order_item_id'] = $resolvedSourceOrderItemId;
@@ -5586,9 +5544,15 @@ class SubscriptionsModule {
                 $didRepair = true;
             }
 
-            $currentSnapshot = $this->get_subscription_item_source_snapshot($item);
-            if ($sourceSnapshot !== $currentSnapshot) {
-                $item['source_item_snapshot'] = $sourceSnapshot;
+            $currentTotals = $this->sanitize_subscription_item_order_totals_snapshot([
+                'line_subtotal' => $item['line_subtotal'] ?? null,
+                'line_tax' => $item['line_tax'] ?? null,
+                'line_total' => $item['line_total'] ?? null,
+            ]);
+            if ($liveTotals !== $currentTotals) {
+                $item['line_subtotal'] = (float) ($liveTotals['line_subtotal'] ?? 0.0);
+                $item['line_tax'] = (float) ($liveTotals['line_tax'] ?? 0.0);
+                $item['line_total'] = (float) ($liveTotals['line_total'] ?? 0.0);
                 $didRepair = true;
             }
 
@@ -5605,10 +5569,6 @@ class SubscriptionsModule {
     private function get_subscription_item_effective_display_meta(int $subId, array $item): array {
         $displayMeta = $this->get_subscription_item_display_meta($item);
         $sourceOrderItemId = (int) ($item['source_order_item_id'] ?? 0);
-        $sourceSnapshot = $this->get_subscription_item_source_snapshot($item);
-        $snapshotDisplayMeta = isset($sourceSnapshot['display_meta']) && is_array($sourceSnapshot['display_meta'])
-            ? $this->sanitize_subscription_item_display_meta($sourceSnapshot['display_meta'])
-            : [];
 
         if ($sourceOrderItemId > 0 && function_exists('WC') && WC()->order_factory) {
             $sourceItem = WC()->order_factory->get_order_item($sourceOrderItemId);
@@ -5623,10 +5583,6 @@ class SubscriptionsModule {
                     return $sourceDisplayMeta;
                 }
             }
-        }
-
-        if (!empty($snapshotDisplayMeta)) {
-            return $snapshotDisplayMeta;
         }
 
         return $displayMeta;
@@ -9956,7 +9912,6 @@ JS;
             update_post_meta($subId, self::SUB_META_QTY, (string) $qty);
             $selectedAttributes = $this->get_selected_attributes_from_order_item($item, $baseProductId, $baseVariationId);
             $displayMeta = $this->get_display_meta_rows_from_order_item($item, $baseProductId, $selectedAttributes);
-            $sourceSnapshot = $this->build_subscription_item_source_snapshot($selectedAttributes, $displayMeta, $baseProductId);
 
             $this->persist_subscription_items($subId, [[
                 'base_product_id' => $baseProductId,
@@ -9968,7 +9923,10 @@ JS;
                 'taxes' => method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : [],
                 'selected_attributes' => $selectedAttributes,
                 'display_meta' => $displayMeta,
-                'source_item_snapshot' => $sourceSnapshot,
+                'line_subtotal' => method_exists($item, 'get_subtotal') ? (float) $item->get_subtotal() : (float) $item->get_total(),
+                'line_tax' => method_exists($item, 'get_total_tax') ? (float) $item->get_total_tax() : 0.0,
+                'line_total' => (float) (method_exists($item, 'get_total') ? $item->get_total() : 0.0)
+                    + (float) (method_exists($item, 'get_total_tax') ? $item->get_total_tax() : 0.0),
             ]]);
             $this->persist_subscription_fee_lines($subId, $this->extract_subscription_fee_lines($order));
             $this->persist_subscription_shipping_lines($subId, $this->extract_subscription_shipping_lines($order));

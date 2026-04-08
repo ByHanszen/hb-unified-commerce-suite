@@ -1018,10 +1018,6 @@ class SubscriptionRepository {
                 'taxes' => $this->normalize_item_taxes(method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : []),
                 'selected_attributes' => $attributes,
                 'display_meta' => $displayMetaRows,
-                'source_item_snapshot' => [
-                    'selected_attributes' => $attributes,
-                    'display_meta' => $displayMetaRows,
-                ],
             ];
         }
 
@@ -1246,8 +1242,6 @@ class SubscriptionRepository {
             $displayMetaRows = [];
             if (!empty($row['display_meta']) && is_array($row['display_meta'])) {
                 $displayMetaRows = (array) $row['display_meta'];
-            } elseif (!empty($row['source_item_snapshot']['display_meta']) && is_array($row['source_item_snapshot']['display_meta'])) {
-                $displayMetaRows = (array) $row['source_item_snapshot']['display_meta'];
             }
 
             $selectedAttributeHashes = $this->get_selected_attribute_display_row_hashes($productId, $selectedAttributes);

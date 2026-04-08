@@ -129,8 +129,6 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
             $displayMetaRows = [];
             if (!empty($row['display_meta']) && is_array($row['display_meta'])) {
                 $displayMetaRows = (array) $row['display_meta'];
-            } elseif (!empty($row['source_item_snapshot']['display_meta']) && is_array($row['source_item_snapshot']['display_meta'])) {
-                $displayMetaRows = (array) $row['source_item_snapshot']['display_meta'];
             }
 
             if (!empty($displayMetaRows)) {
