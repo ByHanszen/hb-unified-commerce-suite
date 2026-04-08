@@ -1135,6 +1135,18 @@
   transform: none;
 }
 
+.hb-ucs-product-modal__item--templated:focus,
+.hb-ucs-product-modal__item--templated:focus-visible {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.hb-ucs-product-modal__item--templated:focus-visible .hb-ucs-product-modal__item-template {
+  outline: 2px solid color-mix(in srgb, var(--hb-ucs-accent) 32%, transparent);
+  outline-offset: 2px;
+}
+
 .hb-ucs-product-modal__item-template {
   display: block;
   width: 100%;

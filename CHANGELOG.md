@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.136] — 2026-04-08
+### Changed
+- Abonnementen: de templated product-picker variant op Mijn Account gebruikt nu ook een neutralere focus-state. De standaard HB UCS focus-ring op de wrapper wordt niet meer toegepast; alleen een subtiele outline op de Elementor-output blijft over voor toetsenbordnavigatie.
+
 ## [0.3.135] — 2026-04-08
 ### Changed
 - Abonnementen: productkaarten in de frontend product-picker popup gebruiken bij Elementor Loop Item weergave niet langer een `button` wrapper, maar neutrale interactieve markup met dezelfde klik- en toetsenbordbediening. Daardoor lekt er geen browser- of thema-buttonstyling meer door naar loop items.
