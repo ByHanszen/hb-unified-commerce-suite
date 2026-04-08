@@ -149,6 +149,7 @@
 
     markup += '<p class="hb-ucs-product-modal__no-results"' + ((count || 0) > 0 ? ' hidden' : '') + '>' + $('<div>').text(noResultsLabel).html() + '</p>';
     $modal.find('.hb-ucs-product-modal__results').html(markup);
+    filterProductModal($modal);
   }
 
   function requestProductModalResults($modal) {
@@ -259,6 +260,7 @@
     setActiveCategoryFilter($modal, $defaultFilter);
     $modal.removeAttr('hidden').attr('aria-hidden', 'false');
     $('body').addClass('hb-ucs-product-modal-open');
+    filterProductModal($modal);
     scheduleProductModalRequest($modal, true);
     window.setTimeout(function () {
       $modal.find('.hb-ucs-product-modal__search').trigger('focus');
@@ -603,6 +605,7 @@
 
     $modal.off('input.hbUcsProductModalFilter', '.hb-ucs-product-modal__search');
     $modal.on('input.hbUcsProductModalFilter', '.hb-ucs-product-modal__search', function () {
+      filterProductModal($modal);
       scheduleProductModalRequest($modal, false);
     });
 
@@ -610,6 +613,7 @@
     $modal.on('click.hbUcsProductModalCategory', '.hb-ucs-product-modal__menu-button', function (event) {
       event.preventDefault();
       setActiveCategoryFilter($modal, $(this));
+      filterProductModal($modal);
       scheduleProductModalRequest($modal, true);
     });
 
