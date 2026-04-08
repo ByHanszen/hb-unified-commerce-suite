@@ -210,64 +210,11 @@ class SubscriptionRepository {
     }
 
     public function get_linked_legacy_post_id($order): int {
-        if (is_numeric($order)) {
-            $order = function_exists('wc_get_order') ? wc_get_order((int) $order) : null;
-        }
-
-        if (!$order || !is_object($order) || !method_exists($order, 'get_type') || (string) $order->get_type() !== $this->get_order_type()) {
-            return 0;
-        }
-
-        $legacyPostId = method_exists($order, 'get_meta') ? (int) $order->get_meta(SubscriptionOrderType::LEGACY_POST_ID_META, true) : 0;
-        if ($legacyPostId <= 0) {
-            return 0;
-        }
-
-        return get_post_type($legacyPostId) === self::LEGACY_POST_TYPE ? $legacyPostId : 0;
+        return 0;
     }
 
     public function ensure_legacy_record_for_order($order): int {
-        if (is_numeric($order)) {
-            $order = function_exists('wc_get_order') ? wc_get_order((int) $order) : null;
-        }
-
-        if (!$order || !is_object($order) || !method_exists($order, 'get_type') || (string) $order->get_type() !== $this->get_order_type()) {
-            return 0;
-        }
-
-        $legacyPostId = $this->get_linked_legacy_post_id($order);
-        if ($legacyPostId > 0 && get_post_type($legacyPostId) === self::LEGACY_POST_TYPE) {
-            return $legacyPostId;
-        }
-
-        $dateCreated = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
-        $dateString = $dateCreated && is_object($dateCreated) && method_exists($dateCreated, 'date') ? $dateCreated->date('Y-m-d H:i:s') : current_time('mysql');
-        $dateGmtString = $dateCreated && is_object($dateCreated) && method_exists($dateCreated, 'date') ? $dateCreated->date('Y-m-d H:i:s', new \DateTimeZone('UTC')) : current_time('mysql', 1);
-
-        self::$creatingLegacyFromOrder = true;
-
-        try {
-            $legacyPostId = wp_insert_post([
-                'post_type' => self::LEGACY_POST_TYPE,
-                'post_status' => 'publish',
-                'post_title' => $this->build_legacy_post_title_from_order($order),
-                'post_excerpt' => method_exists($order, 'get_customer_note') ? (string) $order->get_customer_note() : '',
-                'post_date' => $dateString,
-                'post_date_gmt' => $dateGmtString,
-            ], true);
-        } finally {
-            self::$creatingLegacyFromOrder = false;
-        }
-
-        if (is_wp_error($legacyPostId) || $legacyPostId <= 0) {
-            return 0;
-        }
-
-        $legacyPostId = (int) $legacyPostId;
-        update_post_meta($order->get_id(), SubscriptionOrderType::LEGACY_POST_ID_META, $legacyPostId);
-        update_post_meta($order->get_id(), SubscriptionOrderType::STORAGE_VERSION_META, SubscriptionOrderType::PHASE2_STORAGE_VERSION);
-
-        return $legacyPostId;
+        return 0;
     }
 
     public function sync_legacy_from_order($order, bool $createIfMissing = false): ?array {
@@ -279,81 +226,12 @@ class SubscriptionRepository {
             return null;
         }
 
-        $legacyPostId = $this->get_linked_legacy_post_id($order);
-        if ($legacyPostId <= 0 && $createIfMissing) {
-            $legacyPostId = $this->ensure_legacy_record_for_order($order);
-        }
-
-        if ($legacyPostId <= 0) {
-            $this->log_sync_debug('repository.sync_legacy_from_order.skipped_missing_legacy', [
-                'order' => $this->build_order_debug_snapshot($order),
-                'create_if_missing' => $createIfMissing,
-            ]);
-            return null;
-        }
-
-        $this->log_sync_debug('repository.sync_legacy_from_order.start', [
+        $this->log_sync_debug('repository.sync_legacy_from_order.skipped_dual_storage_disabled', [
             'order' => $this->build_order_debug_snapshot($order),
-            'legacy_before' => $this->build_legacy_debug_snapshot($legacyPostId),
+            'create_if_missing' => $createIfMissing,
         ]);
 
-        $legacyData = $this->build_legacy_data_from_order($order, $legacyPostId);
-
-        wp_update_post([
-            'ID' => $legacyPostId,
-            'post_title' => $this->build_legacy_post_title_from_order($order),
-            'post_excerpt' => (string) ($legacyData['customer_note'] ?? ''),
-        ]);
-
-        $metaMap = [
-            self::LEGACY_STATUS_META => (string) ($legacyData['status'] ?? ''),
-            self::LEGACY_USER_ID_META => (int) ($legacyData['customer_id'] ?? 0),
-            self::LEGACY_PARENT_ORDER_ID_META => (int) ($legacyData['parent_order_id'] ?? 0),
-            self::LEGACY_SCHEME_META => (string) ($legacyData['scheme'] ?? ''),
-            self::LEGACY_INTERVAL_META => (int) ($legacyData['interval'] ?? 0),
-            self::LEGACY_PERIOD_META => (string) ($legacyData['period'] ?? ''),
-            self::LEGACY_NEXT_PAYMENT_META => (int) ($legacyData['next_payment'] ?? 0),
-            self::LEGACY_PAYMENT_METHOD_META => (string) ($legacyData['payment_method'] ?? ''),
-            self::LEGACY_PAYMENT_METHOD_TITLE_META => (string) ($legacyData['payment_method_title'] ?? ''),
-            self::LEGACY_BILLING_META => (array) ($legacyData['billing'] ?? []),
-            self::LEGACY_SHIPPING_META => (array) ($legacyData['shipping'] ?? []),
-            self::LEGACY_ITEMS_META => (array) ($legacyData['items'] ?? []),
-            self::LEGACY_FEE_LINES_META => (array) ($legacyData['fee_lines'] ?? []),
-            self::LEGACY_SHIPPING_LINES_META => (array) ($legacyData['shipping_lines'] ?? []),
-            self::LEGACY_TRIAL_END_META => (int) ($legacyData['trial_end'] ?? 0),
-            self::LEGACY_END_DATE_META => (int) ($legacyData['end_date'] ?? 0),
-            self::LEGACY_LAST_ORDER_ID_META => (int) ($legacyData['last_order_id'] ?? 0),
-            self::LEGACY_LAST_ORDER_DATE_META => (int) ($legacyData['last_order_date'] ?? 0),
-            self::LEGACY_MOLLIE_CUSTOMER_ID_META => (string) ($legacyData['mollie_customer_id'] ?? ''),
-            self::LEGACY_MOLLIE_MANDATE_ID_META => (string) ($legacyData['mollie_mandate_id'] ?? ''),
-            self::LEGACY_LAST_PAYMENT_ID_META => (string) ($legacyData['last_payment_id'] ?? ''),
-        ];
-
-        foreach ($metaMap as $metaKey => $metaValue) {
-            if ($metaValue === '' || $metaValue === 0 || $metaValue === [] || $metaValue === null) {
-                if (in_array($metaKey, [self::LEGACY_BILLING_META, self::LEGACY_SHIPPING_META, self::LEGACY_ITEMS_META, self::LEGACY_FEE_LINES_META, self::LEGACY_SHIPPING_LINES_META], true)) {
-                    update_post_meta($legacyPostId, $metaKey, $metaValue);
-                } else {
-                    delete_post_meta($legacyPostId, $metaKey);
-                }
-                continue;
-            }
-
-            update_post_meta($legacyPostId, $metaKey, $metaValue);
-        }
-
-        update_post_meta($order->get_id(), SubscriptionOrderType::LEGACY_POST_ID_META, $legacyPostId);
-        update_post_meta($order->get_id(), SubscriptionOrderType::STORAGE_VERSION_META, SubscriptionOrderType::PHASE2_STORAGE_VERSION);
-
-        $result = $this->sync_order_type_record($legacyPostId, (int) $order->get_id());
-
-        $this->log_sync_debug('repository.sync_legacy_from_order.end', [
-            'order' => $this->build_order_debug_snapshot($order),
-            'legacy_after' => $this->build_legacy_debug_snapshot($legacyPostId),
-            'result' => is_array($result) ? $result : [],
-        ]);
-
-        return $result;
+        return $this->find((int) $order->get_id());
     }
 
     public function ensure_order_type_record(int $legacyPostId, bool $sync = true): ?array {
@@ -459,19 +337,9 @@ class SubscriptionRepository {
         $this->sync_shadow_order_meta($orderId, $data);
         $this->sync_shadow_order_items($orderId, $data);
 
-        $synced = $this->sync_legacy_from_order($order, $createMissingLegacy);
-        if (is_array($synced)) {
-            $this->log_sync_debug('repository.sync_order_type_self.end', [
-                'order' => $this->build_order_debug_snapshot($order),
-                'linked_legacy_after' => $this->build_legacy_debug_snapshot($this->get_linked_legacy_post_id($order)),
-                'result' => $synced,
-            ]);
-            return $synced;
-        }
-
         $result = $this->find($orderId);
 
-        $this->log_sync_debug('repository.sync_order_type_self.end_without_sync_result', [
+        $this->log_sync_debug('repository.sync_order_type_self.end', [
             'order' => $this->build_order_debug_snapshot($order),
             'result' => is_array($result) ? $result : [],
         ]);

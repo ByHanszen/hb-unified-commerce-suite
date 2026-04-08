@@ -599,7 +599,7 @@ class SubscriptionAdmin {
                 SubscriptionRepository::LEGACY_STATUS_META => $statusMap[$action],
             ]);
 
-            $this->service->get_repository()->sync_legacy_from_order($order, false);
+            $this->service->get_repository()->sync_order_type_self((int) $order->get_id(), false);
             $updated++;
         }
 
@@ -805,7 +805,7 @@ class SubscriptionAdmin {
         }
 
         apply_filters('hb_ucs_subscription_admin_execute_action', null, 'create_renewal_order', (int) $order->get_id(), $order);
-        $this->service->get_repository()->sync_legacy_from_order($order, false);
+        $this->service->get_repository()->sync_order_type_self((int) $order->get_id(), false);
     }
 
     public function handle_sync_customer_addresses_action($order): void {
@@ -840,7 +840,7 @@ class SubscriptionAdmin {
             $order->save();
         }
 
-        $this->service->get_repository()->sync_legacy_from_order($order, false);
+        $this->service->get_repository()->sync_order_type_self((int) $order->get_id(), false);
 
         if (method_exists($order, 'add_order_note')) {
             $order->add_order_note(__('Factuur- en verzendadres opnieuw geladen vanaf het klantprofiel.', 'hb-ucs'));
@@ -1202,9 +1202,7 @@ class SubscriptionAdmin {
             }
 
             $linkedLegacyPostId = $repository->get_linked_legacy_post_id($order);
-            $syncResult = $linkedLegacyPostId > 0
-                ? $repository->sync_legacy_from_order($order, false)
-                : $repository->sync_order_type_self($orderId, false);
+            $syncResult = $repository->sync_order_type_self($orderId, false);
 
             $this->log_subscription_sync('admin.deferred_sync.completed', $order, [
                 'linked_legacy_post_id' => $linkedLegacyPostId,
@@ -1435,7 +1433,7 @@ class SubscriptionAdmin {
             SubscriptionRepository::LEGACY_STATUS_META => $status,
         ]);
 
-        $this->service->get_repository()->sync_legacy_from_order($order, false);
+        $this->service->get_repository()->sync_order_type_self((int) $order->get_id(), false);
 
         if (method_exists($order, 'add_order_note')) {
             $order->add_order_note($note);

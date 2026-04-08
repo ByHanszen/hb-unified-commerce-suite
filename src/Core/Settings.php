@@ -163,8 +163,7 @@ class Settings {
     private function defaults_subscriptions(): array {
         return [
             // Engine:
-            // - manual: geen dependency op WooCommerce Subscriptions; klant rekent elke periode opnieuw af.
-            // - wcs: gebruikt WooCommerce Subscriptions (optioneel) voor automatische renewals.
+            // - manual: HB UCS beheert abonnementen volledig zelf.
             'engine' => 'manual',
             'recurring_enabled' => 0,
             'recurring_webhook_token' => '',
@@ -679,15 +678,7 @@ class Settings {
             echo '</p></div>';
         }
 
-        $engine = isset($opt['engine']) ? sanitize_key((string) $opt['engine']) : 'manual';
-        if ($engine !== 'manual' && $engine !== 'wcs') {
-            $engine = 'manual';
-        }
-        if ($engine === 'wcs' && !term_exists('subscription', 'product_type')) {
-            echo '<div class="notice notice-warning"><p>';
-            echo esc_html__('WooCommerce Subscriptions lijkt niet actief. Kies "Handmatig" of installeer/activeer WooCommerce Subscriptions.', 'hb-ucs');
-            echo '</p></div>';
-        }
+        $engine = 'manual';
 
         // Mollie must be able to reach the webhook URL from the outside.
         // On localhost/private IP this will fail with a 422 (unreachable webhookUrl).
@@ -731,10 +722,8 @@ class Settings {
         echo '<td>';
         echo '<select id="hb_ucs_subscriptions_engine" name="hb_ucs_subscriptions[engine]">';
         echo '<option value="manual" ' . selected($engine, 'manual', false) . '>' . esc_html__('Handmatig (geen dependency)', 'hb-ucs') . '</option>';
-        $wcsDisabled = term_exists('subscription', 'product_type') ? '' : 'disabled';
-        echo '<option value="wcs" ' . selected($engine, 'wcs', false) . ' ' . $wcsDisabled . '>' . esc_html__('WooCommerce Subscriptions (automatisch, vereist plugin)', 'hb-ucs') . '</option>';
         echo '</select>';
-        echo '<p class="description">' . esc_html__('Handmatig: geen dependency op WooCommerce Subscriptions. Je kunt optioneel automatische verlengingen via Mollie inschakelen (zie hieronder). WCS: gebruikt WooCommerce Subscriptions voor automatische renewals (indien geïnstalleerd).', 'hb-ucs') . '</p>';
+        echo '<p class="description">' . esc_html__('HB UCS beheert abonnementen volledig zelf. Je kunt optioneel automatische verlengingen via Mollie inschakelen (zie hieronder).', 'hb-ucs') . '</p>';
         echo '</td>';
         echo '</tr>';
         echo '</tbody></table>';
@@ -1154,7 +1143,7 @@ class Settings {
         }
 
         $clean = [
-            'engine' => (isset($raw['engine']) && sanitize_key((string) $raw['engine']) === 'wcs') ? 'wcs' : 'manual',
+            'engine' => 'manual',
             'recurring_enabled' => empty($raw['recurring_enabled']) ? 0 : 1,
             'recurring_webhook_token' => $token,
             'delete_data_on_uninstall' => empty($raw['delete_data_on_uninstall']) ? 0 : 1,

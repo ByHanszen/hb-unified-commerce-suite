@@ -2,30 +2,15 @@
 
 namespace HB\UCS\Modules\Subscriptions\DataStores;
 
-use HB\UCS\Modules\Subscriptions\Domain\SubscriptionRepository;
-use HB\UCS\Modules\Subscriptions\OrderTypes\SubscriptionOrderType;
 use HB\UCS\Modules\Subscriptions\Orders\HB_UCS_Subscription_Order;
-use HB\UCS\Modules\Subscriptions\Support\SubscriptionSyncLogger;
 
 if (!defined('ABSPATH')) exit;
 
 class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
-    /** @var SubscriptionRepository */
-    private $repository;
     private const ORDER_ITEM_META_CATALOG_UNIT_PRICE = '_hb_ucs_subscription_catalog_unit_price';
-
-    public function __construct() {
-        $this->repository = new SubscriptionRepository();
-    }
 
     public function read(&$order) {
         parent::read($order);
-
-        if (!$order instanceof HB_UCS_Subscription_Order) {
-            return;
-        }
-
-        $this->hydrate_legacy_overlay($order);
     }
 
     public function read_items($order, $type) {
@@ -38,7 +23,7 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
             return $items;
         }
 
-        $legacy = $this->get_overlay_subscription_data($order);
+        $legacy = $this->get_order_type_subscription_data($order);
 
         if (empty($legacy)) {
             return $items;
@@ -58,100 +43,22 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
         }
     }
 
-    private function hydrate_legacy_overlay(HB_UCS_Subscription_Order $order): void {
-        $legacyPostId = $this->repository->get_linked_legacy_post_id($order);
-        $legacy = $this->get_overlay_subscription_data($order);
-
-        if (empty($legacy)) {
-            SubscriptionSyncLogger::debug('datastore.hydrate_legacy_overlay.empty_legacy', [
-                'order_id' => (int) $order->get_id(),
-                'legacy_post_id' => $legacyPostId,
-            ]);
-            return;
+    private function get_order_type_subscription_data(HB_UCS_Subscription_Order $order): array {
+        $orderId = (int) $order->get_id();
+        if ($orderId <= 0) {
+            return [];
         }
 
-        SubscriptionSyncLogger::debug('datastore.hydrate_legacy_overlay.start', [
-            'order_id' => (int) $order->get_id(),
-            'legacy_post_id' => $legacyPostId,
-            'order_meta_status_before' => (string) $order->get_meta('_hb_ucs_subscription_status', true, 'edit'),
-            'order_meta_next_payment_before' => (int) $order->get_meta('_hb_ucs_subscription_next_payment', true, 'edit'),
-            'legacy_status' => (string) ($legacy['status'] ?? ''),
-            'legacy_scheme' => (string) ($legacy['scheme'] ?? ''),
-            'legacy_next_payment' => (int) ($legacy['next_payment'] ?? 0),
-        ]);
+        $items = get_post_meta($orderId, '_hb_ucs_sub_items', true);
+        $feeLines = get_post_meta($orderId, '_hb_ucs_sub_fee_lines', true);
+        $shippingLines = get_post_meta($orderId, '_hb_ucs_sub_shipping_lines', true);
 
-        $billing = isset($legacy['billing']) && is_array($legacy['billing']) ? $legacy['billing'] : [];
-        $shipping = isset($legacy['shipping']) && is_array($legacy['shipping']) ? $legacy['shipping'] : [];
-        $totals = isset($legacy['totals']) && is_array($legacy['totals']) ? $legacy['totals'] : [];
-
-        $order->set_props([
-            'customer_id' => (int) ($legacy['customer_id'] ?? 0),
-            'payment_method' => (string) ($legacy['payment_method'] ?? ''),
-            'payment_method_title' => (string) ($legacy['payment_method_title'] ?? ''),
-            'billing_first_name' => (string) ($billing['first_name'] ?? ''),
-            'billing_last_name' => (string) ($billing['last_name'] ?? ''),
-            'billing_company' => (string) ($billing['company'] ?? ''),
-            'billing_address_1' => (string) ($billing['address_1'] ?? ''),
-            'billing_address_2' => (string) ($billing['address_2'] ?? ''),
-            'billing_city' => (string) ($billing['city'] ?? ''),
-            'billing_state' => (string) ($billing['state'] ?? ''),
-            'billing_postcode' => (string) ($billing['postcode'] ?? ''),
-            'billing_country' => (string) ($billing['country'] ?? ''),
-            'billing_email' => (string) ($billing['email'] ?? ''),
-            'billing_phone' => (string) ($billing['phone'] ?? ''),
-            'shipping_first_name' => (string) ($shipping['first_name'] ?? ''),
-            'shipping_last_name' => (string) ($shipping['last_name'] ?? ''),
-            'shipping_company' => (string) ($shipping['company'] ?? ''),
-            'shipping_address_1' => (string) ($shipping['address_1'] ?? ''),
-            'shipping_address_2' => (string) ($shipping['address_2'] ?? ''),
-            'shipping_city' => (string) ($shipping['city'] ?? ''),
-            'shipping_state' => (string) ($shipping['state'] ?? ''),
-            'shipping_postcode' => (string) ($shipping['postcode'] ?? ''),
-            'shipping_country' => (string) ($shipping['country'] ?? ''),
-            'customer_note' => (string) ($legacy['customer_note'] ?? ''),
-        ]);
-
-        $order->set_currency((string) ($legacy['currency'] ?? get_woocommerce_currency()));
-        $order->set_prices_include_tax(!empty($legacy['prices_include_tax']));
-        $order->set_discount_total(0);
-        $order->set_discount_tax(0);
-        $order->set_shipping_total((float) ($totals['shipping_subtotal'] ?? 0.0));
-        $order->set_shipping_tax((float) ($totals['shipping_tax'] ?? 0.0));
-        $order->set_cart_tax((float) ($totals['item_tax'] ?? 0.0) + (float) ($totals['fee_tax'] ?? 0.0));
-        $order->set_total((float) ($totals['total'] ?? 0.0));
-        $order->set_storage_version(SubscriptionOrderType::PHASE2_STORAGE_VERSION);
-        $order->set_subscription_status((string) ($legacy['status'] ?? 'pending_mandate'));
-        $order->set_subscription_scheme((string) ($legacy['scheme'] ?? ''));
-        $order->set_next_payment_timestamp((int) ($legacy['next_payment'] ?? 0));
-
-        if (!empty($legacy['date_created_gmt'])) {
-            $order->set_date_created($legacy['date_created_gmt']);
-        }
-
-        if (!empty($legacy['date_modified_gmt'])) {
-            $order->set_date_modified($legacy['date_modified_gmt']);
-        }
-
-        SubscriptionSyncLogger::debug('datastore.hydrate_legacy_overlay.end', [
-            'order_id' => (int) $order->get_id(),
-            'legacy_post_id' => $legacyPostId,
-            'order_meta_status_after' => (string) $order->get_meta('_hb_ucs_subscription_status', true, 'edit'),
-            'order_meta_next_payment_after' => (int) $order->get_meta('_hb_ucs_subscription_next_payment', true, 'edit'),
-            'applied_status' => (string) ($legacy['status'] ?? ''),
-            'applied_next_payment' => (int) ($legacy['next_payment'] ?? 0),
-        ]);
-    }
-
-    private function get_overlay_subscription_data(HB_UCS_Subscription_Order $order): array {
-        $legacyPostId = $this->repository->get_linked_legacy_post_id($order);
-        if ($legacyPostId > 0) {
-            $legacy = $this->repository->get_legacy_subscription_data($legacyPostId);
-            if (!empty($legacy)) {
-                return $legacy;
-            }
-        }
-
-        return $this->repository->get_order_type_subscription_data($order);
+        return [
+            'scheme' => (string) $order->get_meta('_hb_ucs_subscription_scheme', true),
+            'items' => is_array($items) ? $items : [],
+            'fee_lines' => is_array($feeLines) ? $feeLines : [],
+            'shipping_lines' => is_array($shippingLines) ? $shippingLines : [],
+        ];
     }
 
     private function build_legacy_line_items(HB_UCS_Subscription_Order $order, array $legacy): array {

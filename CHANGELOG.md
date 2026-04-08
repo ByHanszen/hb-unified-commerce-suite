@@ -4,6 +4,21 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.130] — 2026-04-08
+### Added
+- Abonnementen: nieuwe WP-CLI command `wp hb-ucs subscriptions backfill-order-meta` toegevoegd om in productie veilig de canonieke subscription-meta op WooCommerce order-type records te backfillen vanuit legacy-named meta op hetzelfde record.
+
+### Changed
+- Abonnementen: de module draait nu alleen nog op de eigen HB UCS subscription-engine. De instellingen en runtime vallen niet langer terug op WooCommerce Subscriptions, zodat nieuwe abonnementen en renewals nog maar één interne bron van waarheid gebruiken.
+
+### Fixed
+- Abonnementen: renewal-creatie leest subscription-items nu zonder automatische repair-writeback en resolved de renewal-betaalmethode zonder direct het abonnement zelf te herschrijven. Daardoor kan het aanmaken van een renewal-order niet meer onbedoeld opgeslagen abonnementsprijzen of betaaldata muteren.
+
+### Removed
+- Abonnementen: WCS migratie- en exporthooks worden niet meer geregistreerd en runtime-context leest geen fallback-data meer uit gekoppelde WCS bronabonnementen. Dat verkleint de kans op sync- en herstelverschillen met oude externe brondata.
+- Abonnementen: dode WCS child-product, migratie- en add-to-cart paden zijn uit de subscriptions-module verwijderd, zodat de runtime alleen nog HB UCS eigen logica gebruikt.
+- Abonnementen: dual-storage sync naar gekoppelde legacy subscription posts is uitgeschakeld. De WooCommerce order-type records blijven de enige actieve bron van waarheid, terwijl de WooCommerce admin- en orderintegratie intact blijft.
+
 ## [0.3.129] — 2026-04-07
 ### Fixed
 - Abonnementen: renewal-productregels herstellen nu ook voor gewone HB UCS-abonnementen automatisch fout opgeslagen bruto `unit_price` waarden naar netto-opslag zodra de bewaarde tax-breakdown laat zien dat de artikelprijs inclusief btw was. Daardoor tonen renewal-orders weer de juiste ex-btw productprijs, terwijl bestaande abonnementen direct vanuit hun opgeslagen itemdata worden gecorrigeerd.

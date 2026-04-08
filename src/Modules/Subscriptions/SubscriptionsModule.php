@@ -22,12 +22,6 @@ class SubscriptionsModule {
     private const META_DISC_TYPE_PREFIX = '_hb_ucs_subs_disc_type_';      // percent|fixed
     private const META_DISC_VALUE_PREFIX = '_hb_ucs_subs_disc_value_';    // decimal
 
-    private const META_CHILD_PREFIX = '_hb_ucs_subs_child_'; // stored on base product: subscription product id
-
-    private const META_CHILD_BASE_PRODUCT_ID = '_hb_ucs_subs_base_product_id';
-    private const META_CHILD_SCHEME = '_hb_ucs_subs_scheme';
-    private const META_CHILD_GENERATED = '_hb_ucs_subs_generated';
-
     private const CART_KEY = 'hb_ucs_subs';
 
     private const SUB_META_STATUS = '_hb_ucs_sub_status';
@@ -57,14 +51,6 @@ class SubscriptionsModule {
     private const SUB_META_END_DATE = '_hb_ucs_sub_end_date'; // unix timestamp (optional)
     private const SUB_META_LAST_ORDER_ID = '_hb_ucs_sub_last_order_id';
     private const SUB_META_LAST_ORDER_DATE = '_hb_ucs_sub_last_order_date'; // unix timestamp
-    private const SUB_META_WCS_SOURCE_ID = '_hb_ucs_sub_wcs_source_id';
-
-    private const WCS_MIGRATION_LOCK_KEY = 'hb_ucs_wcs_migration_lock';
-    private const WCS_MIGRATION_PROGRESS_KEY_PREFIX = 'hb_ucs_wcs_migration_progress_';
-    private const WCS_MIGRATION_LOCK_TTL = 900;
-    private const WCS_MIGRATION_DEFAULT_BATCH_SIZE = 25;
-    private const WCS_MIGRATION_MAX_BATCH_SIZE = 100;
-
     private const ORDER_META_RECURRING_CREATED = '_hb_ucs_subs_recurring_created';
     private const ORDER_META_SUBSCRIPTION_ID = '_hb_ucs_subscription_id';
     private const ORDER_META_RENEWAL = '_hb_ucs_subscription_renewal';
@@ -75,9 +61,6 @@ class SubscriptionsModule {
     private const ORDER_ITEM_META_SELECTED_ATTRIBUTES = '_hb_ucs_subscription_selected_attributes';
     private const ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID = '_hb_ucs_subscription_source_order_item_id';
     private const ORDER_ITEM_META_CATALOG_UNIT_PRICE = '_hb_ucs_subscription_catalog_unit_price';
-
-    /** @var array{base_product_id:int,base_variation_id:int,child_product_id:int,scheme:string}|null */
-    private static $pendingAddToCart = null;
 
     /** @var \HB\UCS\Modules\Subscriptions\Domain\SubscriptionRepository|null */
     private $subscriptionRepository = null;
@@ -111,7 +94,6 @@ class SubscriptionsModule {
         add_action('woocommerce_save_product_variation', [$this, 'save_variation_fields'], 10, 2);
 
         if (is_admin()) {
-            add_action('admin_notices', [$this, 'maybe_notice_missing_wcs']);
             add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
             add_action('woocommerce_admin_order_data_after_billing_address', [$this, 'render_subscription_mollie_admin_fields'], 20, 1);
             add_action('wp_ajax_hb_ucs_subscription_product_data', [$this, 'handle_subscription_product_data_ajax']);
@@ -130,9 +112,6 @@ class SubscriptionsModule {
 
             add_action('admin_post_hb_ucs_subs_run_now', [$this, 'handle_run_renewals_now']);
             add_action('admin_post_hb_ucs_subs_create_demo', [$this, 'handle_create_demo_subscription']);
-            add_action('admin_post_hb_ucs_subs_migrate_wcs', [$this, 'handle_migrate_wcs_subscriptions']);
-            add_action('admin_post_hb_ucs_subs_export_wcs_csv', [$this, 'handle_export_wcs_subscriptions_csv']);
-            add_action('admin_notices', [$this, 'maybe_render_wcs_migration_notice']);
         }
 
         add_action('wp_enqueue_scripts', [$this, 'enqueue_frontend_assets'], 20);
@@ -248,12 +227,6 @@ class SubscriptionsModule {
 
         $record = $this->get_subscription_repository()->find($subId);
         if (is_array($record) && (($record['storage'] ?? '') === 'order_type')) {
-            $legacyPostId = $this->get_subscription_repository()->get_linked_legacy_post_id($subId);
-            if ($legacyPostId > 0) {
-                $this->get_subscription_repository()->sync_order_type_record($legacyPostId, $subId);
-                return;
-            }
-
             $this->get_subscription_repository()->sync_order_type_self($subId, false);
             return;
         }
@@ -492,43 +465,15 @@ class SubscriptionsModule {
     }
 
     private function persist_linked_legacy_subscription_items(int $subId, array $items): void {
-        if ($subId <= 0) {
-            return;
-        }
-
-        $legacyPostId = $this->get_subscription_repository()->get_linked_legacy_post_id($subId);
-        if ($legacyPostId <= 0 || $legacyPostId === $subId) {
-            return;
-        }
-
-        $this->persist_subscription_items($legacyPostId, $items);
+        return;
     }
 
     private function persist_linked_legacy_subscription_shipping_lines(int $subId, array $lines): void {
-        if ($subId <= 0) {
-            return;
-        }
-
-        $legacyPostId = $this->get_subscription_repository()->get_linked_legacy_post_id($subId);
-        if ($legacyPostId <= 0 || $legacyPostId === $subId) {
-            return;
-        }
-
-        $this->persist_subscription_shipping_lines($legacyPostId, $lines);
+        return;
     }
 
     private function persist_linked_legacy_subscription_addresses(int $subId, array $billing, array $shipping): void {
-        if ($subId <= 0) {
-            return;
-        }
-
-        $legacyPostId = $this->get_subscription_repository()->get_linked_legacy_post_id($subId);
-        if ($legacyPostId <= 0 || $legacyPostId === $subId) {
-            return;
-        }
-
-        update_post_meta($legacyPostId, \HB\UCS\Modules\Subscriptions\Domain\SubscriptionRepository::LEGACY_BILLING_META, $billing);
-        update_post_meta($legacyPostId, \HB\UCS\Modules\Subscriptions\Domain\SubscriptionRepository::LEGACY_SHIPPING_META, $shipping);
+        return;
     }
 
     private function refresh_subscription_contact_snapshots_and_shipping(int $subId, array $billing, array $shipping): void {
@@ -960,21 +905,6 @@ class SubscriptionsModule {
             if ($lastOrder && is_object($lastOrder)) {
                 $lastOrderContext = $this->extract_mollie_context_from_order($lastOrder, true);
                 foreach ($lastOrderContext as $key => $value) {
-                    if (($context[$key] ?? '') === '' && $value !== '') {
-                        $context[$key] = $value;
-                    }
-                }
-            }
-        }
-
-        $sourceId = (int) get_post_meta($subId, self::SUB_META_WCS_SOURCE_ID, true);
-        if ($sourceId > 0 && $this->wcs_available() && function_exists('wcs_get_subscription')) {
-            $sourceSubscription = wcs_get_subscription($sourceId);
-            if ($sourceSubscription && is_object($sourceSubscription)) {
-                $sourceParentOrderId = method_exists($sourceSubscription, 'get_parent_id') ? (int) $sourceSubscription->get_parent_id() : 0;
-                $sourceParentOrder = $sourceParentOrderId > 0 && function_exists('wc_get_order') ? wc_get_order($sourceParentOrderId) : null;
-                $sourceContext = $this->extract_mollie_customer_and_mandate_from_wcs_subscription($sourceSubscription, $sourceParentOrder);
-                foreach ($sourceContext as $key => $value) {
                     if (($context[$key] ?? '') === '' && $value !== '') {
                         $context[$key] = $value;
                     }
@@ -3046,7 +2976,7 @@ class SubscriptionsModule {
             }
 
             if ($syncViaOrderObject) {
-                $this->get_subscription_repository()->sync_legacy_from_order($subscription, false);
+                $this->get_subscription_repository()->sync_order_type_self((int) $subscription->get_id(), false);
             } else {
                 $this->sync_subscription_order_type_record($subId);
             }
@@ -4937,7 +4867,7 @@ class SubscriptionsModule {
         return $this->get_base_subscription_price($baseProductId, $scheme);
     }
 
-    private function get_subscription_items(int $subId): array {
+    private function get_subscription_items(int $subId, bool $persistRepairs = true, bool $preserveStoredPricing = false): array {
         $stored = get_post_meta($subId, self::SUB_META_ITEMS, true);
         $items = [];
         $didRepairStoredItems = false;
@@ -4947,11 +4877,17 @@ class SubscriptionsModule {
                 if (!is_array($row)) {
                     continue;
                 }
+                $rawUnitPrice = isset($row['unit_price']) ? (float) wc_format_decimal((string) $row['unit_price']) : 0.0;
+                $rawPriceIncludesTax = !empty($row['price_includes_tax']) ? 1 : 0;
                 $item = $this->normalize_subscription_item($row);
                 if ($item) {
-                    $rawUnitPrice = isset($row['unit_price']) ? (float) wc_format_decimal((string) $row['unit_price']) : 0.0;
-                    $rawPriceIncludesTax = !empty($row['price_includes_tax']) ? 1 : 0;
-                    if (
+                    if ($preserveStoredPricing) {
+                        $item['unit_price'] = $rawUnitPrice;
+                        $item['price_includes_tax'] = $rawPriceIncludesTax;
+                        if (array_key_exists('catalog_unit_price', $row) && $row['catalog_unit_price'] !== '' && $row['catalog_unit_price'] !== null) {
+                            $item['catalog_unit_price'] = (float) wc_format_decimal((string) $row['catalog_unit_price']);
+                        }
+                    } elseif (
                         abs(((float) ($item['unit_price'] ?? 0.0)) - $rawUnitPrice) > 0.0001
                         || (int) ($item['price_includes_tax'] ?? 0) !== $rawPriceIncludesTax
                     ) {
@@ -4963,10 +4899,10 @@ class SubscriptionsModule {
         }
 
         if (!empty($items)) {
-            if ($didRepairStoredItems) {
+            if ($persistRepairs && $didRepairStoredItems) {
                 $this->persist_subscription_items($subId, $items);
             }
-            $items = $this->maybe_repair_subscription_item_display_meta($subId, $items);
+            $items = $this->maybe_repair_subscription_item_display_meta($subId, $items, $persistRepairs);
             return $items;
         }
 
@@ -4974,8 +4910,11 @@ class SubscriptionsModule {
         if ($subscriptionOrder) {
             $orderItems = $this->extract_subscription_items_from_order($subscriptionOrder);
             if (!empty($orderItems)) {
-                $this->persist_subscription_items($subId, $orderItems);
-                return $this->maybe_repair_subscription_item_display_meta($subId, $orderItems);
+                if ($persistRepairs) {
+                    $this->persist_subscription_items($subId, $orderItems);
+                }
+
+                return $this->maybe_repair_subscription_item_display_meta($subId, $orderItems, $persistRepairs);
             }
         }
 
@@ -5063,7 +5002,7 @@ class SubscriptionsModule {
         return $items;
     }
 
-    private function maybe_repair_subscription_item_display_meta(int $subId, array $items): array {
+    private function maybe_repair_subscription_item_display_meta(int $subId, array $items, bool $persistRepairs = true): array {
         $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
         if ($subId <= 0 || empty($items)) {
             return $items;
@@ -5162,7 +5101,7 @@ class SubscriptionsModule {
             $items[$index] = $item;
         }
 
-        if ($didRepair) {
+        if ($persistRepairs && $didRepair) {
             $this->persist_subscription_items($subId, $items);
         }
 
@@ -7006,358 +6945,6 @@ class SubscriptionsModule {
         exit;
     }
 
-    public function maybe_render_wcs_migration_notice(): void {
-        if (!is_admin() || !current_user_can('manage_woocommerce')) {
-            return;
-        }
-
-        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
-        if (!$this->is_subscription_admin_overview_screen($screen)) {
-            return;
-        }
-
-        $imported = isset($_GET['hb_ucs_wcs_imported']) ? (int) $_GET['hb_ucs_wcs_imported'] : 0;
-        $refreshed = isset($_GET['hb_ucs_wcs_refreshed']) ? (int) $_GET['hb_ucs_wcs_refreshed'] : 0;
-        $skippedExisting = isset($_GET['hb_ucs_wcs_skipped_existing']) ? (int) $_GET['hb_ucs_wcs_skipped_existing'] : 0;
-        $skippedUnsupported = isset($_GET['hb_ucs_wcs_skipped_unsupported']) ? (int) $_GET['hb_ucs_wcs_skipped_unsupported'] : 0;
-        $errors = isset($_GET['hb_ucs_wcs_errors']) ? (int) $_GET['hb_ucs_wcs_errors'] : 0;
-        $processed = isset($_GET['hb_ucs_wcs_processed']) ? (int) $_GET['hb_ucs_wcs_processed'] : 0;
-        $total = isset($_GET['hb_ucs_wcs_total']) ? (int) $_GET['hb_ucs_wcs_total'] : 0;
-        $isDryRun = isset($_GET['hb_ucs_wcs_dry_run']) && (string) $_GET['hb_ucs_wcs_dry_run'] === '1';
-        $didRefresh = isset($_GET['hb_ucs_wcs_force_refresh']) && (string) $_GET['hb_ucs_wcs_force_refresh'] === '1';
-        $locked = isset($_GET['hb_ucs_wcs_locked']) && (string) $_GET['hb_ucs_wcs_locked'] === '1';
-        $batchSize = isset($_GET['hb_ucs_wcs_batch_size']) ? max(1, (int) $_GET['hb_ucs_wcs_batch_size']) : self::WCS_MIGRATION_DEFAULT_BATCH_SIZE;
-
-        if (isset($_GET['hb_ucs_wcs_migrated'])) {
-            $noticeClass = $errors > 0 ? 'notice notice-warning is-dismissible' : 'notice notice-success is-dismissible';
-            $actionLabel = $isDryRun ? __('WCS migratie-preview voltooid', 'hb-ucs') : __('WCS migratie voltooid', 'hb-ucs');
-
-            echo '<div class="' . esc_attr($noticeClass) . '"><p>';
-            echo esc_html(sprintf(
-                __('%1$s: %2$d nieuw, %3$d bijgewerkt, %4$d al aanwezig, %5$d overgeslagen (niet ondersteund), %6$d fouten.', 'hb-ucs'),
-                $actionLabel,
-                $imported,
-                $refreshed,
-                $skippedExisting,
-                $skippedUnsupported,
-                $errors
-            ));
-            if ($processed > 0) {
-                echo ' ';
-                echo esc_html(sprintf(
-                    __('Verwerkt: %1$d van %2$d WCS abonnementen.', 'hb-ucs'),
-                    $processed,
-                    max($processed, $total)
-                ));
-            }
-            if ($didRefresh && !$isDryRun) {
-                echo ' ';
-                echo esc_html__('Bestaande eerdere imports mochten hierbij expliciet ververst worden.', 'hb-ucs');
-            }
-            echo '</p></div>';
-        }
-
-        if ($locked) {
-            echo '<div class="notice notice-warning is-dismissible"><p>';
-            echo esc_html__('Er draait al een WCS migratie in een andere aanvraag. Wacht tot die klaar is voordat je opnieuw start.', 'hb-ucs');
-            echo '</p></div>';
-        }
-
-        if (!$this->wcs_available() || !function_exists('wcs_get_subscriptions')) {
-            return;
-        }
-
-        echo '<div class="notice notice-info"><p>';
-        echo esc_html__('WooCommerce Subscriptions is actief. Gebruik eerst een preview en migreer daarna in beheersbare batches. Standaard worden eerder gemigreerde HB UCS abonnementen niet overschreven.', 'hb-ucs');
-        echo '</p><form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
-        wp_nonce_field('hb_ucs_subs_migrate_wcs', 'hb_ucs_subs_migrate_wcs_nonce');
-        echo '<input type="hidden" name="action" value="hb_ucs_subs_migrate_wcs" />';
-        echo '<p><label for="hb-ucs-wcs-batch-size"><strong>' . esc_html__('Batchgrootte', 'hb-ucs') . '</strong></label> ';
-        echo '<input id="hb-ucs-wcs-batch-size" type="number" min="1" max="' . esc_attr((string) self::WCS_MIGRATION_MAX_BATCH_SIZE) . '" step="1" name="batch_size" value="' . esc_attr((string) $batchSize) . '" class="small-text" /> ';
-        echo '<span class="description">' . esc_html__('Aanbevolen: 25-50 per batch.', 'hb-ucs') . '</span></p>';
-        echo '<p><label><input type="checkbox" name="force_refresh" value="1" /> ' . esc_html__('Werk al eerder gemigreerde HB UCS abonnementen bij op basis van de WCS brondata.', 'hb-ucs') . '</label></p>';
-        echo '<p>';
-        echo '<a href="' . esc_url($this->get_wcs_export_action_url(['return_url' => $this->get_subscription_admin_overview_url()])) . '" class="button">' . esc_html__('Exporteer WCS-gegevens voor handmatige overname', 'hb-ucs') . '</a> ';
-        echo '<button type="submit" name="mode" value="preview" class="button button-secondary">' . esc_html__('Preview migratie', 'hb-ucs') . '</button> ';
-        echo '<button type="submit" name="mode" value="migrate" class="button button-primary">' . esc_html__('Start veilige WCS migratie', 'hb-ucs') . '</button>';
-        echo '</p></form></div>';
-    }
-
-    public function handle_export_wcs_subscriptions_csv(): void {
-        if (!current_user_can('manage_woocommerce')) {
-            wp_die(esc_html__('Onvoldoende rechten.', 'hb-ucs'));
-        }
-
-        check_admin_referer('hb_ucs_subs_export_wcs_csv', 'hb_ucs_subs_export_wcs_csv_nonce');
-
-        if (!$this->wcs_available() || !function_exists('wcs_get_subscriptions')) {
-            wp_die(esc_html__('WooCommerce Subscriptions is niet beschikbaar.', 'hb-ucs'));
-        }
-
-        $statuses = function_exists('wcs_get_subscription_statuses') ? array_keys((array) wcs_get_subscription_statuses()) : ['active', 'on-hold', 'pending', 'pending-cancel', 'cancelled', 'expired'];
-        $subscriptions = wcs_get_subscriptions([
-            'subscriptions_per_page' => -1,
-            'subscription_status' => $statuses,
-            'orderby' => 'ID',
-            'order' => 'ASC',
-        ]);
-
-        $filename = 'hb-ucs-wcs-manual-migration-' . gmdate('Ymd-His') . '.csv';
-
-        nocache_headers();
-        header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename=' . $filename);
-
-        $output = fopen('php://output', 'w');
-        if (!$output) {
-            wp_die(esc_html__('CSV export kon niet worden gestart.', 'hb-ucs'));
-        }
-
-        fputcsv($output, $this->get_wcs_subscription_export_headers());
-
-        foreach ((array) $subscriptions as $subscription) {
-            if (!$subscription || !is_object($subscription)) {
-                continue;
-            }
-
-            fputcsv($output, $this->build_wcs_subscription_export_row($subscription));
-        }
-
-        fclose($output);
-        exit;
-    }
-
-    private function get_wcs_subscription_export_headers(): array {
-        return [
-            'wcs_subscription_id',
-            'wcs_status',
-            'hb_status',
-            'customer_id',
-            'customer_email',
-            'schedule_scheme',
-            'billing_interval',
-            'billing_period',
-            'requires_mandate',
-            'start_date',
-            'next_payment',
-            'trial_end',
-            'end_date',
-            'payment_method',
-            'payment_method_title',
-            'mollie_customer_id',
-            'mollie_mandate_id',
-            'mollie_payment_id',
-            'mollie_payment_mode',
-            'parent_order_id',
-            'parent_order_number',
-            'parent_order_status',
-            'parent_order_total',
-            'items_summary',
-            'items_json',
-            'fee_lines_json',
-            'shipping_lines_json',
-            'totals_json',
-            'billing_snapshot_json',
-            'shipping_snapshot_json',
-            'billing_name',
-            'billing_email',
-            'billing_phone',
-            'billing_address_1',
-            'billing_address_2',
-            'billing_postcode',
-            'billing_city',
-            'billing_country',
-            'shipping_name',
-            'shipping_address_1',
-            'shipping_address_2',
-            'shipping_postcode',
-            'shipping_city',
-            'shipping_country',
-        ];
-    }
-
-    private function build_wcs_subscription_export_row($subscription): array {
-        $scheme = $this->map_wcs_subscription_to_scheme($subscription);
-        $parentOrderId = method_exists($subscription, 'get_parent_id') ? (int) $subscription->get_parent_id() : 0;
-        $parentOrder = $parentOrderId > 0 ? wc_get_order($parentOrderId) : null;
-        $mollie = $this->extract_mollie_customer_and_mandate_from_wcs_subscription($subscription, $parentOrder);
-        $items = $this->get_subscription_items_from_wcs_subscription($subscription, $scheme);
-        $shippingLines = $this->extract_subscription_shipping_lines($subscription);
-        if (empty($shippingLines) && $parentOrder) {
-            $shippingLines = $this->extract_subscription_shipping_lines($parentOrder);
-        }
-        $feeLines = $this->extract_subscription_fee_lines($subscription);
-        if (empty($feeLines) && $parentOrder) {
-            $feeLines = $this->extract_subscription_fee_lines($parentOrder);
-        }
-
-        $billingSnapshot = $this->get_wcs_subscription_address_snapshot($subscription, 'billing', $parentOrder, method_exists($subscription, 'get_customer_id') ? (int) $subscription->get_customer_id() : 0);
-        $shippingSnapshot = $this->get_wcs_subscription_address_snapshot($subscription, 'shipping', $parentOrder, method_exists($subscription, 'get_customer_id') ? (int) $subscription->get_customer_id() : 0);
-        $totals = $this->get_subscription_admin_totals($items, $shippingLines, $feeLines, 0, $parentOrder);
-
-        $itemSummary = [];
-        foreach ($items as $item) {
-            if (!is_array($item)) {
-                continue;
-            }
-
-            $itemSummary[] = implode(':', [
-                (string) ($item['base_product_id'] ?? 0),
-                (string) ($item['base_variation_id'] ?? 0),
-                (string) ($item['qty'] ?? 1),
-                (string) wc_format_decimal((string) ($item['unit_price'] ?? 0.0), wc_get_price_decimals()),
-                $this->get_subscription_item_label($item),
-            ]);
-        }
-
-        return [
-            method_exists($subscription, 'get_id') ? (int) $subscription->get_id() : 0,
-            method_exists($subscription, 'get_status') ? (string) $subscription->get_status() : '',
-            $this->map_wcs_subscription_status((string) (method_exists($subscription, 'get_status') ? $subscription->get_status() : '')),
-            method_exists($subscription, 'get_customer_id') ? (int) $subscription->get_customer_id() : 0,
-            method_exists($subscription, 'get_billing_email') ? (string) $subscription->get_billing_email() : '',
-            $scheme,
-            method_exists($subscription, 'get_billing_interval') ? (int) $subscription->get_billing_interval() : 1,
-            method_exists($subscription, 'get_billing_period') ? (string) $subscription->get_billing_period() : '',
-            $this->payment_method_requires_mandate((string) (method_exists($subscription, 'get_payment_method') ? $subscription->get_payment_method() : '')) ? '1' : '0',
-            $this->format_wcs_datetime_for_export($subscription, 'start'),
-            $this->format_wcs_datetime_for_export($subscription, 'next_payment'),
-            $this->format_wcs_datetime_for_export($subscription, 'trial_end'),
-            $this->format_wcs_datetime_for_export($subscription, 'end'),
-            method_exists($subscription, 'get_payment_method') ? (string) $subscription->get_payment_method() : '',
-            method_exists($subscription, 'get_payment_method_title') ? (string) $subscription->get_payment_method_title() : '',
-            (string) ($mollie['customerId'] ?? ''),
-            (string) ($mollie['mandateId'] ?? ''),
-            (string) ($mollie['paymentId'] ?? ''),
-            (string) ($mollie['paymentMode'] ?? ''),
-            $parentOrderId,
-            $parentOrder && method_exists($parentOrder, 'get_order_number') ? (string) $parentOrder->get_order_number() : '',
-            $parentOrder && method_exists($parentOrder, 'get_status') ? (string) $parentOrder->get_status() : '',
-            $parentOrder && method_exists($parentOrder, 'get_total') ? (string) wc_format_decimal((string) $parentOrder->get_total(), wc_get_price_decimals()) : '',
-            implode(' | ', $itemSummary),
-            $this->encode_wcs_export_value($items),
-            $this->encode_wcs_export_value($feeLines),
-            $this->encode_wcs_export_value($shippingLines),
-            $this->encode_wcs_export_value($totals),
-            $this->encode_wcs_export_value($billingSnapshot),
-            $this->encode_wcs_export_value($shippingSnapshot),
-            trim(((string) ($billingSnapshot['first_name'] ?? '')) . ' ' . ((string) ($billingSnapshot['last_name'] ?? ''))),
-            (string) ($billingSnapshot['email'] ?? ''),
-            (string) ($billingSnapshot['phone'] ?? ''),
-            (string) ($billingSnapshot['address_1'] ?? ''),
-            (string) ($billingSnapshot['address_2'] ?? ''),
-            (string) ($billingSnapshot['postcode'] ?? ''),
-            (string) ($billingSnapshot['city'] ?? ''),
-            (string) ($billingSnapshot['country'] ?? ''),
-            trim(((string) ($shippingSnapshot['first_name'] ?? '')) . ' ' . ((string) ($shippingSnapshot['last_name'] ?? ''))),
-            (string) ($shippingSnapshot['address_1'] ?? ''),
-            (string) ($shippingSnapshot['address_2'] ?? ''),
-            (string) ($shippingSnapshot['postcode'] ?? ''),
-            (string) ($shippingSnapshot['city'] ?? ''),
-            (string) ($shippingSnapshot['country'] ?? ''),
-        ];
-    }
-
-    private function encode_wcs_export_value($value): string {
-        if (empty($value)) {
-            return '';
-        }
-
-        return (string) wp_json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    }
-
-    public function handle_migrate_wcs_subscriptions(): void {
-        if (!current_user_can('manage_woocommerce')) {
-            wp_die(esc_html__('Onvoldoende rechten.', 'hb-ucs'));
-        }
-
-        check_admin_referer('hb_ucs_subs_migrate_wcs', 'hb_ucs_subs_migrate_wcs_nonce');
-
-        $mode = isset($_REQUEST['mode']) ? sanitize_key((string) $_REQUEST['mode']) : 'migrate';
-        $dryRun = $mode === 'preview';
-        $forceRefresh = !empty($_REQUEST['force_refresh']);
-        $batchSize = $this->get_wcs_migration_batch_size_from_request();
-        $offset = isset($_REQUEST['offset']) ? max(0, (int) $_REQUEST['offset']) : 0;
-        $token = isset($_REQUEST['migration_token']) ? sanitize_key((string) $_REQUEST['migration_token']) : '';
-        $returnUrl = $this->get_wcs_migration_return_url_from_request();
-
-        if ($token === '') {
-            $token = strtolower(wp_generate_password(12, false, false));
-        }
-
-        if (!$dryRun && !$this->acquire_wcs_migration_lock($token)) {
-            $redirect = add_query_arg([
-                'hb_ucs_wcs_locked' => '1',
-                'hb_ucs_wcs_batch_size' => $batchSize,
-            ], $returnUrl);
-
-            wp_safe_redirect($redirect);
-            exit;
-        }
-
-        $progress = $this->get_empty_wcs_migration_result();
-        if ($offset > 0) {
-            $progress = $this->get_wcs_migration_progress($token);
-        }
-
-        try {
-            $result = $this->migrate_wcs_subscriptions([
-                'batch_size' => $batchSize,
-                'offset' => $offset,
-                'dry_run' => $dryRun,
-                'force_refresh' => $forceRefresh,
-            ]);
-        } catch (\Throwable $e) {
-            $result = $this->get_empty_wcs_migration_result();
-            $result['errors'] = 1;
-            $result['batch_size'] = $batchSize;
-            $result['offset'] = $offset;
-            if (!$dryRun) {
-                $this->release_wcs_migration_lock($token);
-            }
-        }
-
-        $progress = $this->merge_wcs_migration_results($progress, $result);
-
-        if (!empty($result['has_more'])) {
-            $this->set_wcs_migration_progress($token, $progress);
-
-            $continueUrl = $this->get_wcs_migration_action_url([
-                'mode' => $dryRun ? 'preview' : 'migrate',
-                'batch_size' => $batchSize,
-                'offset' => (int) ($result['next_offset'] ?? 0),
-                'migration_token' => $token,
-                'force_refresh' => $forceRefresh ? '1' : '0',
-                'return_url' => $returnUrl,
-            ]);
-
-            wp_safe_redirect($continueUrl);
-            exit;
-        }
-
-        $this->delete_wcs_migration_progress($token);
-        if (!$dryRun) {
-            $this->release_wcs_migration_lock($token);
-        }
-
-        $redirect = add_query_arg([
-            'hb_ucs_wcs_migrated' => '1',
-            'hb_ucs_wcs_imported' => (int) ($progress['imported'] ?? 0),
-            'hb_ucs_wcs_refreshed' => (int) ($progress['refreshed'] ?? 0),
-            'hb_ucs_wcs_skipped_existing' => (int) ($progress['skipped_existing'] ?? 0),
-            'hb_ucs_wcs_skipped_unsupported' => (int) ($progress['skipped_unsupported'] ?? 0),
-            'hb_ucs_wcs_errors' => (int) ($progress['errors'] ?? 0),
-            'hb_ucs_wcs_processed' => (int) ($progress['processed'] ?? 0),
-            'hb_ucs_wcs_total' => (int) ($progress['total'] ?? 0),
-            'hb_ucs_wcs_dry_run' => $dryRun ? '1' : '0',
-            'hb_ucs_wcs_force_refresh' => $forceRefresh ? '1' : '0',
-            'hb_ucs_wcs_batch_size' => $batchSize,
-        ], $returnUrl);
-
-        wp_safe_redirect($redirect);
-        exit;
-    }
-
     private function is_subscription_admin_overview_screen($screen = null): bool {
         $screen = $screen ?: (function_exists('get_current_screen') ? get_current_screen() : null);
         if (!$screen instanceof \WP_Screen) {
@@ -7372,590 +6959,9 @@ class SubscriptionsModule {
         ], true);
     }
 
+
     private function get_subscription_admin_overview_url(): string {
         return admin_url('admin.php?page=wc-orders--shop_subscription_hb');
-    }
-
-    private function migrate_wcs_subscriptions(array $args = []): array {
-        $result = $this->get_empty_wcs_migration_result();
-
-        if (!$this->wcs_available() || !function_exists('wcs_get_subscriptions')) {
-            return $result;
-        }
-
-        $batchSize = isset($args['batch_size']) ? max(1, min(self::WCS_MIGRATION_MAX_BATCH_SIZE, (int) $args['batch_size'])) : self::WCS_MIGRATION_DEFAULT_BATCH_SIZE;
-        $offset = isset($args['offset']) ? max(0, (int) $args['offset']) : 0;
-        $dryRun = !empty($args['dry_run']);
-        $forceRefresh = !empty($args['force_refresh']);
-
-        $statuses = function_exists('wcs_get_subscription_statuses') ? array_keys((array) wcs_get_subscription_statuses()) : ['active', 'on-hold', 'pending', 'pending-cancel', 'cancelled', 'expired'];
-        $subscriptions = wcs_get_subscriptions([
-            'subscriptions_per_page' => -1,
-            'subscription_status' => $statuses,
-            'orderby' => 'ID',
-            'order' => 'ASC',
-        ]);
-
-        $subscriptions = array_values((array) $subscriptions);
-        $total = count($subscriptions);
-        $batch = array_slice($subscriptions, $offset, $batchSize);
-
-        $result['total'] = $total;
-        $result['offset'] = $offset;
-        $result['batch_size'] = $batchSize;
-        $result['dry_run'] = $dryRun ? 1 : 0;
-        $result['force_refresh'] = $forceRefresh ? 1 : 0;
-
-        foreach ($batch as $subscription) {
-            $outcome = $this->migrate_single_wcs_subscription($subscription, $forceRefresh, $dryRun);
-            if (isset($result[$outcome])) {
-                $result[$outcome]++;
-            } else {
-                $result['errors']++;
-            }
-        }
-
-        $result['processed'] = count($batch);
-        $result['next_offset'] = $offset + $result['processed'];
-        $result['remaining'] = max(0, $total - $result['next_offset']);
-        $result['has_more'] = $result['remaining'] > 0;
-
-        return $result;
-    }
-
-    private function migrate_single_wcs_subscription($subscription, bool $forceRefresh = false, bool $dryRun = false): string {
-        if (!$subscription || !is_object($subscription) || !method_exists($subscription, 'get_id')) {
-            return 'errors';
-        }
-
-        $sourceId = (int) $subscription->get_id();
-        if ($sourceId <= 0) {
-            return 'errors';
-        }
-
-        $existingSubId = $this->get_internal_subscription_id_by_wcs_source($sourceId);
-
-        $scheme = $this->map_wcs_subscription_to_scheme($subscription);
-        if ($scheme === '') {
-            return 'skipped_unsupported';
-        }
-
-        $items = $this->get_subscription_items_from_wcs_subscription($subscription, $scheme);
-        if (empty($items)) {
-            return 'skipped_unsupported';
-        }
-
-        $freqs = $this->get_enabled_frequencies();
-        $interval = isset($freqs[$scheme]['interval']) ? (int) $freqs[$scheme]['interval'] : 1;
-        $period = isset($freqs[$scheme]['period']) ? (string) $freqs[$scheme]['period'] : 'week';
-
-        $userId = method_exists($subscription, 'get_user_id') ? (int) $subscription->get_user_id() : 0;
-        if ($userId <= 0 && method_exists($subscription, 'get_customer_id')) {
-            $userId = (int) $subscription->get_customer_id();
-        }
-
-        $parentOrderId = method_exists($subscription, 'get_parent_id') ? (int) $subscription->get_parent_id() : 0;
-        $parentOrder = $parentOrderId > 0 ? wc_get_order($parentOrderId) : null;
-
-        $paymentMethod = method_exists($subscription, 'get_payment_method') ? (string) $subscription->get_payment_method() : '';
-        $paymentMethodTitle = method_exists($subscription, 'get_payment_method_title') ? (string) $subscription->get_payment_method_title() : '';
-        if ($paymentMethod === '' && $parentOrder) {
-            $payment = $this->get_order_payment_method_data($parentOrder);
-            $paymentMethod = (string) ($payment['method'] ?? '');
-            $paymentMethodTitle = $paymentMethodTitle !== '' ? $paymentMethodTitle : (string) ($payment['title'] ?? '');
-        }
-
-        $mollie = $this->extract_mollie_customer_and_mandate_from_wcs_subscription($subscription, $parentOrder);
-        $requiresMandate = $this->payment_method_requires_mandate($paymentMethod);
-        $status = $this->map_wcs_subscription_status((string) (method_exists($subscription, 'get_status') ? $subscription->get_status() : 'active'));
-        if ($status === 'active' && $requiresMandate && ($mollie['customerId'] === '' || $mollie['mandateId'] === '')) {
-            $status = 'pending_mandate';
-        }
-
-        $nextPaymentTs = $this->get_wcs_subscription_timestamp($subscription, 'next_payment');
-        $trialEndTs = $this->get_wcs_subscription_timestamp($subscription, 'trial_end');
-        $endDateTs = $this->get_wcs_subscription_timestamp($subscription, 'end');
-        $startTs = $this->get_wcs_subscription_timestamp($subscription, 'start');
-        if ($startTs <= 0) {
-            $startTs = $this->get_wcs_subscription_timestamp($subscription, 'date_created');
-        }
-        if ($startTs <= 0) {
-            $startTs = time();
-        }
-
-        $shippingLines = $this->extract_subscription_shipping_lines($subscription);
-        if (empty($shippingLines) && $parentOrder) {
-            $shippingLines = $this->extract_subscription_shipping_lines($parentOrder);
-        }
-        $feeLines = $this->extract_subscription_fee_lines($subscription);
-        if (empty($feeLines) && $parentOrder) {
-            $feeLines = $this->extract_subscription_fee_lines($parentOrder);
-        }
-
-        if ($existingSubId > 0) {
-            if (!$forceRefresh) {
-                return 'skipped_existing';
-            }
-
-            if ($dryRun) {
-                return 'refreshed';
-            }
-
-            return $this->store_migrated_wcs_subscription($existingSubId, $subscription, $items, $feeLines, $shippingLines, $scheme, $sourceId, $userId, $parentOrderId, $interval, $period, $status, $nextPaymentTs, $trialEndTs, $endDateTs, $startTs, $paymentMethod, $paymentMethodTitle, $mollie, $requiresMandate, 'refreshed');
-        }
-
-        if ($dryRun) {
-            return 'imported';
-        }
-
-        $subPostId = wp_insert_post([
-            'post_type' => $this->get_subscription_order_type()->get_type(),
-            'post_status' => 'wc-pending',
-            'post_title' => sprintf(__('Abonnement (WCS #%d)', 'hb-ucs'), $sourceId),
-        ], true);
-
-        if (is_wp_error($subPostId) || (int) $subPostId <= 0) {
-            return 'errors';
-        }
-
-        return $this->store_migrated_wcs_subscription((int) $subPostId, $subscription, $items, $feeLines, $shippingLines, $scheme, $sourceId, $userId, $parentOrderId, $interval, $period, $status, $nextPaymentTs, $trialEndTs, $endDateTs, $startTs, $paymentMethod, $paymentMethodTitle, $mollie, $requiresMandate, 'imported');
-    }
-
-    private function store_migrated_wcs_subscription(int $subId, $subscription, array $items, array $feeLines, array $shippingLines, string $scheme, int $sourceId, int $userId, int $parentOrderId, int $interval, string $period, string $status, int $nextPaymentTs, int $trialEndTs, int $endDateTs, int $startTs, string $paymentMethod, string $paymentMethodTitle, array $mollie, bool $requiresMandate, string $successResult): string {
-        if ($subId <= 0 || empty($items)) {
-            return 'errors';
-        }
-
-        $first = $items[0];
-
-        update_post_meta($subId, self::SUB_META_WCS_SOURCE_ID, (string) $sourceId);
-        update_post_meta($subId, self::SUB_META_STATUS, $status);
-        update_post_meta($subId, self::SUB_META_USER_ID, (string) $userId);
-        update_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, (string) $parentOrderId);
-        update_post_meta($subId, self::SUB_META_BASE_PRODUCT_ID, (string) ($first['base_product_id'] ?? 0));
-        update_post_meta($subId, self::SUB_META_BASE_VARIATION_ID, (string) ($first['base_variation_id'] ?? 0));
-        update_post_meta($subId, self::SUB_META_SCHEME, $scheme);
-        update_post_meta($subId, self::SUB_META_INTERVAL, (string) $interval);
-        update_post_meta($subId, self::SUB_META_PERIOD, $period);
-        update_post_meta($subId, self::SUB_META_NEXT_PAYMENT, (string) max(0, $nextPaymentTs));
-        update_post_meta($subId, self::SUB_META_UNIT_PRICE, (string) wc_format_decimal((string) $this->get_subscription_item_storage_unit_price($first), wc_get_price_decimals()));
-        update_post_meta($subId, self::SUB_META_QTY, (string) ($first['qty'] ?? 1));
-        update_post_meta($subId, self::SUB_META_PAYMENT_METHOD, $paymentMethod);
-        update_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, $paymentMethodTitle);
-        update_post_meta($subId, self::SUB_META_BILLING, $this->get_wcs_subscription_address_snapshot($subscription, 'billing', $parentOrderId > 0 ? wc_get_order($parentOrderId) : null, $userId));
-        update_post_meta($subId, self::SUB_META_SHIPPING, $this->get_wcs_subscription_address_snapshot($subscription, 'shipping', $parentOrderId > 0 ? wc_get_order($parentOrderId) : null, $userId));
-        if ($trialEndTs > 0) {
-            update_post_meta($subId, self::SUB_META_TRIAL_END, (string) $trialEndTs);
-        }
-        if ($endDateTs > 0) {
-            update_post_meta($subId, self::SUB_META_END_DATE, (string) $endDateTs);
-        }
-        if ($parentOrderId > 0) {
-            update_post_meta($subId, self::SUB_META_LAST_ORDER_ID, (string) $parentOrderId);
-            update_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, (string) $startTs);
-        }
-        if ($mollie['customerId'] !== '') {
-            update_post_meta($subId, self::SUB_META_MOLLIE_CUSTOMER_ID, $mollie['customerId']);
-        } else {
-            delete_post_meta($subId, self::SUB_META_MOLLIE_CUSTOMER_ID);
-        }
-        if ($mollie['mandateId'] !== '') {
-            update_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID, $mollie['mandateId']);
-        } else {
-            delete_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID);
-        }
-        if (!empty($mollie['paymentId'])) {
-            update_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, (string) $mollie['paymentId']);
-        } else {
-            delete_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID);
-        }
-
-        $this->persist_subscription_items($subId, $items);
-        $this->persist_subscription_fee_lines($subId, $feeLines);
-        $this->persist_subscription_shipping_lines($subId, $shippingLines);
-
-        $parentOrder = $parentOrderId > 0 ? wc_get_order($parentOrderId) : null;
-
-        $this->sync_subscription_order_type_record($subId);
-        $this->hydrate_subscription_order_customer_data($subId, $userId, $parentOrder);
-        $this->hydrate_subscription_order_payment_data($subId, $paymentMethod, $paymentMethodTitle, $mollie, $parentOrder);
-
-        return $successResult;
-    }
-
-    private function get_empty_wcs_migration_result(): array {
-        return [
-            'imported' => 0,
-            'refreshed' => 0,
-            'skipped_existing' => 0,
-            'skipped_unsupported' => 0,
-            'errors' => 0,
-            'processed' => 0,
-            'total' => 0,
-            'remaining' => 0,
-            'offset' => 0,
-            'next_offset' => 0,
-            'batch_size' => self::WCS_MIGRATION_DEFAULT_BATCH_SIZE,
-            'has_more' => false,
-            'dry_run' => 0,
-            'force_refresh' => 0,
-        ];
-    }
-
-    private function merge_wcs_migration_results(array $totals, array $batch): array {
-        $merged = $this->get_empty_wcs_migration_result();
-
-        foreach (['imported', 'refreshed', 'skipped_existing', 'skipped_unsupported', 'errors', 'processed'] as $key) {
-            $merged[$key] = (int) ($totals[$key] ?? 0) + (int) ($batch[$key] ?? 0);
-        }
-
-        $merged['total'] = max((int) ($totals['total'] ?? 0), (int) ($batch['total'] ?? 0));
-        $merged['remaining'] = max(0, $merged['total'] - $merged['processed']);
-        $merged['offset'] = (int) ($batch['offset'] ?? 0);
-        $merged['next_offset'] = (int) ($batch['next_offset'] ?? $merged['processed']);
-        $merged['batch_size'] = (int) ($batch['batch_size'] ?? $totals['batch_size'] ?? self::WCS_MIGRATION_DEFAULT_BATCH_SIZE);
-        $merged['has_more'] = !empty($batch['has_more']);
-        $merged['dry_run'] = !empty($batch['dry_run']) ? 1 : 0;
-        $merged['force_refresh'] = !empty($batch['force_refresh']) ? 1 : 0;
-
-        return $merged;
-    }
-
-    private function get_wcs_migration_batch_size_from_request(): int {
-        $batchSize = isset($_REQUEST['batch_size']) ? (int) $_REQUEST['batch_size'] : self::WCS_MIGRATION_DEFAULT_BATCH_SIZE;
-        if ($batchSize <= 0) {
-            $batchSize = self::WCS_MIGRATION_DEFAULT_BATCH_SIZE;
-        }
-
-        return min(self::WCS_MIGRATION_MAX_BATCH_SIZE, $batchSize);
-    }
-
-    private function get_wcs_migration_action_url(array $args = []): string {
-        $url = add_query_arg(array_filter($args, static function ($value) {
-            return $value !== null && $value !== '';
-        }), admin_url('admin-post.php?action=hb_ucs_subs_migrate_wcs'));
-
-        return wp_nonce_url($url, 'hb_ucs_subs_migrate_wcs', 'hb_ucs_subs_migrate_wcs_nonce');
-    }
-
-    private function get_wcs_export_action_url(array $args = []): string {
-        $url = add_query_arg(array_filter($args, static function ($value) {
-            return $value !== null && $value !== '';
-        }), admin_url('admin-post.php?action=hb_ucs_subs_export_wcs_csv'));
-
-        return wp_nonce_url($url, 'hb_ucs_subs_export_wcs_csv', 'hb_ucs_subs_export_wcs_csv_nonce');
-    }
-
-    private function format_wcs_datetime_for_export($subscription, string $dateType): string {
-        if (!$subscription || !is_object($subscription) || !method_exists($subscription, 'get_date')) {
-            return '';
-        }
-
-        try {
-            $date = $subscription->get_date($dateType);
-            if ($date instanceof \WC_DateTime) {
-                return $date->date_i18n('Y-m-d H:i:s');
-            }
-        } catch (\Throwable $e) {
-        }
-
-        return '';
-    }
-
-    private function get_wcs_migration_return_url_from_request(): string {
-        $returnUrl = isset($_REQUEST['return_url']) ? esc_url_raw(wp_unslash((string) $_REQUEST['return_url'])) : '';
-        if ($returnUrl === '') {
-            $returnUrl = wp_get_referer();
-        }
-
-        if (!$returnUrl) {
-            $returnUrl = $this->get_subscription_admin_overview_url();
-        }
-
-        return (string) $returnUrl;
-    }
-
-    private function get_wcs_migration_progress_transient_key(string $token): string {
-        return self::WCS_MIGRATION_PROGRESS_KEY_PREFIX . $token;
-    }
-
-    private function get_wcs_migration_progress(string $token): array {
-        if ($token === '') {
-            return $this->get_empty_wcs_migration_result();
-        }
-
-        $stored = get_transient($this->get_wcs_migration_progress_transient_key($token));
-
-        return is_array($stored) ? array_merge($this->get_empty_wcs_migration_result(), $stored) : $this->get_empty_wcs_migration_result();
-    }
-
-    private function set_wcs_migration_progress(string $token, array $progress): void {
-        if ($token === '') {
-            return;
-        }
-
-        set_transient($this->get_wcs_migration_progress_transient_key($token), $progress, self::WCS_MIGRATION_LOCK_TTL);
-    }
-
-    private function delete_wcs_migration_progress(string $token): void {
-        if ($token === '') {
-            return;
-        }
-
-        delete_transient($this->get_wcs_migration_progress_transient_key($token));
-    }
-
-    private function acquire_wcs_migration_lock(string $token): bool {
-        if ($token === '') {
-            return false;
-        }
-
-        $current = get_transient(self::WCS_MIGRATION_LOCK_KEY);
-        if (is_array($current) && isset($current['token']) && (string) $current['token'] !== '' && (string) $current['token'] !== $token) {
-            return false;
-        }
-
-        set_transient(self::WCS_MIGRATION_LOCK_KEY, [
-            'token' => $token,
-            'started_at' => time(),
-        ], self::WCS_MIGRATION_LOCK_TTL);
-
-        return true;
-    }
-
-    private function release_wcs_migration_lock(string $token): void {
-        $current = get_transient(self::WCS_MIGRATION_LOCK_KEY);
-        if (!is_array($current)) {
-            return;
-        }
-
-        if (!isset($current['token']) || (string) $current['token'] !== $token) {
-            return;
-        }
-
-        delete_transient(self::WCS_MIGRATION_LOCK_KEY);
-    }
-
-    private function get_internal_subscription_id_by_wcs_source(int $sourceId): int {
-        if ($sourceId <= 0) {
-            return 0;
-        }
-
-        $posts = function_exists('wc_get_orders')
-            ? wc_get_orders([
-                'type' => $this->get_subscription_order_type()->get_type(),
-                'limit' => 1,
-                'return' => 'ids',
-                'status' => array_keys(wc_get_order_statuses()),
-                'meta_key' => self::SUB_META_WCS_SOURCE_ID,
-                'meta_value' => (string) $sourceId,
-            ])
-            : [];
-
-        return !empty($posts) ? (int) $posts[0] : 0;
-    }
-
-    private function map_wcs_subscription_to_scheme($subscription): string {
-        $interval = method_exists($subscription, 'get_billing_interval') ? (int) $subscription->get_billing_interval() : 0;
-        $period = method_exists($subscription, 'get_billing_period') ? sanitize_key((string) $subscription->get_billing_period()) : '';
-        if ($interval <= 0 || $period === '') {
-            return '';
-        }
-
-        foreach ($this->get_configured_frequencies(false) as $scheme => $row) {
-            if ((int) ($row['interval'] ?? 0) === $interval && (string) ($row['period'] ?? '') === $period) {
-                return (string) $scheme;
-            }
-        }
-
-        return '';
-    }
-
-    private function map_wcs_subscription_status(string $status): string {
-        switch (sanitize_key($status)) {
-            case 'active':
-                return 'active';
-            case 'on-hold':
-                return 'on-hold';
-            case 'pending':
-                return 'payment_pending';
-            case 'pending-cancel':
-            case 'cancelled':
-                return 'cancelled';
-            case 'expired':
-                return 'expired';
-            default:
-                return 'on-hold';
-        }
-    }
-
-    private function get_wcs_subscription_timestamp($subscription, string $dateType): int {
-        if (!$subscription || !is_object($subscription)) {
-            return 0;
-        }
-
-        if (method_exists($subscription, 'get_time')) {
-            try {
-                return (int) $subscription->get_time($dateType);
-            } catch (\Throwable $e) {
-            }
-        }
-
-        if (method_exists($subscription, 'get_date')) {
-            try {
-                $value = $subscription->get_date($dateType);
-                if ($value instanceof \WC_DateTime) {
-                    return (int) $value->getTimestamp();
-                }
-                if (is_string($value) && $value !== '') {
-                    $ts = strtotime($value);
-                    return $ts ? (int) $ts : 0;
-                }
-            } catch (\Throwable $e) {
-            }
-        }
-
-        return 0;
-    }
-
-    private function get_subscription_items_from_wcs_subscription($subscription, string $scheme): array {
-        $items = [];
-        if (!$subscription || !is_object($subscription) || !method_exists($subscription, 'get_items')) {
-            return $items;
-        }
-
-        foreach ($subscription->get_items('line_item') as $item) {
-            if (!$item || !is_object($item)) {
-                continue;
-            }
-
-            $baseProductId = method_exists($item, 'get_product_id') ? (int) $item->get_product_id() : 0;
-            $baseVariationId = method_exists($item, 'get_variation_id') ? (int) $item->get_variation_id() : 0;
-            if ($baseProductId <= 0) {
-                continue;
-            }
-
-            $qty = method_exists($item, 'get_quantity') ? (int) $item->get_quantity() : 1;
-            if ($qty <= 0) {
-                $qty = 1;
-            }
-
-            $lineTotal = method_exists($item, 'get_total') ? (float) $item->get_total() : 0.0;
-            $unitPrice = $qty > 0 ? ($lineTotal / $qty) : $lineTotal;
-
-            $selectedAttributes = [];
-            $product = $baseVariationId > 0 ? wc_get_product($baseVariationId) : wc_get_product($baseProductId);
-            if ($baseVariationId > 0 && $product && is_object($product)) {
-                $selectedAttributes = $this->get_selected_attributes_from_variation($product);
-            }
-
-            $normalized = $this->normalize_subscription_item([
-                'base_product_id' => $baseProductId,
-                'base_variation_id' => $baseVariationId,
-                'source_order_item_id' => method_exists($item, 'get_id') ? (int) $item->get_id() : 0,
-                'qty' => $qty,
-                'unit_price' => $unitPrice,
-                'price_includes_tax' => 0,
-                'taxes' => method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : [],
-                'selected_attributes' => $selectedAttributes,
-                'display_meta' => $this->get_display_meta_rows_from_order_item($item, $baseProductId, $selectedAttributes),
-                'source_item_snapshot' => $this->build_subscription_item_source_snapshot_from_order_item($item, $baseProductId, $baseVariationId),
-            ]);
-
-            if ($normalized) {
-                $items[] = $normalized;
-            }
-        }
-
-        return $items;
-    }
-
-    private function extract_mollie_customer_and_mandate_from_wcs_subscription($subscription, $parentOrder = null): array {
-        $customerId = '';
-        $mandateId = '';
-        $paymentId = '';
-        $paymentMode = '';
-
-        if ($subscription && is_object($subscription) && method_exists($subscription, 'get_meta')) {
-            $customerId = (string) $subscription->get_meta('_mollie_customer_id', true);
-            $mandateId = (string) $subscription->get_meta('_mollie_mandate_id', true);
-            $paymentId = (string) $subscription->get_meta('_mollie_payment_id', true);
-            $paymentMode = (string) $subscription->get_meta('_mollie_payment_mode', true);
-        }
-
-        if ($parentOrder && is_object($parentOrder) && method_exists($parentOrder, 'get_meta')) {
-            if ($customerId === '') {
-                $customerId = (string) $parentOrder->get_meta('_mollie_customer_id', true);
-            }
-            if ($mandateId === '') {
-                $mandateId = (string) $parentOrder->get_meta('_mollie_mandate_id', true);
-            }
-            if ($paymentId === '') {
-                $paymentId = (string) $parentOrder->get_meta('_mollie_payment_id', true);
-            }
-            if ($paymentMode === '') {
-                $paymentMode = (string) $parentOrder->get_meta('_mollie_payment_mode', true);
-            }
-        }
-
-        if (($customerId === '' || $mandateId === '') && $paymentId !== '') {
-            $cm = $this->mollie_get_customer_and_mandate($paymentId);
-            if ($customerId === '' && $cm['customerId'] !== '') {
-                $customerId = $cm['customerId'];
-            }
-            if ($mandateId === '' && $cm['mandateId'] !== '') {
-                $mandateId = $cm['mandateId'];
-            }
-        }
-
-        if ($paymentMode === '' && $paymentId !== '') {
-            $paymentMode = $this->get_current_mollie_payment_mode();
-        }
-
-        return [
-            'customerId' => $customerId,
-            'mandateId' => $mandateId,
-            'paymentId' => $paymentId,
-            'paymentMode' => $paymentMode,
-        ];
-    }
-
-    private function get_wcs_subscription_address_snapshot($subscription, string $type, $fallbackOrder = null, int $userId = 0): array {
-        $address = [];
-
-        if ($subscription && is_object($subscription) && method_exists($subscription, 'get_address')) {
-            $address = (array) $subscription->get_address($type);
-            if ($type === 'billing') {
-                $address['email'] = method_exists($subscription, 'get_billing_email') ? (string) $subscription->get_billing_email() : '';
-                $address['phone'] = method_exists($subscription, 'get_billing_phone') ? (string) $subscription->get_billing_phone() : '';
-            }
-        }
-
-        $hasMeaningfulAddress = false;
-        foreach (['first_name', 'last_name', 'company', 'address_1', 'address_2', 'city', 'state', 'postcode', 'country', 'email', 'phone'] as $field) {
-            if (!empty($address[$field])) {
-                $hasMeaningfulAddress = true;
-                break;
-            }
-        }
-
-        if (!$hasMeaningfulAddress && $fallbackOrder && is_object($fallbackOrder) && method_exists($fallbackOrder, 'get_address')) {
-            $fallbackAddress = (array) $fallbackOrder->get_address($type);
-            if ($type === 'billing') {
-                $fallbackAddress['email'] = method_exists($fallbackOrder, 'get_billing_email') ? (string) $fallbackOrder->get_billing_email() : '';
-                $fallbackAddress['phone'] = method_exists($fallbackOrder, 'get_billing_phone') ? (string) $fallbackOrder->get_billing_phone() : '';
-            }
-            $address = $fallbackAddress;
-            $hasMeaningfulAddress = !empty(array_filter($address, static function ($value) {
-                return $value !== null && $value !== '';
-            }));
-        }
-
-        if (!$hasMeaningfulAddress && $userId > 0) {
-            $address = $this->build_user_contact_snapshot($userId, $type);
-        }
-
-        return is_array($address) ? $address : [];
     }
 
     private function recurring_enabled(): bool {
@@ -8281,12 +7287,6 @@ class SubscriptionsModule {
             } elseif ($resolvedTitle === '' && $parentTitle !== '') {
                 $resolvedTitle = $parentTitle;
             }
-        }
-
-        if ($subId > 0 && ($resolvedMethod !== trim($paymentMethod) || $resolvedTitle !== trim($paymentMethodTitle))) {
-            update_post_meta($subId, self::SUB_META_PAYMENT_METHOD, $resolvedMethod);
-            update_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, $resolvedTitle);
-            $this->hydrate_subscription_order_payment_data($subId, $resolvedMethod, $resolvedTitle, [], $parentOrder);
         }
 
         return [
@@ -8707,11 +7707,7 @@ class SubscriptionsModule {
     private function get_engine(): string {
         $settings = $this->get_settings();
         $engine = isset($settings['engine']) ? sanitize_key((string) $settings['engine']) : 'manual';
-        if ($engine !== 'manual' && $engine !== 'wcs') {
-            $engine = 'manual';
-        }
-        if ($engine === 'wcs' && !$this->wcs_available()) {
-            // Fall back silently.
+        if ($engine !== 'manual') {
             $engine = 'manual';
         }
         return $engine;
@@ -10077,37 +9073,6 @@ JS;
         ];
     }
 
-    public function maybe_notice_missing_wcs(): void {
-        if ($this->get_engine() !== 'wcs') {
-            return;
-        }
-        if (!current_user_can('manage_woocommerce') && !current_user_can('manage_options')) {
-            return;
-        }
-        if (!function_exists('get_current_screen')) {
-            return;
-        }
-
-        $screen = get_current_screen();
-        if (!$screen) return;
-        if ($screen->id !== 'product' && $screen->id !== 'edit-product' && strpos((string) $screen->id, 'hb-ucs') === false) {
-            return;
-        }
-
-        if ($this->wcs_available()) {
-            return;
-        }
-
-        echo '<div class="notice notice-warning"><p>';
-        echo esc_html__('HB UCS Abonnementen: WooCommerce Subscriptions is niet actief. Zet de engine op Handmatig of activeer WooCommerce Subscriptions.', 'hb-ucs');
-        echo '</p></div>';
-    }
-
-    private function wcs_available(): bool {
-        // We depend on WCS providing the subscription product type.
-        return (bool) term_exists('subscription', 'product_type');
-    }
-
     private function get_settings(): array {
         if (is_array($this->settingsCache)) {
             return $this->settingsCache;
@@ -10118,10 +9083,7 @@ JS;
             $opt = [];
         }
 
-        $engine = isset($opt['engine']) ? sanitize_key((string) $opt['engine']) : 'manual';
-        if ($engine !== 'manual' && $engine !== 'wcs') {
-            $engine = 'manual';
-        }
+        $engine = 'manual';
 
         $recurringEnabled = empty($opt['recurring_enabled']) ? 0 : 1;
         $webhookToken = isset($opt['recurring_webhook_token']) ? (string) $opt['recurring_webhook_token'] : '';
@@ -10726,7 +9688,7 @@ JS;
         $scheme = (string) get_post_meta($subId, self::SUB_META_SCHEME, true);
         $paymentMethod = (string) get_post_meta($subId, self::SUB_META_PAYMENT_METHOD, true);
         $paymentMethodTitle = (string) get_post_meta($subId, self::SUB_META_PAYMENT_METHOD_TITLE, true);
-        $items = $this->get_subscription_items($subId); 
+        $items = $this->get_subscription_items($subId, false, true);
         if (empty($items)) {
             return new \WP_Error('hb_ucs_missing_items', __('Dit abonnement bevat geen geldige artikelen.', 'hb-ucs'));
         }
@@ -11441,61 +10403,6 @@ JS;
 
         $this->sync_existing_subscription_prices_for_product($productId, 0, $product);
 
-        // Keep generated child products in sync only for WCS engine (best-effort).
-        if ($this->get_engine() === 'wcs') {
-            $this->sync_child_products($productId);
-        }
-    }
-
-    private function sync_child_products(int $baseProductId): void {
-        if ($this->get_engine() !== 'wcs' || !$this->wcs_available()) {
-            return;
-        }
-        $base = wc_get_product($baseProductId);
-        if (!$base || (!$base->is_type('simple') && !$base->is_type('variable'))) {
-            return;
-        }
-
-        $enabled = get_post_meta($baseProductId, self::META_ENABLED, true) === 'yes';
-        if (!$enabled) {
-            return;
-        }
-
-        $freqs = $this->get_enabled_frequencies();
-        if (empty($freqs)) {
-            return;
-        }
-
-        if ($base->is_type('simple')) {
-            foreach ($freqs as $scheme => $row) {
-                $childId = $this->get_or_create_child_product_id($baseProductId, $scheme);
-                if ($childId <= 0) {
-                    continue;
-                }
-                $this->update_child_product_from_base($childId, $baseProductId, $scheme);
-            }
-            return;
-        }
-
-        // Variable products: only sync child products that already exist (lazy creation on add-to-cart).
-        if (method_exists($base, 'get_children')) {
-            $children = (array) $base->get_children();
-            foreach ($children as $variationId) {
-                $variationId = (int) $variationId;
-                if ($variationId <= 0) continue;
-
-                foreach ($freqs as $scheme => $row) {
-                    $stored = (int) get_post_meta($variationId, self::META_CHILD_PREFIX . $scheme, true);
-                    if ($stored <= 0) {
-                        continue;
-                    }
-                    if (get_post_type($stored) !== 'product') {
-                        continue;
-                    }
-                    $this->update_child_product_from_variation($stored, $baseProductId, $variationId, $scheme);
-                }
-            }
-        }
     }
 
     public function render_purchase_options(): void {
@@ -11555,10 +10462,6 @@ JS;
             echo '<p class="description hb-ucs-subscriptions__description">' . esc_html__('Kies eerst een variatie; de abonnementsprijs kan per variatie verschillen.', 'hb-ucs') . '</p>';
         }
 
-        if ($this->get_engine() === 'wcs' && !$this->wcs_available()) {
-            echo '<p class="description hb-ucs-subscriptions__description">' . esc_html__('Let op: WooCommerce Subscriptions is niet actief; zet de engine op Handmatig of activeer WooCommerce Subscriptions.', 'hb-ucs') . '</p>';
-        }
-
         echo '</div>';
     }
 
@@ -11603,131 +10506,18 @@ JS;
             return false;
         }
 
-        if ($this->get_engine() === 'wcs' && !$this->wcs_available()) {
-            wc_add_notice(__('Abonnementen vereisen WooCommerce Subscriptions (engine = WCS). Neem contact op met de beheerder.', 'hb-ucs'), 'error');
-            return false;
-        }
-
         return true;
     }
 
     public function maybe_swap_product_id(int $productId): int {
-        if ($this->get_engine() !== 'wcs') {
-            self::$pendingAddToCart = null;
-            return $productId;
-        }
-        $scheme = $this->get_requested_scheme();
-        if ($scheme === '' || $scheme === '0') {
-            self::$pendingAddToCart = null;
-            return $productId;
-        }
-
-        if (get_post_meta($productId, self::META_ENABLED, true) !== 'yes') {
-            self::$pendingAddToCart = null;
-            return $productId;
-        }
-
-        $freqs = $this->get_enabled_frequencies();
-        if (!isset($freqs[$scheme])) {
-            self::$pendingAddToCart = null;
-            return $productId;
-        }
-
-        $prod = wc_get_product($productId);
-        if ($prod && $prod->is_type('variable')) {
-            $variationId = isset($_REQUEST['variation_id']) ? (int) $_REQUEST['variation_id'] : 0;
-            if ($variationId <= 0) {
-                self::$pendingAddToCart = null;
-                return $productId;
-            }
-
-            $childId = $this->get_or_create_child_product_id_for_variation($productId, $variationId, $scheme);
-            if ($childId <= 0) {
-                self::$pendingAddToCart = null;
-                return $productId;
-            }
-
-            self::$pendingAddToCart = [
-                'base_product_id' => (int) $productId,
-                'base_variation_id' => (int) $variationId,
-                'child_product_id' => (int) $childId,
-                'scheme' => (string) $scheme,
-            ];
-
-            return (int) $childId;
-        }
-
-        $childId = $this->get_or_create_child_product_id($productId, $scheme);
-        if ($childId <= 0) {
-            self::$pendingAddToCart = null;
-            return $productId;
-        }
-
-        self::$pendingAddToCart = [
-            'base_product_id' => (int) $productId,
-            'base_variation_id' => 0,
-            'child_product_id' => (int) $childId,
-            'scheme' => (string) $scheme,
-        ];
-
-        return (int) $childId;
+        return $productId;
     }
 
     public function maybe_swap_variation_id(int $variationId): int {
-        if ($this->get_engine() !== 'wcs') {
-            return $variationId;
-        }
-        $scheme = $this->get_requested_scheme();
-        if ($scheme === '' || $scheme === '0') {
-            return $variationId;
-        }
-
-        // Only override when we actually swapped the product id.
-        if (!is_array(self::$pendingAddToCart)) {
-            return $variationId;
-        }
-
-        // We swap variable product -> simple subscription child product.
-        return 0;
+        return $variationId;
     }
 
     public function add_cart_item_data(array $cartItemData, int $productId, int $variationId): array {
-        // WCS engine flow (child product swap).
-        if ($this->get_engine() === 'wcs') {
-            if (!is_array(self::$pendingAddToCart)) {
-                return $cartItemData;
-            }
-
-        $baseId = (int) (self::$pendingAddToCart['base_product_id'] ?? 0);
-        $baseVariationId = (int) (self::$pendingAddToCart['base_variation_id'] ?? 0);
-            $childId = (int) (self::$pendingAddToCart['child_product_id'] ?? 0);
-            $scheme = (string) (self::$pendingAddToCart['scheme'] ?? '');
-
-            if ($baseId <= 0 || $scheme === '' || $childId <= 0) {
-                return $cartItemData;
-            }
-
-        // Attach meta to this add-to-cart call (WooCommerce passes filtered product_id in most flows).
-            if ($productId !== $childId && $productId !== $baseId) {
-                return $cartItemData;
-            }
-
-        // Ensure unique cart item so different schemes don't merge.
-            $cartItemData['hb_ucs_subs_key'] = $baseId . ':' . $scheme . ':' . wp_generate_uuid4();
-
-            $cartItemData[self::CART_KEY] = [
-                'base_product_id' => $baseId,
-                'base_variation_id' => $baseVariationId,
-                'scheme' => $scheme,
-            ];
-
-        // Reset pending state.
-            self::$pendingAddToCart = null;
-
-            return $cartItemData;
-        }
-
-        // Manual engine flow: store scheme + precomputed price, do NOT swap product.
         $scheme = $this->get_requested_scheme();
         if ($scheme === '' || $scheme === '0') {
             return $cartItemData;
@@ -12301,349 +11091,7 @@ JS;
             }
         }
 
-        // Keep existing child products in sync.
         $parentId = (int) wp_get_post_parent_id($variationId);
-        if ($parentId > 0) {
-            $this->sync_child_products($parentId);
-        }
-
         $this->sync_existing_subscription_prices_for_product($parentId > 0 ? $parentId : $variationId, $variationId);
-    }
-
-    private function get_or_create_child_product_id(int $baseProductId, string $scheme): int {
-        $scheme = sanitize_key($scheme);
-        if (!in_array($scheme, ['1w', '2w', '3w', '4w', '5w', '6w', '7w', '8w'], true)) {
-            return 0;
-        }
-
-        $stored = (int) get_post_meta($baseProductId, self::META_CHILD_PREFIX . $scheme, true);
-        if ($stored > 0 && get_post_type($stored) === 'product') {
-            return $stored;
-        }
-
-        // Try to find an existing generated child.
-        $existing = get_posts([
-            'post_type' => 'product',
-            'post_status' => ['publish', 'private', 'draft'],
-            'numberposts' => 1,
-            'fields' => 'ids',
-            'meta_query' => [
-                [
-                    'key' => self::META_CHILD_BASE_PRODUCT_ID,
-                    'value' => $baseProductId,
-                    'compare' => '=',
-                ],
-                [
-                    'key' => self::META_CHILD_SCHEME,
-                    'value' => $scheme,
-                    'compare' => '=',
-                ],
-                [
-                    'key' => self::META_CHILD_GENERATED,
-                    'value' => '1',
-                    'compare' => '=',
-                ],
-            ],
-        ]);
-        if (!empty($existing) && is_array($existing)) {
-            $childId = (int) $existing[0];
-            if ($childId > 0) {
-                update_post_meta($baseProductId, self::META_CHILD_PREFIX . $scheme, $childId);
-                return $childId;
-            }
-        }
-
-        // Create.
-        $childId = $this->create_child_product($baseProductId, $scheme);
-        if ($childId > 0) {
-            update_post_meta($baseProductId, self::META_CHILD_PREFIX . $scheme, $childId);
-        }
-        return $childId;
-    }
-
-    private function get_or_create_child_product_id_for_variation(int $parentProductId, int $variationId, string $scheme): int {
-        $scheme = sanitize_key($scheme);
-        if (!in_array($scheme, ['1w', '2w', '3w', '4w', '5w', '6w', '7w', '8w'], true)) {
-            return 0;
-        }
-
-        $variationId = (int) $variationId;
-        if ($variationId <= 0 || get_post_type($variationId) !== 'product_variation') {
-            return 0;
-        }
-
-        $stored = (int) get_post_meta($variationId, self::META_CHILD_PREFIX . $scheme, true);
-        if ($stored > 0 && get_post_type($stored) === 'product') {
-            return $stored;
-        }
-
-        // Try to find an existing generated child.
-        $existing = get_posts([
-            'post_type' => 'product',
-            'post_status' => ['publish', 'private', 'draft'],
-            'numberposts' => 1,
-            'fields' => 'ids',
-            'meta_query' => [
-                [
-                    'key' => self::META_CHILD_BASE_PRODUCT_ID,
-                    'value' => $parentProductId,
-                    'compare' => '=',
-                ],
-                [
-                    'key' => '_hb_ucs_subs_base_variation_id',
-                    'value' => $variationId,
-                    'compare' => '=',
-                ],
-                [
-                    'key' => self::META_CHILD_SCHEME,
-                    'value' => $scheme,
-                    'compare' => '=',
-                ],
-                [
-                    'key' => self::META_CHILD_GENERATED,
-                    'value' => '1',
-                    'compare' => '=',
-                ],
-            ],
-        ]);
-        if (!empty($existing) && is_array($existing)) {
-            $childId = (int) $existing[0];
-            if ($childId > 0) {
-                update_post_meta($variationId, self::META_CHILD_PREFIX . $scheme, $childId);
-                return $childId;
-            }
-        }
-
-        $childId = $this->create_child_product_from_variation($parentProductId, $variationId, $scheme);
-        if ($childId > 0) {
-            update_post_meta($variationId, self::META_CHILD_PREFIX . $scheme, $childId);
-        }
-        return $childId;
-    }
-
-    private function create_child_product_from_variation(int $parentProductId, int $variationId, string $scheme): int {
-        if (!$this->wcs_available()) {
-            return 0;
-        }
-
-        $parent = wc_get_product($parentProductId);
-        $variation = wc_get_product($variationId);
-        if (!$parent || !$variation) {
-            return 0;
-        }
-        if (!$parent->is_type('variable')) {
-            return 0;
-        }
-
-        $freqs = $this->get_enabled_frequencies();
-        if (!isset($freqs[$scheme])) {
-            return 0;
-        }
-
-        $label = (string) $freqs[$scheme]['label'];
-        $name = method_exists($variation, 'get_name') ? (string) $variation->get_name() : (string) $parent->get_name();
-
-        $postId = wp_insert_post([
-            'post_type' => 'product',
-            'post_status' => 'publish',
-            'post_title' => $name . ' — ' . $label,
-            'post_content' => '',
-            'post_excerpt' => '',
-        ], true);
-
-        if (is_wp_error($postId)) {
-            return 0;
-        }
-
-        $childId = (int) $postId;
-        wp_set_object_terms($childId, 'subscription', 'product_type');
-        wp_set_object_terms($childId, ['exclude-from-catalog', 'exclude-from-search'], 'product_visibility', false);
-
-        update_post_meta($childId, self::META_CHILD_GENERATED, '1');
-        update_post_meta($childId, self::META_CHILD_BASE_PRODUCT_ID, (string) $parentProductId);
-        update_post_meta($childId, '_hb_ucs_subs_base_variation_id', (string) $variationId);
-        update_post_meta($childId, self::META_CHILD_SCHEME, (string) $scheme);
-
-        $this->update_child_product_from_variation($childId, $parentProductId, $variationId, $scheme);
-
-        return $childId;
-    }
-
-    private function update_child_product_from_variation(int $childId, int $parentProductId, int $variationId, string $scheme): void {
-        $parent = wc_get_product($parentProductId);
-        $variation = wc_get_product($variationId);
-        if (!$parent || !$variation) {
-            return;
-        }
-
-        $freqs = $this->get_enabled_frequencies();
-        if (!isset($freqs[$scheme])) {
-            return;
-        }
-
-        $interval = (int) $freqs[$scheme]['interval'];
-        $period = (string) $freqs[$scheme]['period'];
-        $label = (string) $freqs[$scheme]['label'];
-
-        $price = $this->get_variation_subscription_price($variationId, $scheme);
-        if ($price === null) {
-            $price = 0.0;
-        }
-
-        update_post_meta($childId, '_regular_price', wc_format_decimal($price));
-        update_post_meta($childId, '_price', wc_format_decimal($price));
-        delete_post_meta($childId, '_sale_price');
-
-        update_post_meta($childId, '_subscription_period', $period);
-        update_post_meta($childId, '_subscription_period_interval', (string) $interval);
-        update_post_meta($childId, '_subscription_length', '0');
-
-        // Copy shipping/tax related props from variation (falls back to parent where applicable).
-        update_post_meta($childId, '_weight', (string) $variation->get_weight());
-        update_post_meta($childId, '_length', (string) $variation->get_length());
-        update_post_meta($childId, '_width', (string) $variation->get_width());
-        update_post_meta($childId, '_height', (string) $variation->get_height());
-        update_post_meta($childId, '_tax_class', (string) $variation->get_tax_class());
-
-        $shippingClassId = (int) $variation->get_shipping_class_id();
-        if ($shippingClassId <= 0) {
-            $shippingClassId = (int) $parent->get_shipping_class_id();
-        }
-        if ($shippingClassId > 0) {
-            $term = get_term($shippingClassId, 'product_shipping_class');
-            if ($term && !is_wp_error($term)) {
-                wp_set_object_terms($childId, [(string) $term->slug], 'product_shipping_class', false);
-            }
-        }
-
-        update_post_meta($childId, '_manage_stock', 'no');
-        update_post_meta($childId, '_stock_status', 'instock');
-
-        $imgId = (int) (method_exists($variation, 'get_image_id') ? $variation->get_image_id() : 0);
-        if ($imgId <= 0) {
-            $imgId = (int) get_post_thumbnail_id($parentProductId);
-        }
-        if ($imgId > 0) {
-            set_post_thumbnail($childId, $imgId);
-        }
-
-        $name = method_exists($variation, 'get_name') ? (string) $variation->get_name() : (string) $parent->get_name();
-        wp_update_post([
-            'ID' => $childId,
-            'post_title' => $name . ' — ' . $label,
-        ]);
-    }
-
-    private function create_child_product(int $baseProductId, string $scheme): int {
-        if (!$this->wcs_available()) {
-            return 0;
-        }
-
-        $base = wc_get_product($baseProductId);
-        if (!$base || !$base->is_type('simple')) {
-            return 0;
-        }
-
-        $freqs = $this->get_enabled_frequencies();
-        if (!isset($freqs[$scheme])) {
-            return 0;
-        }
-
-        $row = $freqs[$scheme];
-        $label = (string) $row['label'];
-
-        $postId = wp_insert_post([
-            'post_type' => 'product',
-            'post_status' => 'publish',
-            'post_title' => $base->get_name() . ' — ' . $label,
-            'post_content' => '',
-            'post_excerpt' => '',
-        ], true);
-
-        if (is_wp_error($postId)) {
-            return 0;
-        }
-
-        $childId = (int) $postId;
-
-        // Mark product type.
-        wp_set_object_terms($childId, 'subscription', 'product_type');
-
-        // Hide from catalog/search.
-        wp_set_object_terms($childId, ['exclude-from-catalog', 'exclude-from-search'], 'product_visibility', false);
-
-        // Core child meta.
-        update_post_meta($childId, self::META_CHILD_GENERATED, '1');
-        update_post_meta($childId, self::META_CHILD_BASE_PRODUCT_ID, (string) $baseProductId);
-        update_post_meta($childId, self::META_CHILD_SCHEME, (string) $scheme);
-
-        $this->update_child_product_from_base($childId, $baseProductId, $scheme);
-
-        return $childId;
-    }
-
-    private function update_child_product_from_base(int $childId, int $baseProductId, string $scheme): void {
-        $base = wc_get_product($baseProductId);
-        if (!$base) {
-            return;
-        }
-
-        $freqs = $this->get_enabled_frequencies();
-        if (!isset($freqs[$scheme])) {
-            return;
-        }
-
-        $row = $freqs[$scheme];
-        $interval = (int) $row['interval'];
-        $period = (string) $row['period'];
-
-        $price = $this->get_base_subscription_price($baseProductId, $scheme);
-        if ($price === null) {
-            $price = 0.0;
-        }
-
-        // Pricing.
-        update_post_meta($childId, '_regular_price', wc_format_decimal($price));
-        update_post_meta($childId, '_price', wc_format_decimal($price));
-        delete_post_meta($childId, '_sale_price');
-
-        // Subscriptions meta (WCS reads these).
-        update_post_meta($childId, '_subscription_period', $period);
-        update_post_meta($childId, '_subscription_period_interval', (string) $interval);
-        // 0 length = indefinite.
-        update_post_meta($childId, '_subscription_length', '0');
-
-        // Copy shipping/tax related props (best-effort).
-        update_post_meta($childId, '_weight', (string) $base->get_weight());
-        update_post_meta($childId, '_length', (string) $base->get_length());
-        update_post_meta($childId, '_width', (string) $base->get_width());
-        update_post_meta($childId, '_height', (string) $base->get_height());
-        update_post_meta($childId, '_tax_class', (string) $base->get_tax_class());
-
-        // Copy shipping class.
-        $shippingClassId = (int) $base->get_shipping_class_id();
-        if ($shippingClassId > 0) {
-            $term = get_term($shippingClassId, 'product_shipping_class');
-            if ($term && !is_wp_error($term)) {
-                wp_set_object_terms($childId, [(string) $term->slug], 'product_shipping_class', false);
-            }
-        }
-
-        // Make sure child does not manage its own stock.
-        update_post_meta($childId, '_manage_stock', 'no');
-        update_post_meta($childId, '_stock_status', 'instock');
-
-        // Copy featured image.
-        $thumbId = (int) get_post_thumbnail_id($baseProductId);
-        if ($thumbId > 0) {
-            set_post_thumbnail($childId, $thumbId);
-        }
-
-        // Keep title in sync.
-        $label = (string) ($freqs[$scheme]['label'] ?? $scheme);
-        wp_update_post([
-            'ID' => $childId,
-            'post_title' => $base->get_name() . ' — ' . $label,
-        ]);
     }
 }

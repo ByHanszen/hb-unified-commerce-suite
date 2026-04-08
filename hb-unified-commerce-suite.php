@@ -95,4 +95,8 @@ add_action('plugins_loaded', function () {
     if (class_exists('HB\\UCS\\Core\\Kernel')) {
         (new \HB\UCS\Core\Kernel())->boot();
     }
+
+    if (defined('WP_CLI') && WP_CLI && class_exists('HB\\UCS\\Modules\\Subscriptions\\Cli\\SubscriptionMetaBackfillCommand')) {
+        \WP_CLI::add_command('hb-ucs subscriptions backfill-order-meta', 'HB\\UCS\\Modules\\Subscriptions\\Cli\\SubscriptionMetaBackfillCommand');
+    }
 });
