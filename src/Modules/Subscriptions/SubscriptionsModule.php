@@ -1239,7 +1239,7 @@ class SubscriptionsModule {
             if ($resolvedProduct && is_object($resolvedProduct) && method_exists($resolvedProduct, 'get_sku')) {
                 $sku = (string) $resolvedProduct->get_sku();
             }
-            $normalizedAttributes = $this->get_subscription_item_selected_attributes($previewItem);
+            $normalizedAttributes = $this->get_subscription_item_attribute_snapshot($previewItem);
             $variationSummary = $this->get_subscription_item_variation_summary($previewItem);
         }
 
@@ -1944,7 +1944,7 @@ class SubscriptionsModule {
             $thumbnailHtml = (string) $product->get_image('thumbnail', ['title' => ''], false);
         }
 
-        $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
+        $selectedAttributes = $this->get_subscription_item_attribute_snapshot($item);
         $displayMetaRows = $this->get_subscription_item_display_meta($item);
         $variationSummary = $this->get_subscription_item_variation_summary($item);
 
@@ -2935,11 +2935,11 @@ class SubscriptionsModule {
                     $qty = isset($row['qty']) ? (int) absint((string) $row['qty']) : 1;
                     $existingItem = isset($existingItems[$index]) && is_array($existingItems[$index]) ? $existingItems[$index] : null;
                     $existingSelectedId = $existingItem ? (int) ($existingItem['base_product_id'] ?? 0) : 0;
-                    $existingSelectedAttributes = $existingItem ? $this->get_subscription_item_selected_attributes($existingItem) : [];
+                    $existingSelectedAttributes = $existingItem ? $this->get_subscription_item_attribute_snapshot($existingItem) : [];
                     $fallbackUnit = ($existingItem && $existingSelectedId === $selectedId) ? (float) ($existingItem['unit_price'] ?? 0.0) : null;
 
                     if ($existingItem && $existingSelectedId === $selectedId && empty($selectedAttributes)) {
-                        $selectedAttributes = $this->get_subscription_item_selected_attributes($existingItem);
+                        $selectedAttributes = $this->get_subscription_item_attribute_snapshot($existingItem);
                     }
 
                     $item = $this->build_subscription_item_from_selection(
@@ -2949,7 +2949,7 @@ class SubscriptionsModule {
                         $fallbackUnit,
                         is_array($selectedAttributes) ? $selectedAttributes : []
                     );
-                    $currentSelectedAttributes = $item ? $this->get_subscription_item_selected_attributes($item) : [];
+                    $currentSelectedAttributes = $item ? $this->get_subscription_item_attribute_snapshot($item) : [];
                     $currentVariationId = $item ? (int) ($item['base_variation_id'] ?? 0) : 0;
                     $existingVariationId = $existingItem ? (int) ($existingItem['base_variation_id'] ?? 0) : 0;
 
@@ -3209,7 +3209,7 @@ class SubscriptionsModule {
     private function get_subscription_item_change_key(array $item): string {
         $productId = (int) ($item['base_product_id'] ?? 0);
         $variationId = (int) ($item['base_variation_id'] ?? 0);
-        $attributes = $this->get_subscription_item_selected_attributes($item);
+        $attributes = $this->get_subscription_item_attribute_snapshot($item);
         ksort($attributes);
 
         return implode('|', [
@@ -3425,7 +3425,7 @@ class SubscriptionsModule {
                 : (method_exists($product, 'get_price_html') ? (string) wp_strip_all_tags($product->get_price_html(), true) : '');
 
             if (method_exists($product, 'is_type') && $product->is_type('variable') && method_exists($product, 'get_children')) {
-                $variableConfig = $this->get_variable_product_attribute_config($product, true);
+                $variableConfig = $this->get_variable_product_attribute_config($product);
                 if (!empty($variableConfig)) {
                     $options['variable_configs'][$productId] = $variableConfig;
                 }
@@ -3525,7 +3525,9 @@ class SubscriptionsModule {
             $summary = isset($item['summary']) ? (string) $item['summary'] : '';
             $searchText = strtolower(trim($itemLabel . ' ' . $categoryNames . ' ' . $summary));
             $targetId = (int) ($item['target_id'] ?? $itemId);
-            $selectedAttributes = isset($item['selected_attributes']) && is_array($item['selected_attributes']) ? $item['selected_attributes'] : [];
+            $selectedAttributes = isset($item['attribute_snapshot']) && is_array($item['attribute_snapshot'])
+                ? $item['attribute_snapshot']
+                : (isset($item['selected_attributes']) && is_array($item['selected_attributes']) ? $item['selected_attributes'] : []);
             $imageHtml = isset($item['image_html']) ? (string) $item['image_html'] : '';
             $priceHtml = isset($item['price_html']) ? (string) $item['price_html'] : '';
             $itemContentHtml = $this->render_manageable_product_picker_item_content_html($item, $imageHtml, $priceHtml, $summary, $categoryNames);
@@ -3801,7 +3803,7 @@ class SubscriptionsModule {
             return '';
         }
 
-        $config = $this->get_variable_product_attribute_config($product, true);
+        $config = $this->get_variable_product_attribute_config($product);
         if (empty($config)) {
             return '';
         }
@@ -4686,6 +4688,23 @@ class SubscriptionsModule {
         return $this->sanitize_selected_attributes_map($selectedAttributes);
     }
 
+    private function get_attribute_snapshot_from_order_item($item, int $baseProductId = 0, int $baseVariationId = 0): array {
+        if (is_object($item) && method_exists($item, 'get_meta')) {
+            $storedSnapshot = $item->get_meta(self::ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT, true);
+            if (is_string($storedSnapshot) && $storedSnapshot !== '') {
+                $decodedSnapshot = json_decode($storedSnapshot, true);
+                if (is_array($decodedSnapshot)) {
+                    $normalizedSnapshot = $this->normalize_selected_attributes_from_variation_payload($decodedSnapshot, $baseProductId);
+                    if (!empty($normalizedSnapshot)) {
+                        return $normalizedSnapshot;
+                    }
+                }
+            }
+        }
+
+        return $this->get_selected_attributes_from_order_item($item, $baseProductId, $baseVariationId, false);
+    }
+
     private function get_selected_attribute_display_rows(int $baseProductId, array $selectedAttributes): array {
         $rows = [];
         $seen = [];
@@ -4695,7 +4714,7 @@ class SubscriptionsModule {
         if ($baseProductId > 0) {
             $product = wc_get_product($baseProductId);
             if ($product && is_object($product)) {
-                foreach ($this->get_variable_product_attribute_config($product, true) as $attribute) {
+                foreach ($this->get_variable_product_attribute_config($product) as $attribute) {
                     $key = (string) ($attribute['key'] ?? '');
                     if ($key === '') {
                         continue;
@@ -4763,7 +4782,7 @@ class SubscriptionsModule {
             return $labels;
         }
 
-        foreach ($this->get_variable_product_attribute_config($product, true) as $attribute) {
+        foreach ($this->get_variable_product_attribute_config($product) as $attribute) {
             $key = (string) ($attribute['key'] ?? '');
             $label = (string) ($attribute['label'] ?? '');
 
@@ -5588,17 +5607,7 @@ class SubscriptionsModule {
             $lineTax = method_exists($item, 'get_total_tax') ? (float) $item->get_total_tax() : 0.0;
             $unitPrice = $qty > 0 ? (float) wc_format_decimal((string) ($lineTotal / $qty)) : 0.0;
             $selectedAttributes = $this->get_selected_attributes_from_order_item($item, $baseProductId, $baseVariationId);
-            $attributeSnapshotRaw = method_exists($item, 'get_meta') ? $item->get_meta(self::ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT, true) : '';
-            $attributeSnapshot = [];
-            if (is_string($attributeSnapshotRaw) && $attributeSnapshotRaw !== '') {
-                $decodedAttributeSnapshot = json_decode($attributeSnapshotRaw, true);
-                if (is_array($decodedAttributeSnapshot)) {
-                    $attributeSnapshot = $this->normalize_selected_attributes_from_variation_payload($decodedAttributeSnapshot, $baseProductId);
-                }
-            }
-            if (empty($attributeSnapshot)) {
-                $attributeSnapshot = $selectedAttributes;
-            }
+            $attributeSnapshot = $this->get_attribute_snapshot_from_order_item($item, $baseProductId, $baseVariationId);
             $displayMeta = $this->get_display_meta_rows_from_order_item($item, $baseProductId, $selectedAttributes);
 
             $normalized = $this->normalize_subscription_item([
@@ -6313,7 +6322,7 @@ class SubscriptionsModule {
                 'key' => 'hb_ucs_sub_' . $index,
                 'product_id' => (int) ($item['base_product_id'] ?? 0),
                 'variation_id' => (int) ($item['base_variation_id'] ?? 0),
-                'variation' => (array) ($item['selected_attributes'] ?? []),
+                'variation' => (array) ($item['attribute_snapshot'] ?? ($item['selected_attributes'] ?? [])),
                 'quantity' => $qty,
                 'data' => $product,
                 'line_subtotal' => $lineSubtotal,
@@ -11343,6 +11352,9 @@ JS;
             'engine' => 'manual',
             'base_price' => (float) $base,
             'final_price' => (float) $final,
+            'selected_attributes' => isset($cartItemData['variation']) && is_array($cartItemData['variation'])
+                ? $this->normalize_selected_attributes_from_variation_payload((array) $cartItemData['variation'], (int) $productId)
+                : [],
         ];
 
         return $cartItemData;
@@ -11441,8 +11453,13 @@ JS;
         }
 
         $selectedAttributes = [];
+        $attributeSnapshot = [];
         if (isset($values['variation']) && is_array($values['variation'])) {
             $selectedAttributes = $this->normalize_selected_attributes_from_variation_payload((array) $values['variation'], $baseId);
+            $attributeSnapshot = $selectedAttributes;
+        }
+        if (isset($data['selected_attributes']) && is_array($data['selected_attributes'])) {
+            $attributeSnapshot = $this->normalize_selected_attributes_from_variation_payload((array) $data['selected_attributes'], $baseId);
         }
 
         $item->add_meta_data('_hb_ucs_subscription_base_product_id', $baseId, true);
@@ -11452,6 +11469,9 @@ JS;
         $item->add_meta_data('_hb_ucs_subscription_scheme', $scheme, true);
         if (!empty($selectedAttributes)) {
             $item->add_meta_data(self::ORDER_ITEM_META_SELECTED_ATTRIBUTES, wp_json_encode($selectedAttributes), true);
+        }
+        if (!empty($attributeSnapshot)) {
+            $item->add_meta_data(self::ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT, wp_json_encode($attributeSnapshot), true);
         }
     }
 
@@ -11591,8 +11611,8 @@ JS;
             return [];
         }
 
-        $selectedAttributes = $this->get_selected_attributes_from_order_item($item, $baseProductId, $baseVariationId, false);
-        $rows = $this->get_selected_attribute_display_rows($baseProductId, $selectedAttributes);
+        $attributeSnapshot = $this->get_attribute_snapshot_from_order_item($item, $baseProductId, $baseVariationId);
+        $rows = $this->get_selected_attribute_display_rows($baseProductId, $attributeSnapshot);
         $seen = [];
         foreach ($rows as $row) {
             $label = (string) ($row['label'] ?? '');
@@ -11604,7 +11624,7 @@ JS;
             $seen[$this->get_subscription_item_display_row_hash($label, $value)] = true;
         }
 
-        $displayMeta = $this->get_display_meta_rows_from_order_item($item, $baseProductId, $selectedAttributes, false);
+        $displayMeta = $this->get_display_meta_rows_from_order_item($item, $baseProductId, $attributeSnapshot, false);
         foreach ($displayMeta as $displayMetaRow) {
             $label = (string) ($displayMetaRow['label'] ?? '');
             $value = (string) ($displayMetaRow['value'] ?? '');

@@ -4,6 +4,11 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.163] — 2026-04-09
+### Fixed
+- Abonnement-attributen: alle save-, readback-, preview-, admin- en checkout-routes gebruiken nu dezelfde attribuut-snapshot als bron van waarheid. Daardoor blijven gekozen opties consistent zichtbaar na opslaan, herladen en order-sync, ook wanneer live variatie-attributen afwijken of geen eigen `variation_id` opleveren.
+- Abonnement-weergave: attribuutlabels en duplicate-filtering baseren nu op de volledige opgeslagen attribuutset in plaats van alleen op `variation-only` config. Daardoor verdwijnen dubbele `pa_`/niet-`pa_` regels en blijven facultatieve gekozen opties zichtbaar in frontend en backend.
+
 ## [0.3.162] — 2026-04-09
 ### Fixed
 - Abonnement-attributen: de opgeslagen attribuut-snapshot bewaart nu expliciet de exact geposte selector-keuzes vóórdat live variatie-attributen worden gemerged. Daardoor blijven facultatieve keuzes behouden zonder opnieuw vervuild te raken door `variation_id`-afleiding of dubbele `pa_`/niet-`pa_` varianten.
