@@ -4,14 +4,14 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
-## [0.3.164] — 2026-04-09
-### Fixed
-- Abonnement-selector: de frontend- en backend-keuzelijsten tonen nu weer alleen attributen die echt als variatie-attribuut zijn gemarkeerd. De attribuut-snapshot voor opslag en weergave blijft daarbij intact, zodat alleen de selecteerbare opties worden beperkt en niet de bewaarde abonnementsdata.
-
 ## [0.3.165] — 2026-04-09
 ### Fixed
 - Abonnement-attributen: aliasen van dezelfde variatiekeuze worden nu in beide richtingen naar elkaar herkend, inclusief `attribute_pa_*`, `pa_*` en de kale suffix zonder `pa_`. Daardoor blijven opgeslagen variatie-attributen beter behouden bij readback en vallen keuzes niet meer weg wanneer opgeslagen keys en actuele productconfig verschillende aliasvormen gebruiken.
 - Abonnement-backend/frontend: filtering van attribuut-meta houdt nu rekening met alle equivalente aliaslabels van een attribuut. Daardoor verdwijnen dubbele regels met en zonder `PA_` in de weergave van abonnement-items.
+
+## [0.3.164] — 2026-04-09
+### Fixed
+- Abonnement-selector: de frontend- en backend-keuzelijsten tonen nu weer alleen attributen die echt als variatie-attribuut zijn gemarkeerd. De attribuut-snapshot voor opslag en weergave blijft daarbij intact, zodat alleen de selecteerbare opties worden beperkt en niet de bewaarde abonnementsdata.
 
 ## [0.3.163] — 2026-04-09
 ### Fixed
