@@ -30,6 +30,8 @@ class SubscriptionRepository {
     public const LEGACY_MOLLIE_CUSTOMER_ID_META = '_hb_ucs_sub_mollie_customer_id';
     public const LEGACY_MOLLIE_MANDATE_ID_META = '_hb_ucs_sub_mollie_mandate_id';
     public const LEGACY_LAST_PAYMENT_ID_META = '_hb_ucs_sub_last_payment_id';
+    private const ORDER_ITEM_META_SELECTED_ATTRIBUTES = '_hb_ucs_subscription_selected_attributes';
+    private const ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT = '_hb_ucs_subscription_attribute_snapshot';
     private const ORDER_ITEM_META_CATALOG_UNIT_PRICE = '_hb_ucs_subscription_catalog_unit_price';
 
     /** @var bool */
@@ -835,7 +837,7 @@ class SubscriptionRepository {
         }
 
         $normalizedKey = ltrim(sanitize_key($metaKey), '_');
-        if ($normalizedKey === '' || strpos($normalizedKey, 'attribute_') === 0) {
+        if ($normalizedKey === '' || strpos($normalizedKey, 'attribute_') === 0 || strpos($normalizedKey, 'pa_') === 0) {
             return true;
         }
 
@@ -858,7 +860,7 @@ class SubscriptionRepository {
         }
 
         $normalizedKey = ltrim(sanitize_key($metaKey), '_');
-        if ($normalizedKey === '' || strpos($normalizedKey, 'attribute_') === 0) {
+        if ($normalizedKey === '' || strpos($normalizedKey, 'attribute_') === 0 || strpos($normalizedKey, 'pa_') === 0) {
             return true;
         }
 
@@ -868,6 +870,7 @@ class SubscriptionRepository {
     private function get_display_meta_excluded_keys(): array {
         return [
             'hb_ucs_subscription_selected_attributes',
+            'hb_ucs_subscription_attribute_snapshot',
             'hb_ucs_subscription_source_order_item_id',
             'hb_ucs_subscription_base_product_id',
             'hb_ucs_subscription_base_variation_id',
@@ -891,6 +894,16 @@ class SubscriptionRepository {
     }
 
     private function extract_selected_attributes_from_order_item($item): array {
+        if (method_exists($item, 'get_meta')) {
+            $storedAttributes = $item->get_meta(self::ORDER_ITEM_META_SELECTED_ATTRIBUTES, true);
+            if (is_string($storedAttributes) && $storedAttributes !== '') {
+                $decodedAttributes = json_decode($storedAttributes, true);
+                if (is_array($decodedAttributes)) {
+                    return $this->sanitize_selected_attributes_map($decodedAttributes);
+                }
+            }
+        }
+
         $attributes = [];
 
         if (!method_exists($item, 'get_meta_data')) {
@@ -903,14 +916,28 @@ class SubscriptionRepository {
             }
 
             $metaKey = sanitize_key((string) $meta->key);
-            if (strpos($metaKey, 'attribute_') !== 0) {
+            if (strpos($metaKey, 'attribute_') !== 0 && strpos($metaKey, 'pa_') !== 0) {
                 continue;
             }
 
-            $attributes[$metaKey] = sanitize_title((string) $meta->value);
+            $attributes[$this->normalize_selected_attribute_key($metaKey)] = sanitize_title((string) $meta->value);
         }
 
-        return $attributes;
+        return $this->sanitize_selected_attributes_map($attributes);
+    }
+
+    private function extract_attribute_snapshot_from_order_item($item): array {
+        if (method_exists($item, 'get_meta')) {
+            $storedSnapshot = $item->get_meta(self::ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT, true);
+            if (is_string($storedSnapshot) && $storedSnapshot !== '') {
+                $decodedSnapshot = json_decode($storedSnapshot, true);
+                if (is_array($decodedSnapshot)) {
+                    return $this->sanitize_selected_attributes_map($decodedSnapshot);
+                }
+            }
+        }
+
+        return $this->extract_selected_attributes_from_order_item($item);
     }
 
     private function extract_display_meta_rows_from_order_item($item): array {
@@ -934,7 +961,14 @@ class SubscriptionRepository {
                 $metaKey = isset($meta->key) ? (string) $meta->key : '';
                 $label = isset($meta->display_key) ? trim(wp_strip_all_tags((string) $meta->display_key, true)) : '';
                 $value = isset($meta->display_value) ? trim(html_entity_decode(wp_strip_all_tags((string) $meta->display_value, true), ENT_QUOTES, 'UTF-8')) : '';
-                if ($label === '' || $value === '' || $this->should_skip_formatted_display_meta($metaKey, $label)) {
+                $normalizedLabel = ltrim(sanitize_key($label), '_');
+                if (
+                    $label === ''
+                    || $value === ''
+                    || $this->should_skip_formatted_display_meta($metaKey, $label)
+                    || strpos($normalizedLabel, 'attribute_') === 0
+                    || strpos($normalizedLabel, 'pa_') === 0
+                ) {
                     continue;
                 }
 
@@ -1003,6 +1037,7 @@ class SubscriptionRepository {
                 $catalogUnitPrice = $this->normalize_decimal($lineSubtotal / $qty);
             }
             $attributes = $this->extract_selected_attributes_from_order_item($item);
+            $attributeSnapshot = $this->extract_attribute_snapshot_from_order_item($item);
             $displayMetaRows = $this->extract_display_meta_rows_from_order_item($item);
             $sourceOrderItemId = $this->resolve_source_order_item_id($item, $isSubscriptionOrder);
 
@@ -1017,6 +1052,7 @@ class SubscriptionRepository {
                 'price_includes_tax' => 0,
                 'taxes' => $this->normalize_item_taxes(method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : []),
                 'selected_attributes' => $attributes,
+                'attribute_snapshot' => $attributeSnapshot,
                 'display_meta' => $displayMetaRows,
             ];
         }
@@ -1234,9 +1270,15 @@ class SubscriptionRepository {
                 $item->add_meta_data('_hb_ucs_subscription_scheme', (string) $legacy['scheme'], true);
             }
 
-            $selectedAttributes = isset($row['selected_attributes']) && is_array($row['selected_attributes']) ? $row['selected_attributes'] : [];
+            $selectedAttributes = isset($row['selected_attributes']) && is_array($row['selected_attributes']) ? $this->sanitize_selected_attributes_map($row['selected_attributes']) : [];
+            $attributeSnapshot = isset($row['attribute_snapshot']) && is_array($row['attribute_snapshot'])
+                ? $this->sanitize_selected_attributes_map($row['attribute_snapshot'])
+                : $selectedAttributes;
             if (!empty($selectedAttributes)) {
-                $item->add_meta_data('_hb_ucs_subscription_selected_attributes', wp_json_encode($selectedAttributes), true);
+                $item->add_meta_data(self::ORDER_ITEM_META_SELECTED_ATTRIBUTES, wp_json_encode($selectedAttributes), true);
+            }
+            if (!empty($attributeSnapshot)) {
+                $item->add_meta_data(self::ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT, wp_json_encode($attributeSnapshot), true);
             }
 
             $displayMetaRows = [];
@@ -1244,7 +1286,7 @@ class SubscriptionRepository {
                 $displayMetaRows = (array) $row['display_meta'];
             }
 
-            $selectedAttributeHashes = $this->get_selected_attribute_display_row_hashes($productId, $selectedAttributes);
+            $selectedAttributeHashes = $this->get_selected_attribute_display_row_hashes($productId, $attributeSnapshot);
 
             foreach ($displayMetaRows as $displayMetaRow) {
                 if (!is_array($displayMetaRow)) {
@@ -1312,6 +1354,35 @@ class SubscriptionRepository {
         if (method_exists($order, 'save')) {
             $order->save();
         }
+    }
+
+    private function normalize_selected_attribute_key(string $key): string {
+        $key = ltrim(sanitize_key($key), '_');
+        if ($key === '' || $key === 'attribute_') {
+            return '';
+        }
+
+        if (strpos($key, 'attribute_') === 0) {
+            return $key;
+        }
+
+        return 'attribute_' . $key;
+    }
+
+    private function sanitize_selected_attributes_map(array $attributes): array {
+        $clean = [];
+
+        foreach ($attributes as $key => $value) {
+            $normalizedKey = $this->normalize_selected_attribute_key((string) $key);
+            $normalizedValue = sanitize_title((string) $value);
+            if ($normalizedKey === '' || $normalizedValue === '') {
+                continue;
+            }
+
+            $clean[$normalizedKey] = $normalizedValue;
+        }
+
+        return $clean;
     }
 
     private function calculate_legacy_totals(array $items, array $feeLines, array $shippingLines): array {

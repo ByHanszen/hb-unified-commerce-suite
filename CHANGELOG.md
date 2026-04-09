@@ -4,6 +4,11 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.166] — 2026-04-09
+### Fixed
+- Abonnement-attributen: ook de legacy subscription repository en de custom order datastore lezen en schrijven nu de aparte attribuut-snapshot mee op orderregels. Daardoor gebruiken alle orderpaden dezelfde opgeslagen attribuutbron in plaats van een mix van snapshot, ruwe WooCommerce itemmeta en formatted meta.
+- Abonnement-weergave: fallback-extractie uit order-item meta negeert nu ook in de repositorylaag alle `pa_*`/`attribute_*` variatie-meta. Daardoor kunnen dubbele attribuutregels met en zonder `PA_` niet meer opnieuw binnenkomen via het shadow-order/legacy pad.
+
 ## [0.3.165] — 2026-04-09
 ### Fixed
 - Abonnement-attributen: aliasen van dezelfde variatiekeuze worden nu in beide richtingen naar elkaar herkend, inclusief `attribute_pa_*`, `pa_*` en de kale suffix zonder `pa_`. Daardoor blijven opgeslagen variatie-attributen beter behouden bij readback en vallen keuzes niet meer weg wanneer opgeslagen keys en actuele productconfig verschillende aliasvormen gebruiken.

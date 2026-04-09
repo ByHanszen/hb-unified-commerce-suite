@@ -7,6 +7,8 @@ use HB\UCS\Modules\Subscriptions\Orders\HB_UCS_Subscription_Order;
 if (!defined('ABSPATH')) exit;
 
 class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
+    private const ORDER_ITEM_META_SELECTED_ATTRIBUTES = '_hb_ucs_subscription_selected_attributes';
+    private const ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT = '_hb_ucs_subscription_attribute_snapshot';
     private const ORDER_ITEM_META_CATALOG_UNIT_PRICE = '_hb_ucs_subscription_catalog_unit_price';
 
     public function read(&$order) {
@@ -111,6 +113,18 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
                 $item->add_meta_data(self::ORDER_ITEM_META_CATALOG_UNIT_PRICE, $this->normalize_decimal($row['catalog_unit_price']), true);
             }
 
+            $selectedAttributes = isset($row['selected_attributes']) && is_array($row['selected_attributes']) ? $this->sanitize_selected_attributes_map($row['selected_attributes']) : [];
+            $attributeSnapshot = isset($row['attribute_snapshot']) && is_array($row['attribute_snapshot'])
+                ? $this->sanitize_selected_attributes_map($row['attribute_snapshot'])
+                : $selectedAttributes;
+
+            if (!empty($selectedAttributes)) {
+                $item->add_meta_data(self::ORDER_ITEM_META_SELECTED_ATTRIBUTES, wp_json_encode($selectedAttributes), true);
+            }
+            if (!empty($attributeSnapshot)) {
+                $item->add_meta_data(self::ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT, wp_json_encode($attributeSnapshot), true);
+            }
+
             if ($product && is_object($product)) {
                 $item->set_name((string) $product->get_name());
                 if (method_exists($product, 'get_tax_class')) {
@@ -131,6 +145,8 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
                 $displayMetaRows = (array) $row['display_meta'];
             }
 
+            $selectedAttributeHashes = $this->get_selected_attribute_display_row_hashes($productId, $attributeSnapshot);
+
             if (!empty($displayMetaRows)) {
                 foreach ($displayMetaRows as $displayMetaRow) {
                     if (!is_array($displayMetaRow)) {
@@ -140,6 +156,10 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
                     $label = isset($displayMetaRow['label']) && is_scalar($displayMetaRow['label']) ? trim((string) $displayMetaRow['label']) : '';
                     $value = isset($displayMetaRow['value']) && is_scalar($displayMetaRow['value']) ? trim((string) $displayMetaRow['value']) : '';
                     if ($label === '' || $value === '') {
+                        continue;
+                    }
+
+                    if (isset($selectedAttributeHashes[$this->get_display_meta_row_hash($label, $value)])) {
                         continue;
                     }
 
@@ -315,6 +335,104 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
         ];
 
         return absint(($orderId * 10000) + ($typeOffset[$type] ?? 9000) + $index + 1);
+    }
+
+    private function normalize_selected_attribute_key(string $key): string {
+        $key = ltrim(sanitize_key($key), '_');
+        if ($key === '' || $key === 'attribute_') {
+            return '';
+        }
+
+        if (strpos($key, 'attribute_') === 0) {
+            return $key;
+        }
+
+        return 'attribute_' . $key;
+    }
+
+    private function sanitize_selected_attributes_map(array $attributes): array {
+        $clean = [];
+
+        foreach ($attributes as $key => $value) {
+            $normalizedKey = $this->normalize_selected_attribute_key((string) $key);
+            $normalizedValue = sanitize_title((string) $value);
+            if ($normalizedKey === '' || $normalizedValue === '') {
+                continue;
+            }
+
+            $clean[$normalizedKey] = $normalizedValue;
+        }
+
+        return $clean;
+    }
+
+    private function get_display_meta_row_hash(string $label, string $value): string {
+        return strtolower(remove_accents(trim($label) . '|' . trim($value)));
+    }
+
+    private function get_selected_attribute_display_row_hashes(int $baseProductId, array $selectedAttributes): array {
+        $hashes = [];
+        $selectedAttributes = $this->sanitize_selected_attributes_map($selectedAttributes);
+        if (empty($selectedAttributes)) {
+            return $hashes;
+        }
+
+        $configByKey = [];
+        if ($baseProductId > 0 && function_exists('wc_get_product')) {
+            $product = wc_get_product($baseProductId);
+            if ($product && is_object($product) && method_exists($product, 'get_attributes')) {
+                foreach ((array) $product->get_attributes() as $attribute) {
+                    if (!is_object($attribute) || !method_exists($attribute, 'get_name')) {
+                        continue;
+                    }
+
+                    $name = (string) $attribute->get_name();
+                    $key = 'attribute_' . sanitize_key($name);
+                    if ($key === 'attribute_') {
+                        continue;
+                    }
+
+                    $label = function_exists('wc_attribute_label') ? (string) wc_attribute_label($name, $product) : trim(wp_strip_all_tags(ucwords(str_replace(['pa_', '_', '-'], ['', ' ', ' '], $name)), true));
+                    $options = [];
+                    if (taxonomy_exists($name)) {
+                        foreach ((array) wc_get_product_terms($baseProductId, $name, ['fields' => 'all']) as $term) {
+                            if (!is_object($term) || !isset($term->slug, $term->name)) {
+                                continue;
+                            }
+
+                            $options[(string) $term->slug] = (string) $term->name;
+                        }
+                    } elseif (method_exists($attribute, 'get_options')) {
+                        foreach ((array) $attribute->get_options() as $option) {
+                            $option = (string) $option;
+                            if ($option === '') {
+                                continue;
+                            }
+
+                            $options[sanitize_title($option)] = $option;
+                        }
+                    }
+
+                    $configByKey[$key] = [
+                        'label' => $label !== '' ? $label : $key,
+                        'options' => $options,
+                    ];
+                }
+            }
+        }
+
+        foreach ($selectedAttributes as $key => $rawValue) {
+            $label = isset($configByKey[$key]['label']) ? (string) $configByKey[$key]['label'] : trim(wp_strip_all_tags(ucwords(str_replace(['attribute_', '_', '-'], ['', ' ', ' '], (string) $key)), true));
+            $valueKey = sanitize_title((string) $rawValue);
+            $value = isset($configByKey[$key]['options'][$valueKey]) ? (string) $configByKey[$key]['options'][$valueKey] : trim(wp_strip_all_tags(ucwords(str_replace(['_', '-'], [' ', ' '], (string) $rawValue)), true));
+            if ($label === '' || $value === '') {
+                continue;
+            }
+
+            $hashes[$this->get_display_meta_row_hash($label, $value)] = true;
+        }
+
+        return $hashes;
     }
 
     private function normalize_decimal($value): float {
