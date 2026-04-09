@@ -10555,6 +10555,8 @@ JS;
                 'taxes' => $itemTaxes,
                 'source_order_item_id' => (int) ($subscriptionItem['source_order_item_id'] ?? 0),
                 'catalog_unit_price' => $this->get_subscription_item_catalog_unit_price($subscriptionItem),
+                'selected_attributes' => $this->get_subscription_item_selected_attributes($subscriptionItem),
+                'attribute_snapshot' => $this->get_subscription_item_attribute_snapshot($subscriptionItem),
                 'display_meta' => $this->get_subscription_item_effective_display_meta($subId, $subscriptionItem),
             ];
         }
@@ -10613,6 +10615,12 @@ JS;
                     $item->add_meta_data(self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID, (int) $preparedItem['source_order_item_id'], true);
                 }
                 $item->add_meta_data(self::ORDER_ITEM_META_CATALOG_UNIT_PRICE, (float) $preparedItem['catalog_unit_price'], true);
+                if (!empty($preparedItem['selected_attributes']) && is_array($preparedItem['selected_attributes'])) {
+                    $item->add_meta_data(self::ORDER_ITEM_META_SELECTED_ATTRIBUTES, wp_json_encode($preparedItem['selected_attributes']), true);
+                }
+                if (!empty($preparedItem['attribute_snapshot']) && is_array($preparedItem['attribute_snapshot'])) {
+                    $item->add_meta_data(self::ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT, wp_json_encode($preparedItem['attribute_snapshot']), true);
+                }
                 foreach ((array) $preparedItem['display_meta'] as $displayMetaRow) {
                     $label = (string) ($displayMetaRow['label'] ?? '');
                     $value = (string) ($displayMetaRow['value'] ?? '');
@@ -11569,36 +11577,34 @@ JS;
             $seen[$this->get_subscription_item_display_row_hash($label, $value)] = true;
         }
 
-        if ($isAdminContext) {
-            static $isInjectingDisplayMeta = false;
+        static $isInjectingDisplayMeta = false;
 
-            if ($this->is_subscription_order_item($item) && !$isInjectingDisplayMeta) {
-                $isInjectingDisplayMeta = true;
+        if ($this->is_subscription_order_item($item) && !$isInjectingDisplayMeta) {
+            $isInjectingDisplayMeta = true;
 
-                try {
-                    foreach ($this->get_backend_order_item_display_meta_rows($item) as $displayMetaRow) {
-                        $label = isset($displayMetaRow['label']) && is_scalar($displayMetaRow['label']) ? trim((string) $displayMetaRow['label']) : '';
-                        $value = isset($displayMetaRow['value']) && is_scalar($displayMetaRow['value']) ? trim((string) $displayMetaRow['value']) : '';
-                        if ($label === '' || $value === '') {
-                            continue;
-                        }
-
-                        $hash = $this->get_subscription_item_display_row_hash($label, $value);
-                        if (isset($seen[$hash])) {
-                            continue;
-                        }
-
-                        $seen[$hash] = true;
-                        $formattedMeta['hb_ucs_' . $hash] = (object) [
-                            'key' => sanitize_key($label) !== '' ? sanitize_key($label) : $label,
-                            'value' => $value,
-                            'display_key' => $label,
-                            'display_value' => $value,
-                        ];
+            try {
+                foreach ($this->get_backend_order_item_display_meta_rows($item) as $displayMetaRow) {
+                    $label = isset($displayMetaRow['label']) && is_scalar($displayMetaRow['label']) ? trim((string) $displayMetaRow['label']) : '';
+                    $value = isset($displayMetaRow['value']) && is_scalar($displayMetaRow['value']) ? trim((string) $displayMetaRow['value']) : '';
+                    if ($label === '' || $value === '') {
+                        continue;
                     }
-                } finally {
-                    $isInjectingDisplayMeta = false;
+
+                    $hash = $this->get_subscription_item_display_row_hash($label, $value);
+                    if (isset($seen[$hash])) {
+                        continue;
+                    }
+
+                    $seen[$hash] = true;
+                    $formattedMeta['hb_ucs_' . $hash] = (object) [
+                        'key' => sanitize_key($label) !== '' ? sanitize_key($label) : $label,
+                        'value' => $value,
+                        'display_key' => $label,
+                        'display_value' => $value,
+                    ];
                 }
+            } finally {
+                $isInjectingDisplayMeta = false;
             }
         }
 
