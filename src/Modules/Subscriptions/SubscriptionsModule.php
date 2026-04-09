@@ -4122,6 +4122,9 @@ class SubscriptionsModule {
                     $aliases[] = 'attribute_' . $suffix;
                     $aliases[] = $suffix;
                 }
+            } else {
+                $aliases[] = 'attribute_pa_' . $metaKey;
+                $aliases[] = 'pa_' . $metaKey;
             }
         }
 
@@ -4791,9 +4794,11 @@ class SubscriptionsModule {
             }
 
             if ($key !== '') {
-                $labels[] = ltrim(sanitize_key($key), '_');
-                $labels[] = ltrim(sanitize_key($this->get_order_item_display_meta_label($key)), '_');
-                $labels[] = ltrim(sanitize_key(str_replace('attribute_', '', $key)), '_');
+                foreach ($this->get_selected_attribute_key_aliases($key) as $aliasKey) {
+                    $labels[] = ltrim(sanitize_key($aliasKey), '_');
+                    $labels[] = ltrim(sanitize_key(str_replace('attribute_', '', $aliasKey)), '_');
+                    $labels[] = ltrim(sanitize_key($this->normalize_subscription_item_display_label($this->get_order_item_display_meta_label($aliasKey))), '_');
+                }
             }
         }
 
