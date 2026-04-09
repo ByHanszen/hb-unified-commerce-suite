@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.162] — 2026-04-09
+### Fixed
+- Abonnement-attributen: de opgeslagen attribuut-snapshot bewaart nu expliciet de exact geposte selector-keuzes vóórdat live variatie-attributen worden gemerged. Daardoor blijven facultatieve keuzes behouden zonder opnieuw vervuild te raken door `variation_id`-afleiding of dubbele `pa_`/niet-`pa_` varianten.
+
 ## [0.3.161] — 2026-04-09
 ### Fixed
 - Abonnement-attributen: gekozen productopties worden nu als aparte attribuut-snapshot op subscription-items en subscription order lines opgeslagen. Daardoor blijven opties zonder betrouwbare `variation_id`-koppeling, zoals facultatieve variatiekeuzes, na opslaan en herladen beschikbaar voor frontend- en backendweergave.

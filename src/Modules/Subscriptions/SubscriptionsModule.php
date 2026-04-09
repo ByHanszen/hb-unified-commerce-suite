@@ -5054,7 +5054,7 @@ class SubscriptionsModule {
         if ($baseProductId > 0 && function_exists('wc_get_product')) {
             $product = wc_get_product($baseProductId);
             if ($product && is_object($product) && method_exists($product, 'is_type') && $product->is_type('variable')) {
-                return $this->normalize_selected_attributes_for_product($product, $stored);
+                return $this->normalize_selected_attributes_from_variation_payload($stored, $baseProductId);
             }
         }
 
@@ -6440,6 +6440,7 @@ class SubscriptionsModule {
         }
 
         $selectedAttributes = $this->sanitize_selected_attributes_map($selectedAttributes);
+        $attributeSnapshot = $selectedAttributes;
         $product = wc_get_product($selectedId);
         if (!$product || !is_object($product)) {
             return null;
@@ -6519,7 +6520,7 @@ class SubscriptionsModule {
             'qty' => max(1, $qty),
             'unit_price' => $unitPrice,
             'selected_attributes' => $selectedAttributes,
-            'attribute_snapshot' => $selectedAttributes,
+            'attribute_snapshot' => $attributeSnapshot,
         ]);
     }
 
