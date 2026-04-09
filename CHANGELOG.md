@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.164] — 2026-04-09
+### Fixed
+- Abonnement-selector: de frontend- en backend-keuzelijsten tonen nu weer alleen attributen die echt als variatie-attribuut zijn gemarkeerd. De attribuut-snapshot voor opslag en weergave blijft daarbij intact, zodat alleen de selecteerbare opties worden beperkt en niet de bewaarde abonnementsdata.
+
 ## [0.3.163] — 2026-04-09
 ### Fixed
 - Abonnement-attributen: alle save-, readback-, preview-, admin- en checkout-routes gebruiken nu dezelfde attribuut-snapshot als bron van waarheid. Daardoor blijven gekozen opties consistent zichtbaar na opslaan, herladen en order-sync, ook wanneer live variatie-attributen afwijken of geen eigen `variation_id` opleveren.

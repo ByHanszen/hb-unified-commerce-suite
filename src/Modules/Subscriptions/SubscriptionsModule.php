@@ -1208,7 +1208,7 @@ class SubscriptionsModule {
             }
         }
 
-        $attributeConfig = $this->get_variable_product_attribute_config($attributeProduct);
+        $attributeConfig = $this->get_variable_product_attribute_config($attributeProduct, true);
         $previewItem = null;
         if (!$requiresSelection && $resolvedSelectionId > 0) {
             $previewItem = $this->build_subscription_item_from_selection($resolvedSelectionId, $scheme, $qty, null, $normalizedAttributes);
@@ -3425,7 +3425,7 @@ class SubscriptionsModule {
                 : (method_exists($product, 'get_price_html') ? (string) wp_strip_all_tags($product->get_price_html(), true) : '');
 
             if (method_exists($product, 'is_type') && $product->is_type('variable') && method_exists($product, 'get_children')) {
-                $variableConfig = $this->get_variable_product_attribute_config($product);
+                $variableConfig = $this->get_variable_product_attribute_config($product, true);
                 if (!empty($variableConfig)) {
                     $options['variable_configs'][$productId] = $variableConfig;
                 }
@@ -3803,7 +3803,7 @@ class SubscriptionsModule {
             return '';
         }
 
-        $config = $this->get_variable_product_attribute_config($product);
+        $config = $this->get_variable_product_attribute_config($product, true);
         if (empty($config)) {
             return '';
         }
