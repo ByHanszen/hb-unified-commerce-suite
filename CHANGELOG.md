@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.161] — 2026-04-09
+### Fixed
+- Abonnement-attributen: gekozen productopties worden nu als aparte attribuut-snapshot op subscription-items en subscription order lines opgeslagen. Daardoor blijven opties zonder betrouwbare `variation_id`-koppeling, zoals facultatieve variatiekeuzes, na opslaan en herladen beschikbaar voor frontend- en backendweergave.
+
 ## [0.3.160] — 2026-04-08
 ### Fixed
 - Abonnement-frontend: het opslaan van artikelwijzigingen in Mijn Account bouwt subscription-items nu weer direct op uit de geposte selectie, in plaats van via de previewlaag. Daardoor blijven gekozen variatie-attributen zoals `Maling` behouden in dezelfde save/readback-stroom die eerder al correct werkte.

@@ -60,6 +60,7 @@ class SubscriptionsModule {
     private const ORDER_META_RENEWAL_NEXT_PAYMENT = '_hb_ucs_subscription_renewal_next_payment';
     private const ORDER_META_MOLLIE_PAYMENT_ID = '_hb_ucs_mollie_payment_id';
     private const ORDER_ITEM_META_SELECTED_ATTRIBUTES = '_hb_ucs_subscription_selected_attributes';
+    private const ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT = '_hb_ucs_subscription_attribute_snapshot';
     private const ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID = '_hb_ucs_subscription_source_order_item_id';
     private const ORDER_ITEM_META_CATALOG_UNIT_PRICE = '_hb_ucs_subscription_catalog_unit_price';
 
@@ -3850,7 +3851,7 @@ class SubscriptionsModule {
 
     private function render_account_subscription_item_editor_row(string $rowKey, array $item, bool $manageDisabled, array $productOptions, int $subId = 0): void {
         $selectedId = (int) ($item['base_product_id'] ?? 0);
-        $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
+        $selectedAttributes = $this->get_subscription_item_attribute_snapshot($item);
         $variationSummary = $this->get_subscription_item_variation_summary($item);
         $qty = max(1, (int) ($item['qty'] ?? 1));
         $deliveryPrice = $this->get_subscription_item_display_amount(
@@ -4319,6 +4320,7 @@ class SubscriptionsModule {
     private function get_subscription_order_item_display_meta_excluded_keys(): array {
         return [
             ltrim(sanitize_key(self::ORDER_ITEM_META_SELECTED_ATTRIBUTES), '_'),
+            ltrim(sanitize_key(self::ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT), '_'),
             ltrim(sanitize_key(self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID), '_'),
             'hb_ucs_subscription_base_product_id',
             'hb_ucs_subscription_base_variation_id',
@@ -4331,6 +4333,7 @@ class SubscriptionsModule {
     private function get_subscription_order_item_hidden_meta_keys(): array {
         return [
             self::ORDER_ITEM_META_SELECTED_ATTRIBUTES,
+            self::ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT,
             self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID,
             self::ORDER_ITEM_META_CATALOG_UNIT_PRICE,
             '_hb_ucs_subscription_base_product_id',
@@ -5037,6 +5040,27 @@ class SubscriptionsModule {
         return [];
     }
 
+    private function get_subscription_item_attribute_snapshot(array $item): array {
+        $stored = isset($item['attribute_snapshot']) && is_array($item['attribute_snapshot']) ? $item['attribute_snapshot'] : [];
+        if (empty($stored)) {
+            $stored = isset($item['selected_attributes']) && is_array($item['selected_attributes']) ? $item['selected_attributes'] : [];
+        }
+
+        if (empty($stored)) {
+            return [];
+        }
+
+        $baseProductId = (int) ($item['base_product_id'] ?? 0);
+        if ($baseProductId > 0 && function_exists('wc_get_product')) {
+            $product = wc_get_product($baseProductId);
+            if ($product && is_object($product) && method_exists($product, 'is_type') && $product->is_type('variable')) {
+                return $this->normalize_selected_attributes_for_product($product, $stored);
+            }
+        }
+
+        return $this->sanitize_selected_attributes_map($stored);
+    }
+
     private function normalize_selected_attributes_for_product($product, array $selectedAttributes): array {
         return $this->normalize_selected_attributes_for_product_scope($product, $selectedAttributes, false);
     }
@@ -5224,7 +5248,7 @@ class SubscriptionsModule {
 
     private function get_subscription_item_attribute_display_rows(array $item): array {
         $baseProductId = (int) ($item['base_product_id'] ?? 0);
-        $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
+        $selectedAttributes = $this->get_subscription_item_attribute_snapshot($item);
         $rows = $this->get_selected_attribute_display_rows($baseProductId, $selectedAttributes);
         $attributeDisplayLabels = $this->get_subscription_item_attribute_display_meta_labels($baseProductId);
 
@@ -5295,6 +5319,9 @@ class SubscriptionsModule {
         }
 
         $normalizedAttributes = $this->sanitize_selected_attributes_map($selectedAttributes);
+        $attributeSnapshot = isset($item['attribute_snapshot']) && is_array($item['attribute_snapshot'])
+            ? $this->sanitize_selected_attributes_map($item['attribute_snapshot'])
+            : $normalizedAttributes;
         $normalizedDisplayMeta = $this->exclude_subscription_item_attribute_display_meta($displayMeta, $baseProductId);
 
         if ($priceIncludesTax && $unitPrice > 0) {
@@ -5333,6 +5360,7 @@ class SubscriptionsModule {
             'price_includes_tax' => $priceIncludesTax ? 1 : 0,
             'taxes' => $taxes,
             'selected_attributes' => $normalizedAttributes,
+            'attribute_snapshot' => $attributeSnapshot,
             'display_meta' => $normalizedDisplayMeta,
         ];
 
@@ -5560,6 +5588,17 @@ class SubscriptionsModule {
             $lineTax = method_exists($item, 'get_total_tax') ? (float) $item->get_total_tax() : 0.0;
             $unitPrice = $qty > 0 ? (float) wc_format_decimal((string) ($lineTotal / $qty)) : 0.0;
             $selectedAttributes = $this->get_selected_attributes_from_order_item($item, $baseProductId, $baseVariationId);
+            $attributeSnapshotRaw = method_exists($item, 'get_meta') ? $item->get_meta(self::ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT, true) : '';
+            $attributeSnapshot = [];
+            if (is_string($attributeSnapshotRaw) && $attributeSnapshotRaw !== '') {
+                $decodedAttributeSnapshot = json_decode($attributeSnapshotRaw, true);
+                if (is_array($decodedAttributeSnapshot)) {
+                    $attributeSnapshot = $this->normalize_selected_attributes_from_variation_payload($decodedAttributeSnapshot, $baseProductId);
+                }
+            }
+            if (empty($attributeSnapshot)) {
+                $attributeSnapshot = $selectedAttributes;
+            }
             $displayMeta = $this->get_display_meta_rows_from_order_item($item, $baseProductId, $selectedAttributes);
 
             $normalized = $this->normalize_subscription_item([
@@ -5573,6 +5612,7 @@ class SubscriptionsModule {
                 'price_includes_tax' => 0,
                 'taxes' => method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : [],
                 'selected_attributes' => $selectedAttributes,
+                'attribute_snapshot' => $attributeSnapshot,
                 'display_meta' => $displayMeta,
                 'line_subtotal' => $lineSubtotal,
                 'line_tax' => $lineTax,
@@ -5603,9 +5643,17 @@ class SubscriptionsModule {
                 ? $this->sanitize_selected_attributes_map($item['selected_attributes'])
                 : [];
             $resolvedSelectedAttributes = $this->get_subscription_item_selected_attributes($item);
+            $currentAttributeSnapshot = isset($item['attribute_snapshot']) && is_array($item['attribute_snapshot'])
+                ? $this->sanitize_selected_attributes_map($item['attribute_snapshot'])
+                : [];
+            $resolvedAttributeSnapshot = $this->get_subscription_item_attribute_snapshot($item);
 
             if ($resolvedSelectedAttributes !== $currentSelectedAttributes) {
                 $item['selected_attributes'] = $resolvedSelectedAttributes;
+                $didRepair = true;
+            }
+            if ($resolvedAttributeSnapshot !== $currentAttributeSnapshot) {
+                $item['attribute_snapshot'] = $resolvedAttributeSnapshot;
                 $didRepair = true;
             }
 
@@ -6092,6 +6140,7 @@ class SubscriptionsModule {
             }
 
             $selectedAttributes = $this->get_subscription_item_selected_attributes($item);
+            $attributeSnapshot = $this->get_subscription_item_attribute_snapshot($item);
             if ($baseVariationId > 0 && method_exists($orderItem, 'set_variation_id')) {
                 $orderItem->set_variation_id($baseVariationId);
             }
@@ -6122,6 +6171,9 @@ class SubscriptionsModule {
 
             if (!empty($selectedAttributes)) {
                 $orderItem->add_meta_data(self::ORDER_ITEM_META_SELECTED_ATTRIBUTES, wp_json_encode($selectedAttributes), true);
+            }
+            if (!empty($attributeSnapshot)) {
+                $orderItem->add_meta_data(self::ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT, wp_json_encode($attributeSnapshot), true);
             }
 
             foreach ($this->get_subscription_item_effective_display_meta($subId, $item) as $displayMetaRow) {
@@ -6467,6 +6519,7 @@ class SubscriptionsModule {
             'qty' => max(1, $qty),
             'unit_price' => $unitPrice,
             'selected_attributes' => $selectedAttributes,
+            'attribute_snapshot' => $selectedAttributes,
         ]);
     }
 
