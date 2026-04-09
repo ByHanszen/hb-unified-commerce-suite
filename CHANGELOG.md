@@ -14,6 +14,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 - Renewal orders: bij het aanmaken van renewal-orderregels worden `selected_attributes` en de expliciete attribuut-snapshot nu ook echt mee opgeslagen op de nieuwe order-items. Daardoor gaan gekozen abonnement-attributen niet meer verloren tussen abonnement-item en renewal order.
 - Renewal-weergave: snapshot-gebaseerde attribuutregels worden nu ook buiten admin in de order-item meta geïnjecteerd, zodat gekozen attributen zichtbaar blijven in frontend orderdetails en renewal e-mails, in plaats van alleen in de backend.
 
+## [0.3.168] — 2026-04-09
+### Fixed
+- Abonnement-frequentie: berekeningen van `next_payment` normaliseren nu eerst `scheme`, `interval` en `period` naar één canonieke schedule. Daardoor valt een abonnement met bijvoorbeeld `2w` niet meer terug naar `1 week` wanneer één van de schedule-meta velden leeg of uit sync raakt.
+- Abonnement-sync: de legacy repository en het order-type shadow-record reconstrueren de frequentie nu vanuit opgeslagen interval/period-meta, met `scheme` alleen als fallback. Daardoor kan een sync-pad een bestaand tweewekelijks abonnement niet meer stil overschrijven naar een wekelijkse cyclus.
+
 ## [0.3.165] — 2026-04-09
 ### Fixed
 - Abonnement-attributen: aliasen van dezelfde variatiekeuze worden nu in beide richtingen naar elkaar herkend, inclusief `attribute_pa_*`, `pa_*` en de kale suffix zonder `pa_`. Daardoor blijven opgeslagen variatie-attributen beter behouden bij readback en vallen keuzes niet meer weg wanneer opgeslagen keys en actuele productconfig verschillende aliasvormen gebruiken.

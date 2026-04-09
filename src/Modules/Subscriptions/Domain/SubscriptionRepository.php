@@ -74,6 +74,12 @@ class SubscriptionRepository {
             }
         }
 
+        $schedule = $this->resolve_legacy_schedule(
+            (string) get_post_meta($legacyPostId, self::LEGACY_SCHEME_META, true),
+            (int) get_post_meta($legacyPostId, self::LEGACY_INTERVAL_META, true),
+            (string) get_post_meta($legacyPostId, self::LEGACY_PERIOD_META, true)
+        );
+
         return [
             'id' => $legacyPostId,
             'post' => $post,
@@ -83,9 +89,9 @@ class SubscriptionRepository {
             'customer_id' => (int) get_post_meta($legacyPostId, self::LEGACY_USER_ID_META, true),
             'status' => (string) get_post_meta($legacyPostId, self::LEGACY_STATUS_META, true),
             'parent_order_id' => $parentOrderId,
-            'scheme' => (string) get_post_meta($legacyPostId, self::LEGACY_SCHEME_META, true),
-            'interval' => (int) get_post_meta($legacyPostId, self::LEGACY_INTERVAL_META, true),
-            'period' => (string) get_post_meta($legacyPostId, self::LEGACY_PERIOD_META, true),
+            'scheme' => (string) $schedule['scheme'],
+            'interval' => (int) $schedule['interval'],
+            'period' => (string) $schedule['period'],
             'next_payment' => (int) get_post_meta($legacyPostId, self::LEGACY_NEXT_PAYMENT_META, true),
             'payment_method' => (string) get_post_meta($legacyPostId, self::LEGACY_PAYMENT_METHOD_META, true),
             'payment_method_title' => (string) get_post_meta($legacyPostId, self::LEGACY_PAYMENT_METHOD_TITLE_META, true),
@@ -462,6 +468,14 @@ class SubscriptionRepository {
 
         $post = get_post($orderId);
 
+        $schedule = $this->resolve_legacy_schedule(
+            (string) get_post_meta($orderId, '_hb_ucs_subscription_scheme', true),
+            (int) get_post_meta($orderId, '_hb_ucs_subscription_interval', true),
+            (string) get_post_meta($orderId, '_hb_ucs_subscription_period', true),
+            (int) get_post_meta($orderId, self::LEGACY_INTERVAL_META, true),
+            (string) get_post_meta($orderId, self::LEGACY_PERIOD_META, true)
+        );
+
         return [
             'id' => $orderId,
             'post' => $post instanceof \WP_Post ? $post : null,
@@ -471,9 +485,9 @@ class SubscriptionRepository {
             'customer_id' => method_exists($order, 'get_customer_id') ? (int) $order->get_customer_id() : (int) get_post_meta($orderId, '_customer_user', true),
             'status' => $status,
             'parent_order_id' => (int) get_post_meta($orderId, self::LEGACY_PARENT_ORDER_ID_META, true),
-            'scheme' => (string) get_post_meta($orderId, '_hb_ucs_subscription_scheme', true),
-            'interval' => (int) get_post_meta($orderId, '_hb_ucs_subscription_interval', true),
-            'period' => (string) get_post_meta($orderId, '_hb_ucs_subscription_period', true),
+            'scheme' => (string) $schedule['scheme'],
+            'interval' => (int) $schedule['interval'],
+            'period' => (string) $schedule['period'],
             'next_payment' => $nextPayment,
             'payment_method' => method_exists($order, 'get_payment_method') ? (string) $order->get_payment_method() : '',
             'payment_method_title' => method_exists($order, 'get_payment_method_title') ? (string) $order->get_payment_method_title() : '',
@@ -632,9 +646,16 @@ class SubscriptionRepository {
 
     private function build_legacy_data_from_order($order, int $legacyPostId): array {
         $existing = $this->get_legacy_subscription_data($legacyPostId);
-        $scheme = method_exists($order, 'get_meta') ? (string) $order->get_meta('_hb_ucs_subscription_scheme', true) : '';
-        $scheme = $scheme !== '' ? $scheme : (string) ($existing['scheme'] ?? '1w');
-        $interval = $this->extract_interval_from_scheme($scheme, (int) ($existing['interval'] ?? 0));
+        $schedule = $this->resolve_legacy_schedule(
+            method_exists($order, 'get_meta') ? (string) $order->get_meta('_hb_ucs_subscription_scheme', true) : '',
+            method_exists($order, 'get_meta') ? (int) $order->get_meta('_hb_ucs_subscription_interval', true) : 0,
+            method_exists($order, 'get_meta') ? (string) $order->get_meta('_hb_ucs_subscription_period', true) : '',
+            (int) ($existing['interval'] ?? 0),
+            (string) ($existing['period'] ?? 'week')
+        );
+        $scheme = (string) $schedule['scheme'];
+        $interval = (int) $schedule['interval'];
+        $period = (string) $schedule['period'];
         $status = method_exists($order, 'get_meta') ? (string) $order->get_meta('_hb_ucs_subscription_status', true) : '';
         if ($status === '') {
             $status = method_exists($order, 'get_meta') ? (string) $order->get_meta(self::LEGACY_STATUS_META, true) : '';
@@ -672,7 +693,7 @@ class SubscriptionRepository {
             'parent_order_id' => method_exists($order, 'get_parent_id') ? (int) $order->get_parent_id() : (int) ($existing['parent_order_id'] ?? 0),
             'scheme' => $scheme,
             'interval' => $interval,
-            'period' => 'week',
+            'period' => $period,
             'next_payment' => $nextPayment,
             'payment_method' => method_exists($order, 'get_payment_method') ? (string) $order->get_payment_method() : (string) ($existing['payment_method'] ?? ''),
             'payment_method_title' => method_exists($order, 'get_payment_method_title') ? (string) $order->get_payment_method_title() : (string) ($existing['payment_method_title'] ?? ''),
@@ -1642,6 +1663,32 @@ class SubscriptionRepository {
         }
 
         return $fallback > 0 ? $fallback : 1;
+    }
+
+    private function resolve_legacy_schedule(string $scheme = '', int $interval = 0, string $period = '', int $fallbackInterval = 0, string $fallbackPeriod = 'week'): array {
+        $scheme = sanitize_key($scheme);
+        $period = sanitize_key($period);
+        $fallbackPeriod = sanitize_key($fallbackPeriod);
+
+        if ($interval <= 0) {
+            $interval = $this->extract_interval_from_scheme($scheme, $fallbackInterval);
+        }
+        if ($interval <= 0) {
+            $interval = 1;
+        }
+
+        if ($period === '') {
+            $period = $fallbackPeriod !== '' ? $fallbackPeriod : 'week';
+        }
+        if ($scheme === '') {
+            $scheme = $interval . 'w';
+        }
+
+        return [
+            'scheme' => $scheme,
+            'interval' => $interval,
+            'period' => $period,
+        ];
     }
 
     private function map_order_post_status_to_legacy_status(string $orderStatus): string {

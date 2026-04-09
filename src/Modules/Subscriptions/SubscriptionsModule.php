@@ -841,20 +841,94 @@ class SubscriptionsModule {
     }
 
     private function get_subscription_schedule_label(string $scheme, int $interval = 0): string {
+        $resolved = $this->resolve_subscription_schedule($scheme, $interval, 'week');
         $settings = $this->get_settings();
         $freqs = isset($settings['frequencies']) && is_array($settings['frequencies']) ? $settings['frequencies'] : [];
-        if ($scheme !== '' && isset($freqs[$scheme]) && is_array($freqs[$scheme]) && !empty($freqs[$scheme]['label'])) {
-            return (string) $freqs[$scheme]['label'];
+        if ($resolved['scheme'] !== '' && isset($freqs[$resolved['scheme']]) && is_array($freqs[$resolved['scheme']]) && !empty($freqs[$resolved['scheme']]['label'])) {
+            return (string) $freqs[$resolved['scheme']]['label'];
         }
 
-        if ($interval <= 0 && preg_match('/^(\d+)w$/', $scheme, $matches)) {
-            $interval = (int) $matches[1];
+        return sprintf(__('iedere %d week', 'hb-ucs'), (int) $resolved['interval']);
+    }
+
+    private function parse_subscription_interval_from_scheme(string $scheme, int $fallback = 0): int {
+        if (preg_match('/^(\d+)w$/', $scheme, $matches)) {
+            return max(1, (int) $matches[1]);
         }
+
+        return $fallback > 0 ? $fallback : 1;
+    }
+
+    private function resolve_subscription_schedule(string $scheme = '', int $interval = 0, string $period = ''): array {
+        $scheme = sanitize_key($scheme);
+        $period = sanitize_key($period);
+        $freqs = $this->get_configured_frequencies(false);
+
+        if ($scheme !== '' && isset($freqs[$scheme]) && is_array($freqs[$scheme])) {
+            $resolvedInterval = (int) ($freqs[$scheme]['interval'] ?? 0);
+            $resolvedPeriod = sanitize_key((string) ($freqs[$scheme]['period'] ?? 'week'));
+
+            if ($resolvedInterval > 0) {
+                return [
+                    'scheme' => $scheme,
+                    'interval' => $resolvedInterval,
+                    'period' => $resolvedPeriod !== '' ? $resolvedPeriod : 'week',
+                ];
+            }
+        }
+
+        $interval = $this->parse_subscription_interval_from_scheme($scheme, $interval);
+        if ($period === '') {
+            $period = 'week';
+        }
+        if ($scheme === '') {
+            $scheme = $interval . 'w';
+        }
+
+        return [
+            'scheme' => $scheme,
+            'interval' => $interval,
+            'period' => $period,
+        ];
+    }
+
+    private function repair_subscription_schedule_meta(int $subId): array {
+        if ($subId <= 0) {
+            return $this->resolve_subscription_schedule();
+        }
+
+        $scheme = (string) get_post_meta($subId, self::SUB_META_SCHEME, true);
+        if ($scheme === '') {
+            $scheme = (string) get_post_meta($subId, '_hb_ucs_subscription_scheme', true);
+        }
+
+        $interval = (int) get_post_meta($subId, self::SUB_META_INTERVAL, true);
         if ($interval <= 0) {
-            $interval = 1;
+            $interval = (int) get_post_meta($subId, '_hb_ucs_subscription_interval', true);
         }
 
-        return sprintf(__('iedere %d week', 'hb-ucs'), $interval);
+        $period = (string) get_post_meta($subId, self::SUB_META_PERIOD, true);
+        if ($period === '') {
+            $period = (string) get_post_meta($subId, '_hb_ucs_subscription_period', true);
+        }
+
+        $resolved = $this->resolve_subscription_schedule($scheme, $interval, $period);
+        $scheduleMeta = [
+            self::SUB_META_SCHEME => (string) $resolved['scheme'],
+            '_hb_ucs_subscription_scheme' => (string) $resolved['scheme'],
+            self::SUB_META_INTERVAL => (int) $resolved['interval'],
+            '_hb_ucs_subscription_interval' => (int) $resolved['interval'],
+            self::SUB_META_PERIOD => (string) $resolved['period'],
+            '_hb_ucs_subscription_period' => (string) $resolved['period'],
+        ];
+
+        foreach ($this->get_related_subscription_ids($subId) as $targetId) {
+            foreach ($scheduleMeta as $metaKey => $metaValue) {
+                $this->update_subscription_post_meta_if_changed($targetId, $metaKey, $metaValue);
+            }
+        }
+
+        return $resolved;
     }
 
     private function get_subscription_payment_method_label(int $subId): string {
@@ -7639,14 +7713,10 @@ class SubscriptionsModule {
             $userId = (int) get_current_user_id();
         }
 
-        $scheme = (string) $sourceItem->get_meta('_hb_ucs_subscription_scheme', true);
-        $interval = 0;
-        if (preg_match('/^(\d)w$/', $scheme, $m)) {
-            $interval = (int) $m[1];
-        }
-        if ($interval <= 0) {
-            $interval = 1;
-        }
+        $schedule = $this->resolve_subscription_schedule((string) $sourceItem->get_meta('_hb_ucs_subscription_scheme', true));
+        $scheme = (string) $schedule['scheme'];
+        $interval = (int) $schedule['interval'];
+        $period = (string) $schedule['period'];
 
         $productId = 0;
         $variationId = 0;
@@ -7701,10 +7771,15 @@ class SubscriptionsModule {
         }
         update_post_meta($subId, self::SUB_META_SCHEME, $scheme);
         update_post_meta($subId, self::SUB_META_INTERVAL, (string) $interval);
+        update_post_meta($subId, self::SUB_META_PERIOD, (string) $period);
         update_post_meta($subId, self::SUB_META_QTY, (string) $qty);
         update_post_meta($subId, self::SUB_META_UNIT_PRICE, (string) wc_format_decimal($unitPrice, wc_get_price_decimals()));
         update_post_meta($subId, self::SUB_META_NEXT_PAYMENT, (string) (time() + ($interval * WEEK_IN_SECONDS)));
         update_post_meta($subId, self::SUB_META_STATUS, ($mCustomer !== '' && $mMandate !== '') ? 'active' : 'pending_mandate');
+        update_post_meta($subId, '_hb_ucs_subscription_scheme', $scheme);
+        update_post_meta($subId, '_hb_ucs_subscription_interval', (string) $interval);
+        update_post_meta($subId, '_hb_ucs_subscription_period', (string) $period);
+        update_post_meta($subId, '_hb_ucs_subscription_next_payment', (string) (time() + ($interval * WEEK_IN_SECONDS)));
         update_post_meta($subId, self::SUB_META_BILLING, $this->get_subscription_address_snapshot($subId, 'billing', $userId, $sourceOrder));
         update_post_meta($subId, self::SUB_META_SHIPPING, $this->get_subscription_address_snapshot($subId, 'shipping', $userId, $sourceOrder));
         if ($mCustomer !== '') {
@@ -8430,14 +8505,9 @@ class SubscriptionsModule {
     }
 
     private function calculate_next_payment_timestamp(int $subId): int {
-        $interval = (int) get_post_meta($subId, self::SUB_META_INTERVAL, true);
-        $period = (string) get_post_meta($subId, self::SUB_META_PERIOD, true);
-        if ($interval <= 0) {
-            $interval = 1;
-        }
-        if ($period === '') {
-            $period = 'week';
-        }
+        $schedule = $this->repair_subscription_schedule_meta($subId);
+        $interval = (int) $schedule['interval'];
+        $period = (string) $schedule['period'];
 
         $step = $interval * WEEK_IN_SECONDS;
         if ($step <= 0) {
@@ -9973,12 +10043,10 @@ JS;
             $lineTotal = (float) (method_exists($item, 'get_total') ? $item->get_total() : 0.0);
             $unit = $qty > 0 ? ($lineTotal / $qty) : $lineTotal;
 
-            $freqs = $this->get_configured_frequencies(false);
-            $interval = isset($freqs[$scheme]['interval']) ? (int) $freqs[$scheme]['interval'] : 1;
-            $period = isset($freqs[$scheme]['period']) ? (string) $freqs[$scheme]['period'] : 'week';
-            if ($interval <= 0) {
-                $interval = 1;
-            }
+            $schedule = $this->resolve_subscription_schedule((string) $scheme);
+            $scheme = (string) $schedule['scheme'];
+            $interval = (int) $schedule['interval'];
+            $period = (string) $schedule['period'];
 
             $paidDate = method_exists($order, 'get_date_paid') ? $order->get_date_paid() : null;
             $startTs = $paidDate ? (int) $paidDate->getTimestamp() : time();
