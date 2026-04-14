@@ -167,6 +167,7 @@ class Settings {
             'engine' => 'manual',
             'recurring_enabled' => 0,
             'recurring_webhook_token' => '',
+            'debug_logging_enabled' => 0,
             'product_picker_loop_template_id' => 0,
             'delete_data_on_uninstall' => 0,
             'frequencies' => [
@@ -766,6 +767,15 @@ class Settings {
         echo '<p class="description">' . esc_html__('“Maak demo abonnement” maakt een abonnement-record aan op basis van de meest recente bestelling met een abonnement-regel, zodat je de backend-weergave kunt bekijken.', 'hb-ucs') . '</p>';
         echo '</td>';
         echo '</tr>';
+        echo '<tr>';
+        echo '<th scope="row">' . esc_html__('Logging', 'hb-ucs') . '</th>';
+        echo '<td>';
+        echo '<label><input type="checkbox" name="hb_ucs_subscriptions[debug_logging_enabled]" value="1" ' . checked(!empty($opt['debug_logging_enabled']), true, false) . ' /> ';
+        echo esc_html__('Schakel uitgebreide abonnement-debuglogging in.', 'hb-ucs');
+        echo '</label>';
+        echo '<p class="description">' . esc_html__('Renewal-acties worden altijd gelogd. Met deze optie logt HB UCS ook extra sync- en account-debugregels naar WooCommerce > Status > Logs met bron “hb-ucs-subscription-sync”.', 'hb-ucs') . '</p>';
+        echo '</td>';
+        echo '</tr>';
         echo '</tbody></table>';
 
         echo '<h2>' . esc_html__('Frequenties', 'hb-ucs') . '</h2>';
@@ -1167,6 +1177,7 @@ class Settings {
             'engine' => 'manual',
             'recurring_enabled' => empty($raw['recurring_enabled']) ? 0 : 1,
             'recurring_webhook_token' => $token,
+            'debug_logging_enabled' => empty($raw['debug_logging_enabled']) ? 0 : 1,
             'product_picker_loop_template_id' => isset($raw['product_picker_loop_template_id']) ? max(0, (int) $raw['product_picker_loop_template_id']) : 0,
             'delete_data_on_uninstall' => empty($raw['delete_data_on_uninstall']) ? 0 : 1,
             'frequencies' => $cleanFreqs,

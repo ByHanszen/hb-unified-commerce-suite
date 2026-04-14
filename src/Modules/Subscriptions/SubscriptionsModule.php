@@ -316,6 +316,76 @@ class SubscriptionsModule {
         return $changed;
     }
 
+    private function get_subscription_schedule_step_seconds(int $subId): int {
+        $schedule = $this->repair_subscription_schedule_meta($subId);
+        $interval = max(1, (int) ($schedule['interval'] ?? 0));
+        $period = sanitize_key((string) ($schedule['period'] ?? 'week'));
+
+        if ($period === '' || $period === 'week' || $period === 'weeks') {
+            return $interval * WEEK_IN_SECONDS;
+        }
+
+        return $interval * WEEK_IN_SECONDS;
+    }
+
+    private function get_subscription_minimum_next_payment(int $subId, int $referenceTimestamp = 0): int {
+        if ($subId <= 0) {
+            return 0;
+        }
+
+        $step = $this->get_subscription_schedule_step_seconds($subId);
+        if ($step <= 0) {
+            return 0;
+        }
+
+        if ($referenceTimestamp <= 0) {
+            $referenceTimestamp = (int) get_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, true);
+        }
+
+        if ($referenceTimestamp <= 0) {
+            return 0;
+        }
+
+        return $referenceTimestamp + $step;
+    }
+
+    private function normalize_subscription_next_payment(int $subId, int $candidateNextPayment = 0, int $referenceTimestamp = 0): int {
+        if ($subId <= 0) {
+            return 0;
+        }
+
+        $minimumNextPayment = $this->get_subscription_minimum_next_payment($subId, $referenceTimestamp);
+
+        if ($candidateNextPayment <= 0) {
+            return $minimumNextPayment;
+        }
+
+        if ($minimumNextPayment > 0 && $candidateNextPayment < $minimumNextPayment) {
+            return $minimumNextPayment;
+        }
+
+        return $candidateNextPayment;
+    }
+
+    private function get_order_reference_timestamp($order): int {
+        if (!$order || !is_object($order)) {
+            return 0;
+        }
+
+        foreach (['get_date_paid', 'get_date_completed', 'get_date_created'] as $method) {
+            if (!method_exists($order, $method)) {
+                continue;
+            }
+
+            $date = $order->{$method}();
+            if ($date) {
+                return (int) $date->getTimestamp();
+            }
+        }
+
+        return 0;
+    }
+
     private function persist_subscription_last_order_state(int $subId, int $orderId, ?int $orderDate = null): bool {
         if ($subId <= 0 || $orderId <= 0) {
             return false;
@@ -8505,50 +8575,60 @@ class SubscriptionsModule {
     }
 
     private function calculate_next_payment_timestamp(int $subId): int {
-        $schedule = $this->repair_subscription_schedule_meta($subId);
-        $interval = (int) $schedule['interval'];
-        $period = (string) $schedule['period'];
-
-        $step = $interval * WEEK_IN_SECONDS;
+        $step = $this->get_subscription_schedule_step_seconds($subId);
         if ($step <= 0) {
             $step = WEEK_IN_SECONDS;
         }
 
         $now = time();
-        $currentNext = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
-        $base = $currentNext > 0 ? max($currentNext, $now) : $now;
-        $next = $base;
+        $currentNext = $this->normalize_subscription_next_payment(
+            $subId,
+            (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true)
+        );
 
-        if ($period === 'week' || $period === 'weeks') {
-            $next = $base + $step;
+        if ($currentNext > 0) {
+            $next = $currentNext;
         } else {
-            $next = $base + $step;
+            $lastOrderDate = (int) get_post_meta($subId, self::SUB_META_LAST_ORDER_DATE, true);
+            $next = $lastOrderDate > 0 ? $lastOrderDate : $now;
         }
 
         while ($next <= $now) {
             $next += $step;
         }
 
-        return $next;
+        return $this->normalize_subscription_next_payment($subId, $next);
     }
 
     private function get_recorded_renewal_next_payment($order, int $subId): int {
+        $referenceTimestamp = $this->get_order_reference_timestamp($order);
         $recordedNextPayment = 0;
 
         if ($order && is_object($order) && method_exists($order, 'get_meta')) {
             $recordedNextPayment = (int) $order->get_meta(self::ORDER_META_RENEWAL_NEXT_PAYMENT, true);
         }
 
+        $recordedNextPayment = $this->normalize_subscription_next_payment($subId, $recordedNextPayment, $referenceTimestamp);
+
         if ($recordedNextPayment > time()) {
             return $recordedNextPayment;
         }
 
-        $currentNextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
+        $currentNextPayment = $this->normalize_subscription_next_payment(
+            $subId,
+            (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true),
+            $referenceTimestamp
+        );
+
         if ($currentNextPayment > time()) {
             return $currentNextPayment;
         }
 
-        return $this->calculate_next_payment_timestamp($subId);
+        return $this->normalize_subscription_next_payment(
+            $subId,
+            $this->calculate_next_payment_timestamp($subId),
+            $referenceTimestamp
+        );
     }
 
     private function mark_subscription_paid_and_advance(int $subId): void {
@@ -9971,6 +10051,7 @@ JS;
             'engine' => $engine,
             'recurring_enabled' => $recurringEnabled,
             'recurring_webhook_token' => $webhookToken,
+            'debug_logging_enabled' => empty($opt['debug_logging_enabled']) ? 0 : 1,
             'product_picker_loop_template_id' => isset($opt['product_picker_loop_template_id']) ? max(0, (int) $opt['product_picker_loop_template_id']) : 0,
             'delete_data_on_uninstall' => empty($opt['delete_data_on_uninstall']) ? 0 : 1,
             'frequencies' => $freqs,
@@ -10461,9 +10542,16 @@ JS;
     }
 
     private function log_renewal_debug(string $event, int $subId, array $context = []): void {
-        SubscriptionSyncLogger::debug($event, array_merge([
+        $payload = array_merge([
             'subscription_id' => $subId,
-        ], $context));
+        ], $context);
+
+        if (preg_match('/(error|exception|missing|failed)/', $event)) {
+            SubscriptionSyncLogger::warning($event, $payload);
+            return;
+        }
+
+        SubscriptionSyncLogger::info($event, $payload);
     }
 
     private function build_renewal_order_debug_snapshot($order): array {
@@ -10534,7 +10622,14 @@ JS;
             return 0;
         }
 
-        $nextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
+        $storedNextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
+        $nextPayment = $this->normalize_subscription_next_payment($subId, $storedNextPayment);
+
+        if ($nextPayment > 0 && $nextPayment !== $storedNextPayment) {
+            $this->persist_subscription_runtime_state($subId, '', $nextPayment);
+            $this->sync_subscription_order_type_record($subId);
+        }
+
         if (!$force && $nextPayment > time()) {
             return 0;
         }
