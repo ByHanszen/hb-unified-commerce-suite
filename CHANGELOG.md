@@ -4,11 +4,12 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
-## [0.3.169] — 2026-04-14
+## [0.3.170] — 2026-04-14
 ### Fixed
 - Abonnement-renewals: de scheduler valideert `next_payment` nu eerst tegen de abonnementsfrequentie en de datum van de laatste renewal. Daardoor kan een te vroege of corrupte `next_payment` niet meer leiden tot een extra renewal een week later terwijl het abonnement pas over 2 of 4 weken weer aan de beurt is.
 - Renewal-sync: bij het verwerken van een betaalde of aangemaakte renewal wordt een opgeslagen `recorded_next_payment` nu ook getoetst aan het verwachte schema vanaf de renewal-datum. Daardoor blijft een foutief meegeschreven vervolgdatuм niet langer leidend voor latere cron-runs.
 - Abonnement-logging: renewal-acties schrijven nu altijd naar WooCommerce logs met bron `hb-ucs-subscription-sync`, ook zonder verborgen debug-constante. Daarnaast is er een expliciete instelling voor uitgebreide abonnement-debuglogging, zodat sync- en account-acties gericht mee gelogd kunnen worden.
+- Renewal-kortingen: renewal-orderregels en subscription-order-sync bewaren nu weer het onderscheid tussen `subtotal` en `total`, inclusief aparte `subtotal_tax` en `total_tax`. Daardoor blijven productkortingen zichtbaar op renewal orders en komt de btw weer overeen met zowel de prijs voor als na korting.
 
 ## [0.3.166] — 2026-04-09
 ### Fixed

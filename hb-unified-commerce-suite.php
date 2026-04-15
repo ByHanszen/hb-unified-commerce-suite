@@ -12,7 +12,7 @@ if (!defined('HB_UCS_PLUGIN_FILE')) {
     define('HB_UCS_PLUGIN_FILE', __FILE__);
 }
 if (!defined('HB_UCS_VERSION')) {
-    define('HB_UCS_VERSION', '0.3.169');
+    define('HB_UCS_VERSION', '0.3.170');
 }
 
 spl_autoload_register(function ($class) {

@@ -6288,6 +6288,7 @@ class SubscriptionsModule {
             $itemTaxes = $this->normalize_subscription_item_taxes($item['taxes'] ?? []);
             $lineTax = (float) wc_format_decimal((string) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['total'] ?? [])));
             $subtotalTax = (float) wc_format_decimal((string) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['subtotal'] ?? [])));
+            $lineTotalExcludingTax = (float) wc_format_decimal((string) max(0.0, ((float) ($lineTotals['line_total'] ?? 0.0)) - $lineTax));
 
             $orderItem = new \WC_Order_Item_Product();
             if ($product && is_object($product) && method_exists($orderItem, 'set_product')) {
@@ -6304,7 +6305,7 @@ class SubscriptionsModule {
             }
             $orderItem->set_quantity($qty);
             $orderItem->set_subtotal((float) ($lineTotals['line_subtotal'] ?? 0.0));
-            $orderItem->set_total((float) ($lineTotals['line_subtotal'] ?? 0.0));
+            $orderItem->set_total($lineTotalExcludingTax);
             if (method_exists($orderItem, 'set_subtotal_tax')) {
                 $orderItem->set_subtotal_tax($subtotalTax);
             }
@@ -10704,17 +10705,19 @@ JS;
             }
 
             $orderTotals = $this->get_subscription_item_order_totals($subscriptionItem, $customer);
-            $itemTaxes = [
-                'subtotal' => $orderTotals['tax_breakdown'],
-                'total' => $orderTotals['tax_breakdown'],
-            ];
+            $itemTaxes = $this->get_subscription_item_taxes($subscriptionItem, $customer);
+            $lineTax = (float) wc_format_decimal((string) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['total'] ?? [])));
+            $subtotalTax = (float) wc_format_decimal((string) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['subtotal'] ?? [])));
+            $lineTotalExcludingTax = (float) wc_format_decimal((string) max(0.0, ((float) ($orderTotals['line_total'] ?? 0.0)) - $lineTax));
             $preparedOrderItems[] = [
                 'product' => $productToAdd,
                 'base_product_id' => $baseProductId,
                 'base_variation_id' => $baseVariationId,
                 'qty' => $qty,
                 'line_subtotal' => (float) ($orderTotals['line_subtotal'] ?? 0.0),
+                'line_subtotal_tax' => $subtotalTax,
                 'line_tax' => (float) ($orderTotals['line_tax'] ?? 0.0),
+                'line_total_ex_tax' => $lineTotalExcludingTax,
                 'taxes' => $itemTaxes,
                 'source_order_item_id' => (int) ($subscriptionItem['source_order_item_id'] ?? 0),
                 'catalog_unit_price' => $this->get_subscription_item_catalog_unit_price($subscriptionItem),
@@ -10760,9 +10763,9 @@ JS;
                 $item->set_product($preparedItem['product']);
                 $item->set_quantity((int) $preparedItem['qty']);
                 $item->set_subtotal((float) $preparedItem['line_subtotal']);
-                $item->set_total((float) $preparedItem['line_subtotal']);
+                $item->set_total((float) $preparedItem['line_total_ex_tax']);
                 if (method_exists($item, 'set_subtotal_tax')) {
-                    $item->set_subtotal_tax((float) $preparedItem['line_tax']);
+                    $item->set_subtotal_tax((float) $preparedItem['line_subtotal_tax']);
                 }
                 if (method_exists($item, 'set_total_tax')) {
                     $item->set_total_tax((float) $preparedItem['line_tax']);
