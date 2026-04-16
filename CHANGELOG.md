@@ -10,6 +10,7 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 - Renewal-sync: bij het verwerken van een betaalde of aangemaakte renewal wordt een opgeslagen `recorded_next_payment` nu ook getoetst aan het verwachte schema vanaf de renewal-datum. Daardoor blijft een foutief meegeschreven vervolgdatuм niet langer leidend voor latere cron-runs.
 - Abonnement-logging: renewal-acties schrijven nu altijd naar WooCommerce logs met bron `hb-ucs-subscription-sync`, ook zonder verborgen debug-constante. Daarnaast is er een expliciete instelling voor uitgebreide abonnement-debuglogging, zodat sync- en account-acties gericht mee gelogd kunnen worden.
 - Renewal-kortingen: renewal-orderregels en subscription-order-sync bewaren nu weer het onderscheid tussen `subtotal` en `total`, inclusief aparte `subtotal_tax` en `total_tax`. Daardoor blijven productkortingen zichtbaar op renewal orders en komt de btw weer overeen met zowel de prijs voor als na korting.
+- Renewal-afronding: subscription-bedragen met meer dan twee decimalen worden nu eerst afgerond op WooCommerce-prijsdecimalen voordat ze als orderregel op renewal orders en subscription-orders worden gezet. Daardoor verschuift een prijs als `24.724771` niet meer zichtbaar naar `24.73` in de renewal terwijl het abonnement zelf op `24.72` uitkomt.
 
 ## [0.3.166] — 2026-04-09
 ### Fixed

@@ -1890,6 +1890,12 @@ class SubscriptionsModule {
         ];
     }
 
+    private function round_subscription_order_item_amount(float $amount): float {
+        $decimals = function_exists('wc_get_price_decimals') ? (int) wc_get_price_decimals() : 2;
+
+        return (float) wc_format_decimal((string) $amount, $decimals);
+    }
+
     private function get_subscription_fee_line_totals(array $feeLine): array {
         $subtotal = (float) wc_format_decimal((string) ($feeLine['total'] ?? 0.0));
         $taxBreakdown = $this->normalize_subscription_tax_amounts(isset($feeLine['taxes']) && is_array($feeLine['taxes']) ? $feeLine['taxes'] : []);
@@ -6286,9 +6292,10 @@ class SubscriptionsModule {
             $qty = max(1, (int) ($item['qty'] ?? 1));
             $lineTotals = $this->get_subscription_item_order_totals($item, $customer);
             $itemTaxes = $this->normalize_subscription_item_taxes($item['taxes'] ?? []);
-            $lineTax = (float) wc_format_decimal((string) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['total'] ?? [])));
-            $subtotalTax = (float) wc_format_decimal((string) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['subtotal'] ?? [])));
-            $lineTotalExcludingTax = (float) wc_format_decimal((string) max(0.0, ((float) ($lineTotals['line_total'] ?? 0.0)) - $lineTax));
+            $lineTax = $this->round_subscription_order_item_amount((float) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['total'] ?? [])));
+            $subtotalTax = $this->round_subscription_order_item_amount((float) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['subtotal'] ?? [])));
+            $lineSubtotal = $this->round_subscription_order_item_amount((float) ($lineTotals['line_subtotal'] ?? 0.0));
+            $lineTotalExcludingTax = $this->round_subscription_order_item_amount(max(0.0, ((float) ($lineTotals['line_total'] ?? 0.0)) - (float) $lineTax));
 
             $orderItem = new \WC_Order_Item_Product();
             if ($product && is_object($product) && method_exists($orderItem, 'set_product')) {
@@ -6304,7 +6311,7 @@ class SubscriptionsModule {
                 $orderItem->set_variation_id($baseVariationId);
             }
             $orderItem->set_quantity($qty);
-            $orderItem->set_subtotal((float) ($lineTotals['line_subtotal'] ?? 0.0));
+            $orderItem->set_subtotal($lineSubtotal);
             $orderItem->set_total($lineTotalExcludingTax);
             if (method_exists($orderItem, 'set_subtotal_tax')) {
                 $orderItem->set_subtotal_tax($subtotalTax);
@@ -10706,17 +10713,18 @@ JS;
 
             $orderTotals = $this->get_subscription_item_order_totals($subscriptionItem, $customer);
             $itemTaxes = $this->get_subscription_item_taxes($subscriptionItem, $customer);
-            $lineTax = (float) wc_format_decimal((string) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['total'] ?? [])));
-            $subtotalTax = (float) wc_format_decimal((string) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['subtotal'] ?? [])));
-            $lineTotalExcludingTax = (float) wc_format_decimal((string) max(0.0, ((float) ($orderTotals['line_total'] ?? 0.0)) - $lineTax));
+            $lineTax = $this->round_subscription_order_item_amount((float) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['total'] ?? [])));
+            $subtotalTax = $this->round_subscription_order_item_amount((float) array_sum($this->normalize_subscription_tax_amounts($itemTaxes['subtotal'] ?? [])));
+            $lineSubtotal = $this->round_subscription_order_item_amount((float) ($orderTotals['line_subtotal'] ?? 0.0));
+            $lineTotalExcludingTax = $this->round_subscription_order_item_amount(max(0.0, ((float) ($orderTotals['line_total'] ?? 0.0)) - (float) $lineTax));
             $preparedOrderItems[] = [
                 'product' => $productToAdd,
                 'base_product_id' => $baseProductId,
                 'base_variation_id' => $baseVariationId,
                 'qty' => $qty,
-                'line_subtotal' => (float) ($orderTotals['line_subtotal'] ?? 0.0),
+                'line_subtotal' => $lineSubtotal,
                 'line_subtotal_tax' => $subtotalTax,
-                'line_tax' => (float) ($orderTotals['line_tax'] ?? 0.0),
+                'line_tax' => $lineTax,
                 'line_total_ex_tax' => $lineTotalExcludingTax,
                 'taxes' => $itemTaxes,
                 'source_order_item_id' => (int) ($subscriptionItem['source_order_item_id'] ?? 0),
