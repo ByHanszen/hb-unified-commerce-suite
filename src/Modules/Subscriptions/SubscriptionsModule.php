@@ -2813,7 +2813,7 @@ class SubscriptionsModule {
                     continue;
                 }
 
-                $rateKey = $this->get_subscription_shipping_rate_key($rate);
+                $rateKey = $this->get_subscription_shipping_selection_key($rate);
                 if ($rateKey === '') {
                     continue;
                 }
@@ -3220,7 +3220,7 @@ class SubscriptionsModule {
                 $this->persist_subscription_shipping_lines($subId, $shippingLines);
                 $this->persist_linked_legacy_subscription_shipping_lines($subId, $shippingLines);
 
-                $newRateKey = $this->get_subscription_shipping_rate_key($shippingLines[0]);
+                $newRateKey = $this->get_subscription_shipping_selection_key($shippingLines[0]);
                 if ($newRateKey !== '' && $newRateKey !== $previousRateKey) {
                     $this->add_subscription_admin_note(
                         $subId,
@@ -6740,7 +6740,7 @@ class SubscriptionsModule {
     private function resolve_subscription_shipping_rate_selection(array $availableRates, string $preferredRateKey = '', array $existingLines = []): ?array {
         if (!empty($preferredRateKey)) {
             foreach ($availableRates as $rate) {
-                if ($this->get_subscription_shipping_rate_key((array) $rate) === $preferredRateKey) {
+                if ($this->get_subscription_shipping_selection_key((array) $rate) === $preferredRateKey) {
                     return is_array($rate) ? $rate : null;
                 }
             }
@@ -7048,7 +7048,23 @@ class SubscriptionsModule {
         return $methodId . ':' . $instanceId;
     }
 
+    private function get_subscription_shipping_selection_key(array $rate): string {
+        $signature = [
+            'rate_key' => $this->get_subscription_shipping_rate_key($rate),
+            'method_id' => (string) ($rate['method_id'] ?? ''),
+            'instance_id' => (int) ($rate['instance_id'] ?? 0),
+            'method_title' => trim((string) ($rate['method_title'] ?? '')),
+            'total' => wc_format_decimal((string) ($rate['total'] ?? 0.0), wc_get_price_decimals()),
+        ];
+
+        return 'ship_' . md5((string) wp_json_encode($signature));
+    }
+
     private function subscription_shipping_line_matches_rate(array $line, array $rate): bool {
+        if ($this->get_subscription_shipping_selection_key($line) === $this->get_subscription_shipping_selection_key($rate)) {
+            return true;
+        }
+
         $lineRateKey = $this->get_subscription_shipping_rate_key($line);
         $rateRateKey = $this->get_subscription_shipping_rate_key($rate);
 
@@ -7104,14 +7120,14 @@ class SubscriptionsModule {
                 }
 
                 if ($this->subscription_shipping_line_matches_rate($line, $rate)) {
-                    return $this->get_subscription_shipping_rate_key($rate);
+                    return $this->get_subscription_shipping_selection_key($rate);
                 }
             }
         }
 
         $selectedRate = $this->resolve_subscription_shipping_rate_selection($availableRates);
 
-        return $selectedRate ? $this->get_subscription_shipping_rate_key($selectedRate) : '';
+        return $selectedRate ? $this->get_subscription_shipping_selection_key($selectedRate) : '';
     }
 
     private function format_subscription_frontend_price(float $amount): string {

@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.178] — 2026-04-29
+### Fixed
+- Abonnementen verzending: de dropdown gebruikt nu een unieke selectiecode per WooCommerce-ratevariant. Daardoor blijven verschillende betaalde verzendopties ook correct onderscheiden wanneer een verzendplugin meerdere rates met dezelfde onderliggende `rate_key` of methode-instance teruggeeft.
+
 ## [0.3.177] — 2026-04-29
 ### Fixed
 - Abonnementen verzending: de frontend-selectie en herselectie van bestaande verzendregels matcht nu niet alleen op `rate_key`, maar ook op verzendtitel en bedrag. Daardoor blijft de dropdown gelijk lopen met de daadwerkelijk opgeslagen abonnementsorder, ook wanneer een verzendplugin meerdere betaalde rates onder dezelfde methode-instance aanbiedt.
