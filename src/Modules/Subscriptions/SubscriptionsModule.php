@@ -6750,31 +6750,12 @@ class SubscriptionsModule {
             if (!is_array($existingLine)) {
                 continue;
             }
-
-            $existingRateKey = $this->get_subscription_shipping_rate_key($existingLine);
-            if ($existingRateKey !== '') {
-                foreach ($availableRates as $rate) {
-                    if (!is_array($rate)) {
-                        continue;
-                    }
-
-                    if ($existingRateKey === $this->get_subscription_shipping_rate_key($rate)) {
-                        return $rate;
-                    }
-                }
-            }
-
-            $existingMethodId = (string) ($existingLine['method_id'] ?? '');
-            $existingInstanceId = (int) ($existingLine['instance_id'] ?? 0);
             foreach ($availableRates as $rate) {
                 if (!is_array($rate)) {
                     continue;
                 }
 
-                if (
-                    $existingMethodId === (string) ($rate['method_id'] ?? '')
-                    && $existingInstanceId === (int) ($rate['instance_id'] ?? 0)
-                ) {
+                if ($this->subscription_shipping_line_matches_rate($existingLine, $rate)) {
                     return $rate;
                 }
             }
@@ -7067,6 +7048,46 @@ class SubscriptionsModule {
         return $methodId . ':' . $instanceId;
     }
 
+    private function subscription_shipping_line_matches_rate(array $line, array $rate): bool {
+        $lineRateKey = $this->get_subscription_shipping_rate_key($line);
+        $rateRateKey = $this->get_subscription_shipping_rate_key($rate);
+
+        if ($lineRateKey !== '' && $rateRateKey !== '' && $lineRateKey === $rateRateKey) {
+            return true;
+        }
+
+        $lineMethodTitle = trim((string) ($line['method_title'] ?? ''));
+        $rateMethodTitle = trim((string) ($rate['method_title'] ?? ''));
+        $lineMethodId = (string) ($line['method_id'] ?? '');
+        $rateMethodId = (string) ($rate['method_id'] ?? '');
+        $lineInstanceId = (int) ($line['instance_id'] ?? 0);
+        $rateInstanceId = (int) ($rate['instance_id'] ?? 0);
+        $lineTotal = wc_format_decimal((string) ($line['total'] ?? 0.0), wc_get_price_decimals());
+        $rateTotal = wc_format_decimal((string) ($rate['total'] ?? 0.0), wc_get_price_decimals());
+
+        if (
+            $lineMethodTitle !== ''
+            && $rateMethodTitle !== ''
+            && $lineMethodTitle === $rateMethodTitle
+            && $lineTotal === $rateTotal
+            && $lineMethodId === $rateMethodId
+            && $lineInstanceId === $rateInstanceId
+        ) {
+            return true;
+        }
+
+        if (
+            $lineMethodTitle !== ''
+            && $rateMethodTitle !== ''
+            && $lineMethodTitle === $rateMethodTitle
+            && $lineTotal === $rateTotal
+        ) {
+            return true;
+        }
+
+        return $lineMethodId === $rateMethodId && $lineInstanceId === $rateInstanceId;
+    }
+
     private function get_selected_subscription_shipping_rate_key(int $subId, array $availableRates, $fallbackOrder = null): string {
         if (empty($availableRates)) {
             return '';
@@ -7077,31 +7098,12 @@ class SubscriptionsModule {
             if (!is_array($line)) {
                 continue;
             }
-
-            $currentRateKey = $this->get_subscription_shipping_rate_key($line);
-            if ($currentRateKey !== '') {
-                foreach ($availableRates as $rate) {
-                    if (!is_array($rate)) {
-                        continue;
-                    }
-
-                    if ($currentRateKey === $this->get_subscription_shipping_rate_key($rate)) {
-                        return $currentRateKey;
-                    }
-                }
-            }
-
-            $currentMethodId = (string) ($line['method_id'] ?? '');
-            $currentInstanceId = (int) ($line['instance_id'] ?? 0);
             foreach ($availableRates as $rate) {
                 if (!is_array($rate)) {
                     continue;
                 }
 
-                if (
-                    $currentMethodId === (string) ($rate['method_id'] ?? '')
-                    && $currentInstanceId === (int) ($rate['instance_id'] ?? 0)
-                ) {
+                if ($this->subscription_shipping_line_matches_rate($line, $rate)) {
                     return $this->get_subscription_shipping_rate_key($rate);
                 }
             }

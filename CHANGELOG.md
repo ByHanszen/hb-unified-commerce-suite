@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.177] — 2026-04-29
+### Fixed
+- Abonnementen verzending: de frontend-selectie en herselectie van bestaande verzendregels matcht nu niet alleen op `rate_key`, maar ook op verzendtitel en bedrag. Daardoor blijft de dropdown gelijk lopen met de daadwerkelijk opgeslagen abonnementsorder, ook wanneer een verzendplugin meerdere betaalde rates onder dezelfde methode-instance aanbiedt.
+
 ## [0.3.176] — 2026-04-29
 ### Fixed
 - Abonnementen verzending: repository- en shadow-order-sync bewaren de shipping `rate_key` nu ook op verzendregels. Daardoor blijft een gekozen betaalde variant ook na sync behouden, in plaats van terug te vallen naar de eerste rate binnen dezelfde WooCommerce verzendmethode.
