@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.183] — 2026-04-29
+### Fixed
+- QLS checkout: de modal-fix volgt nu de echte opbouw van de externe QLS locator-plugin, die een fullscreen wrapper-div met `iframe#qls_servicepoint_locator` injecteert. Daardoor staat de sluitknop weer rechtsboven bij het venster en wordt bij handmatig sluiten de volledige wrapper verwijderd, zodat er geen onzichtbare overlay achterblijft.
+
 ## [0.3.182] — 2026-04-29
 ### Fixed
 - QLS checkout: de servicepunt modal-fix wordt nu alleen nog geladen wanneer een actieve plugin-slug met `qlsgroup-woocommerce-service-points` is gevonden. Daardoor draait er geen onnodige checkout-footerlogica als de externe QLS servicepoint-plugin niet actief is.

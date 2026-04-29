@@ -69,29 +69,31 @@ class QLSModule {
         <style>
             /*
              * HB UCS - QLS servicepunt iframe/popup fix
-             * Zorgt dat het QLS servicepuntvenster gecentreerd opent
-             * met maximaal 80% schermbreedte en 80% schermhoogte.
+             * Sluit aan op de externe QLS locator-plugin, die een fullscreen
+             * wrapper-div met iframe#qls_servicepoint_locator toevoegt.
              */
 
+            body.woocommerce-checkout iframe#qls_servicepoint_locator,
             body.woocommerce-checkout iframe[src*="pakketdienstqls.nl"],
             body.woocommerce-checkout iframe[src*="servicepoint"],
             body.woocommerce-checkout iframe[src*="service-point"],
             body.woocommerce-checkout iframe[id*="qls"],
             body.woocommerce-checkout iframe[class*="qls"] {
-                position: fixed !important;
-                top: 50% !important;
-                left: 50% !important;
+                position: relative !important;
+                top: auto !important;
+                left: auto !important;
                 width: 80vw !important;
                 height: 80vh !important;
                 max-width: 80vw !important;
                 max-height: 80vh !important;
-                transform: translate(-50%, -50%) !important;
-                z-index: 999999 !important;
+                transform: none !important;
+                z-index: 1 !important;
                 border: 0 !important;
                 border-radius: 12px !important;
                 background: #ffffff !important;
                 box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35) !important;
                 overflow: hidden !important;
+                display: block !important;
             }
 
             body.woocommerce-checkout .qls-servicepoint-modal,
@@ -105,30 +107,22 @@ class QLSModule {
             body.woocommerce-checkout [id*="servicepoint"][id*="modal"],
             body.woocommerce-checkout [id*="servicepoint"][id*="popup"] {
                 position: fixed !important;
-                top: 50% !important;
-                left: 50% !important;
-                width: 80vw !important;
-                height: 80vh !important;
-                max-width: 80vw !important;
-                max-height: 80vh !important;
-                transform: translate(-50%, -50%) !important;
-                z-index: 999998 !important;
-                background: #ffffff !important;
-                border-radius: 12px !important;
-                overflow: hidden !important;
-            }
-
-            #hb-ucs-qls-servicepoint-backdrop {
-                position: fixed !important;
                 inset: 0 !important;
-                z-index: 999997 !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                max-width: none !important;
+                max-height: none !important;
+                transform: none !important;
+                z-index: 19999999 !important;
                 background: rgba(0, 0, 0, 0.45) !important;
+                overflow: auto !important;
             }
 
             #hb-ucs-qls-servicepoint-close {
-                position: fixed !important;
+                position: absolute !important;
                 top: 24px !important;
-                left: 24px !important;
+                right: 24px !important;
+                left: auto !important;
                 width: 44px !important;
                 height: 44px !important;
                 z-index: 1000000 !important;
@@ -178,6 +172,8 @@ class QLSModule {
                 }
 
                 #hb-ucs-qls-servicepoint-close {
+                    top: 16px !important;
+                    right: 16px !important;
                     width: 42px !important;
                     height: 42px !important;
                     line-height: 42px !important;
@@ -190,11 +186,11 @@ class QLSModule {
                 'use strict';
 
                 var closeButtonId = 'hb-ucs-qls-servicepoint-close';
-                var backdropId = 'hb-ucs-qls-servicepoint-backdrop';
                 var bodyOpenClass = 'hb-ucs-qls-servicepoint-open';
 
                 function findQlsIframe() {
                     return document.querySelector(
+                        'iframe#qls_servicepoint_locator, ' +
                         'iframe[src*="pakketdienstqls.nl"], ' +
                         'iframe[src*="servicepoint"], ' +
                         'iframe[src*="service-point"], ' +
@@ -230,6 +226,10 @@ class QLSModule {
                         return null;
                     }
 
+                    if (iframe.id === 'qls_servicepoint_locator' && iframe.parentElement) {
+                        return iframe.parentElement;
+                    }
+
                     return iframe.closest(
                         '.qls-servicepoint-modal, ' +
                         '.qls-servicepoint-popup, ' +
@@ -241,19 +241,14 @@ class QLSModule {
                         '[class*="servicepoint"][class*="popup"], ' +
                         '[id*="servicepoint"][id*="modal"], ' +
                         '[id*="servicepoint"][id*="popup"]'
-                    ) || iframe;
+                    ) || iframe.parentElement || iframe;
                 }
 
                 function removeCustomControls() {
                     var closeButton = document.getElementById(closeButtonId);
-                    var backdrop = document.getElementById(backdropId);
 
                     if (closeButton) {
                         closeButton.remove();
-                    }
-
-                    if (backdrop) {
-                        backdrop.remove();
                     }
 
                     document.body.classList.remove(bodyOpenClass);
@@ -267,7 +262,7 @@ class QLSModule {
 
                 function positionCloseButton(wrapper, iframe) {
                     var closeButton = document.getElementById(closeButtonId);
-                    var boundsElement = wrapper && wrapper !== iframe ? wrapper : iframe;
+                    var boundsElement = iframe || (wrapper && wrapper !== iframe ? wrapper : null);
 
                     if (!closeButton || !boundsElement) {
                         return;
@@ -275,22 +270,48 @@ class QLSModule {
 
                     var rect = boundsElement.getBoundingClientRect();
                     var isMobile = window.innerWidth <= 768;
-                    var topOffset = isMobile ? 12 : 18;
-                    var rightOffset = isMobile ? 8 : 14;
-                    var buttonSize = closeButton.offsetWidth || (isMobile ? 42 : 44);
+                    var topOffset = isMobile ? 14 : 18;
+                    var rightOffset = isMobile ? 10 : 14;
                     var top = Math.max(rect.top - topOffset, 12);
-                    var left = Math.min(
-                        rect.right - buttonSize + rightOffset,
-                        window.innerWidth - buttonSize - 12
-                    );
+                    var right = Math.max(window.innerWidth - rect.right - rightOffset, 12);
 
                     closeButton.style.top = top + 'px';
-                    closeButton.style.left = Math.max(left, 12) + 'px';
+                    closeButton.style.right = right + 'px';
+                    closeButton.style.left = 'auto';
+                }
+
+                function isInjectedLocatorWrapper(wrapper, iframe) {
+                    return !!(
+                        wrapper &&
+                        iframe &&
+                        wrapper !== iframe &&
+                        iframe.id === 'qls_servicepoint_locator' &&
+                        wrapper.contains(iframe)
+                    );
+                }
+
+                function bindWrapperClose(wrapper, iframe) {
+                    if (!isInjectedLocatorWrapper(wrapper, iframe) || wrapper.dataset.hbUcsQlsBound === '1') {
+                        return;
+                    }
+
+                    wrapper.dataset.hbUcsQlsBound = '1';
+                    wrapper.addEventListener('click', function (event) {
+                        if (event.target === wrapper) {
+                            closeQlsServicepointModal();
+                        }
+                    });
                 }
 
                 function closeQlsServicepointModal() {
                     var iframe = findQlsIframe();
                     var wrapper = findQlsWrapper(iframe);
+
+                    if (isInjectedLocatorWrapper(wrapper, iframe)) {
+                        removeCustomControls();
+                        wrapper.remove();
+                        return;
+                    }
 
                     /*
                      * Eerst proberen we een native sluitknop van QLS te gebruiken.
@@ -316,9 +337,11 @@ class QLSModule {
 
                     /*
                      * Fallback: als QLS geen native sluitknop heeft,
-                     * verbergen we de wrapper/iframe.
+                     * verwijderen of verbergen we de wrapper/iframe.
                      */
-                    if (wrapper) {
+                    if (wrapper && wrapper !== iframe) {
+                        wrapper.remove();
+                    } else if (wrapper) {
                         wrapper.style.display = 'none';
                         wrapper.style.visibility = 'hidden';
                     }
@@ -331,37 +354,33 @@ class QLSModule {
                     removeCustomControls();
                 }
 
-                function createBackdrop() {
-                    if (document.getElementById(backdropId)) {
-                        return;
+                function createCloseButton(wrapper) {
+                    var closeButton = document.getElementById(closeButtonId);
+
+                    if (closeButton && wrapper && closeButton.parentNode !== wrapper) {
+                        closeButton.remove();
+                        closeButton = null;
                     }
 
-                    var backdrop = document.createElement('div');
-                    backdrop.id = backdropId;
-
-                    backdrop.addEventListener('click', function () {
-                        closeQlsServicepointModal();
-                    });
-
-                    document.body.appendChild(backdrop);
-                }
-
-                function createCloseButton() {
-                    if (document.getElementById(closeButtonId)) {
-                        return;
+                    if (closeButton) {
+                        return closeButton;
                     }
 
-                    var closeButton = document.createElement('button');
+                    closeButton = document.createElement('button');
                     closeButton.type = 'button';
                     closeButton.id = closeButtonId;
                     closeButton.setAttribute('aria-label', 'Sluit servicepunt keuze');
                     closeButton.innerHTML = '&times;';
 
-                    closeButton.addEventListener('click', function () {
+                    closeButton.addEventListener('click', function (event) {
+                        event.preventDefault();
+                        event.stopPropagation();
                         closeQlsServicepointModal();
                     });
 
-                    document.body.appendChild(closeButton);
+                    (wrapper || document.body).appendChild(closeButton);
+
+                    return closeButton;
                 }
 
                 function applyQlsModalFix() {
@@ -377,7 +396,23 @@ class QLSModule {
                     var modalWidth = isMobile ? '90vw' : '80vw';
                     var modalHeight = isMobile ? '85vh' : '80vh';
 
-                    if (wrapper) {
+                    if (isInjectedLocatorWrapper(wrapper, iframe)) {
+                        wrapper.style.position = 'fixed';
+                        wrapper.style.inset = '0';
+                        wrapper.style.width = '100vw';
+                        wrapper.style.height = '100vh';
+                        wrapper.style.maxWidth = 'none';
+                        wrapper.style.maxHeight = 'none';
+                        wrapper.style.transform = 'none';
+                        wrapper.style.zIndex = '19999999';
+                        wrapper.style.background = 'rgba(0, 0, 0, 0.45)';
+                        wrapper.style.display = 'flex';
+                        wrapper.style.alignItems = 'center';
+                        wrapper.style.justifyContent = 'center';
+                        wrapper.style.padding = isMobile ? '16px' : '24px';
+                        wrapper.style.boxSizing = 'border-box';
+                        wrapper.style.overflow = 'auto';
+                    } else if (wrapper && wrapper !== iframe) {
                         wrapper.style.position = 'fixed';
                         wrapper.style.top = '50%';
                         wrapper.style.left = '50%';
@@ -392,22 +427,23 @@ class QLSModule {
                         wrapper.style.overflow = 'hidden';
                     }
 
-                    iframe.style.position = 'fixed';
-                    iframe.style.top = '50%';
-                    iframe.style.left = '50%';
+                    iframe.style.position = isInjectedLocatorWrapper(wrapper, iframe) ? 'relative' : 'fixed';
+                    iframe.style.top = isInjectedLocatorWrapper(wrapper, iframe) ? 'auto' : '50%';
+                    iframe.style.left = isInjectedLocatorWrapper(wrapper, iframe) ? 'auto' : '50%';
                     iframe.style.width = modalWidth;
                     iframe.style.height = modalHeight;
                     iframe.style.maxWidth = modalWidth;
                     iframe.style.maxHeight = modalHeight;
-                    iframe.style.transform = 'translate(-50%, -50%)';
-                    iframe.style.zIndex = '999999';
+                    iframe.style.transform = isInjectedLocatorWrapper(wrapper, iframe) ? 'none' : 'translate(-50%, -50%)';
+                    iframe.style.zIndex = isInjectedLocatorWrapper(wrapper, iframe) ? '1' : '999999';
                     iframe.style.border = '0';
                     iframe.style.borderRadius = '12px';
                     iframe.style.background = '#ffffff';
                     iframe.style.boxShadow = '0 20px 60px rgba(0, 0, 0, 0.35)';
+                    iframe.style.display = 'block';
 
-                    createBackdrop();
-                    createCloseButton();
+                    bindWrapperClose(wrapper, iframe);
+                    createCloseButton(isInjectedLocatorWrapper(wrapper, iframe) ? wrapper : document.body);
                     positionCloseButton(wrapper, iframe);
 
                     document.body.classList.add(bodyOpenClass);
@@ -426,27 +462,6 @@ class QLSModule {
 
                 document.addEventListener('click', function () {
                     window.setTimeout(applyQlsModalFix, 250);
-                }, true);
-
-                document.addEventListener('mousedown', function (event) {
-                    if (!document.body.classList.contains(bodyOpenClass) || !isServicepointModalOpen()) {
-                        return;
-                    }
-
-                    var iframe = findQlsIframe();
-                    var wrapper = findQlsWrapper(iframe);
-                    var closeButton = document.getElementById(closeButtonId);
-                    var target = event.target;
-                    var clickedCloseButton = closeButton && closeButton.contains(target);
-                    var clickedWrapper = wrapper && wrapper !== iframe && wrapper.contains(target);
-                    var clickedIframe = iframe && iframe.contains(target);
-                    var clickedBackdrop = target && target.id === backdropId;
-
-                    if (!clickedCloseButton && !clickedWrapper && !clickedIframe) {
-                        if (!clickedBackdrop) {
-                            closeQlsServicepointModal();
-                        }
-                    }
                 }, true);
 
                 document.addEventListener('keydown', function (event) {
