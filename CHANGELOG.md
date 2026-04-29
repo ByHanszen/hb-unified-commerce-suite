@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.179] — 2026-04-29
+### Fixed
+- Abonnementen verzending: de actieve waarde van de verzenddropdown op Mijn Account kiest nu de best passende WooCommerce-rate op basis van een gerankte match. Daardoor blijft de zichtbare geselecteerde optie gelijk aan de werkelijk opgeslagen abonnementsorder, ook wanneer meerdere rates dezelfde globale methodefallback delen.
+
 ## [0.3.178] — 2026-04-29
 ### Fixed
 - Abonnementen verzending: de dropdown gebruikt nu een unieke selectiecode per WooCommerce-ratevariant. Daardoor blijven verschillende betaalde verzendopties ook correct onderscheiden wanneer een verzendplugin meerdere rates met dezelfde onderliggende `rate_key` of methode-instance teruggeeft.

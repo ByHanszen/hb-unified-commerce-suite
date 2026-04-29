@@ -6746,6 +6746,8 @@ class SubscriptionsModule {
             }
         }
 
+        $bestExistingMatch = null;
+        $bestExistingScore = 0;
         foreach ($existingLines as $existingLine) {
             if (!is_array($existingLine)) {
                 continue;
@@ -6755,10 +6757,16 @@ class SubscriptionsModule {
                     continue;
                 }
 
-                if ($this->subscription_shipping_line_matches_rate($existingLine, $rate)) {
-                    return $rate;
+                $matchScore = $this->get_subscription_shipping_line_match_score($existingLine, $rate);
+                if ($matchScore > $bestExistingScore) {
+                    $bestExistingScore = $matchScore;
+                    $bestExistingMatch = $rate;
                 }
             }
+        }
+
+        if (is_array($bestExistingMatch) && $bestExistingScore > 0) {
+            return $bestExistingMatch;
         }
 
         foreach ($availableRates as $rate) {
@@ -7060,16 +7068,11 @@ class SubscriptionsModule {
         return 'ship_' . md5((string) wp_json_encode($signature));
     }
 
-    private function subscription_shipping_line_matches_rate(array $line, array $rate): bool {
-        if ($this->get_subscription_shipping_selection_key($line) === $this->get_subscription_shipping_selection_key($rate)) {
-            return true;
-        }
-
-        $lineRateKey = $this->get_subscription_shipping_rate_key($line);
-        $rateRateKey = $this->get_subscription_shipping_rate_key($rate);
-
-        if ($lineRateKey !== '' && $rateRateKey !== '' && $lineRateKey === $rateRateKey) {
-            return true;
+    private function get_subscription_shipping_line_match_score(array $line, array $rate): int {
+        $lineSelectionKey = $this->get_subscription_shipping_selection_key($line);
+        $rateSelectionKey = $this->get_subscription_shipping_selection_key($rate);
+        if ($lineSelectionKey !== '' && $lineSelectionKey === $rateSelectionKey) {
+            return 5;
         }
 
         $lineMethodTitle = trim((string) ($line['method_title'] ?? ''));
@@ -7089,7 +7092,7 @@ class SubscriptionsModule {
             && $lineMethodId === $rateMethodId
             && $lineInstanceId === $rateInstanceId
         ) {
-            return true;
+            return 4;
         }
 
         if (
@@ -7098,10 +7101,24 @@ class SubscriptionsModule {
             && $lineMethodTitle === $rateMethodTitle
             && $lineTotal === $rateTotal
         ) {
-            return true;
+            return 3;
         }
 
-        return $lineMethodId === $rateMethodId && $lineInstanceId === $rateInstanceId;
+        $lineRateKey = $this->get_subscription_shipping_rate_key($line);
+        $rateRateKey = $this->get_subscription_shipping_rate_key($rate);
+        if ($lineRateKey !== '' && $rateRateKey !== '' && $lineRateKey === $rateRateKey) {
+            return 2;
+        }
+
+        if ($lineMethodId !== '' && $lineMethodId === $rateMethodId && $lineInstanceId === $rateInstanceId) {
+            return 1;
+        }
+
+        return 0;
+    }
+
+    private function subscription_shipping_line_matches_rate(array $line, array $rate): bool {
+        return $this->get_subscription_shipping_line_match_score($line, $rate) > 0;
     }
 
     private function get_selected_subscription_shipping_rate_key(int $subId, array $availableRates, $fallbackOrder = null): string {
@@ -7110,6 +7127,8 @@ class SubscriptionsModule {
         }
 
         $currentLines = $this->get_effective_subscription_shipping_lines($subId, $fallbackOrder);
+        $bestRate = null;
+        $bestScore = 0;
         foreach ($currentLines as $line) {
             if (!is_array($line)) {
                 continue;
@@ -7119,10 +7138,16 @@ class SubscriptionsModule {
                     continue;
                 }
 
-                if ($this->subscription_shipping_line_matches_rate($line, $rate)) {
-                    return $this->get_subscription_shipping_selection_key($rate);
+                $matchScore = $this->get_subscription_shipping_line_match_score($line, $rate);
+                if ($matchScore > $bestScore) {
+                    $bestScore = $matchScore;
+                    $bestRate = $rate;
                 }
             }
+        }
+
+        if (is_array($bestRate) && $bestScore > 0) {
+            return $this->get_subscription_shipping_selection_key($bestRate);
         }
 
         $selectedRate = $this->resolve_subscription_shipping_rate_selection($availableRates);
