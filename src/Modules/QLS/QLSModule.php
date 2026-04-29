@@ -102,17 +102,17 @@ class QLSModule {
 
             #hb-ucs-qls-servicepoint-close {
                 position: fixed !important;
-                top: calc(10vh - 19px) !important;
-                right: calc(10vw - 19px) !important;
-                width: 38px !important;
-                height: 38px !important;
+                top: 24px !important;
+                left: 24px !important;
+                width: 44px !important;
+                height: 44px !important;
                 z-index: 1000000 !important;
                 border: 0 !important;
                 border-radius: 999px !important;
                 background: #111111 !important;
                 color: #ffffff !important;
                 font-size: 28px !important;
-                line-height: 38px !important;
+                line-height: 44px !important;
                 text-align: center !important;
                 cursor: pointer !important;
                 box-shadow: 0 8px 25px rgba(0, 0, 0, 0.35) !important;
@@ -153,8 +153,9 @@ class QLSModule {
                 }
 
                 #hb-ucs-qls-servicepoint-close {
-                    top: calc(7.5vh - 19px) !important;
-                    right: calc(5vw - 10px) !important;
+                    width: 42px !important;
+                    height: 42px !important;
+                    line-height: 42px !important;
                 }
             }
         </style>
@@ -231,6 +232,35 @@ class QLSModule {
                     }
 
                     document.body.classList.remove(bodyOpenClass);
+                }
+
+                function isServicepointModalOpen() {
+                    var iframe = findQlsIframe();
+
+                    return !!(iframe && elementIsVisible(iframe));
+                }
+
+                function positionCloseButton(wrapper, iframe) {
+                    var closeButton = document.getElementById(closeButtonId);
+                    var boundsElement = wrapper && wrapper !== iframe ? wrapper : iframe;
+
+                    if (!closeButton || !boundsElement) {
+                        return;
+                    }
+
+                    var rect = boundsElement.getBoundingClientRect();
+                    var isMobile = window.innerWidth <= 768;
+                    var topOffset = isMobile ? 12 : 18;
+                    var rightOffset = isMobile ? 8 : 14;
+                    var buttonSize = closeButton.offsetWidth || (isMobile ? 42 : 44);
+                    var top = Math.max(rect.top - topOffset, 12);
+                    var left = Math.min(
+                        rect.right - buttonSize + rightOffset,
+                        window.innerWidth - buttonSize - 12
+                    );
+
+                    closeButton.style.top = top + 'px';
+                    closeButton.style.left = Math.max(left, 12) + 'px';
                 }
 
                 function closeQlsServicepointModal() {
@@ -353,6 +383,7 @@ class QLSModule {
 
                     createBackdrop();
                     createCloseButton();
+                    positionCloseButton(wrapper, iframe);
 
                     document.body.classList.add(bodyOpenClass);
                 }
@@ -370,6 +401,27 @@ class QLSModule {
 
                 document.addEventListener('click', function () {
                     window.setTimeout(applyQlsModalFix, 250);
+                }, true);
+
+                document.addEventListener('mousedown', function (event) {
+                    if (!document.body.classList.contains(bodyOpenClass) || !isServicepointModalOpen()) {
+                        return;
+                    }
+
+                    var iframe = findQlsIframe();
+                    var wrapper = findQlsWrapper(iframe);
+                    var closeButton = document.getElementById(closeButtonId);
+                    var target = event.target;
+                    var clickedCloseButton = closeButton && closeButton.contains(target);
+                    var clickedWrapper = wrapper && wrapper !== iframe && wrapper.contains(target);
+                    var clickedIframe = iframe && iframe.contains(target);
+                    var clickedBackdrop = target && target.id === backdropId;
+
+                    if (!clickedCloseButton && !clickedWrapper && !clickedIframe) {
+                        if (!clickedBackdrop) {
+                            closeQlsServicepointModal();
+                        }
+                    }
                 }, true);
 
                 document.addEventListener('keydown', function (event) {

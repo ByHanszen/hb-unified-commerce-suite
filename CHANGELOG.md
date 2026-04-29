@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.181] — 2026-04-29
+### Fixed
+- QLS checkout: de servicepunt-sluitknop staat nu met extra ruimte buiten het iframe zodat die klikbaar blijft. Daarnaast sluit een klik naast het iframe nu ook robuust het servicepuntvenster.
+
 ## [0.3.180] — 2026-04-29
 ### Fixed
 - QLS checkout: het servicepunt iframe/popup opent nu gecentreerd met een donkere overlay, een sluitknop, Escape-sluiting en backdrop-sluiting. De fix wordt opnieuw toegepast na WooCommerce checkout AJAX-refreshes zonder de bestaande QLS order- of opslaglogica aan te passen.
