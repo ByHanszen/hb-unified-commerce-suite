@@ -4,6 +4,11 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.172] — 2026-04-29
+### Fixed
+- Abonnementen Mijn Account: klanten kunnen nu zelf een beschikbare WooCommerce-verzendmethode kiezen op de abonnementsdetailpagina. De lijst wordt opnieuw opgebouwd op basis van het actuele afleveradres en de huidige abonnementsinhoud.
+- Abonnementen verzending: zodra artikelwijzigingen een andere WooCommerce-rate opleveren, zoals gratis verzending boven de ingestelde drempel, wordt die rate nu ook meegenomen in de beschikbare abonnementsverzendmethodes en kan die direct op het abonnement worden opgeslagen.
+
 ## [0.3.171] — 2026-04-14
 ### Fixed
 - Abonnement-renewals: de scheduler valideert `next_payment` nu eerst tegen de abonnementsfrequentie en de datum van de laatste renewal. Daardoor kan een te vroege of corrupte `next_payment` niet meer leiden tot een extra renewal een week later terwijl het abonnement pas over 2 of 4 weken weer aan de beurt is.

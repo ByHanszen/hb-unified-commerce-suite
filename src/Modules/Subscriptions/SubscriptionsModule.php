@@ -2647,6 +2647,8 @@ class SubscriptionsModule {
         $ordersPanelId = 'hb-ucs-panel-orders-' . $subId;
         $summaryDate = $nextPayment > 0 ? $this->format_wp_date($nextPayment) : '—';
         $priceBreakdown = $this->get_account_subscription_price_breakdown($subId);
+        $availableShippingRates = $this->get_available_subscription_shipping_rates($subId, $items, $subscription);
+        $selectedShippingRateKey = $this->get_selected_subscription_shipping_rate_key($subId, $availableShippingRates, $subscription);
         echo '<div class="woocommerce-account-hb-ucs-subscription hb-ucs-account-shell hb-ucs-account-shell--detail">';
         echo '<p class="hb-ucs-account-backlink"><a href="' . esc_url($this->get_account_subscription_url()) . '">← ' . esc_html__('Terug naar abonnementen', 'hb-ucs') . '</a></p>';
         echo '<section class="hb-ucs-account-hero hb-ucs-account-hero--detail hb-ucs-account-hero--stacked">';
@@ -2791,6 +2793,40 @@ class SubscriptionsModule {
         echo '<button type="submit" class="button hb-ucs-button hb-ucs-button--primary" ' . disabled($manageDisabled, true, false) . '>' . esc_html__('Wijzigingen opslaan', 'hb-ucs') . '</button>';
         echo '</div>';
         echo '</form>';
+        echo '</section>';
+
+        echo '<section class="hb-ucs-panel hb-ucs-panel--secondary woocommerce-MyAccount-content-wrapper">';
+        echo '<div class="hb-ucs-panel__header hb-ucs-panel__header--compact">';
+        echo '<h3>' . esc_html__('Verzendmethode', 'hb-ucs') . '</h3>';
+        echo '<p>' . esc_html__('Deze opties komen direct uit WooCommerce voor het huidige afleveradres en de actuele abonnementsinhoud.', 'hb-ucs') . '</p>';
+        echo '</div>';
+        if (empty($availableShippingRates)) {
+            echo '<p class="woocommerce-info hb-ucs-inline-help">' . esc_html__('Er zijn momenteel geen verzendmethodes beschikbaar voor dit abonnement. Controleer het verzendadres en de WooCommerce verzendzones.', 'hb-ucs') . '</p>';
+        } else {
+            echo '<form method="post" class="woocommerce-form woocommerce-EditAccountForm hb-ucs-shipping-method-form">';
+            wp_nonce_field('hb_ucs_account_subscription_' . $subId, 'hb_ucs_account_subscription_nonce');
+            echo '<input type="hidden" name="hb_ucs_subscription_id" value="' . esc_attr((string) $subId) . '" />';
+            echo '<input type="hidden" name="hb_ucs_subscription_action" value="update_shipping_method" />';
+            echo '<label class="hb-ucs-footer-field"><span>' . esc_html__('Beschikbare verzendmethodes', 'hb-ucs') . '</span>';
+            echo '<select name="hb_ucs_subscription_shipping_rate" class="input-text" ' . disabled($manageDisabled, true, false) . '>';
+            foreach ($availableShippingRates as $rate) {
+                if (!is_array($rate)) {
+                    continue;
+                }
+
+                $rateKey = $this->get_subscription_shipping_rate_key($rate);
+                if ($rateKey === '') {
+                    continue;
+                }
+
+                echo '<option value="' . esc_attr($rateKey) . '" ' . selected($selectedShippingRateKey, $rateKey, false) . '>' . esc_html($this->format_account_subscription_shipping_rate_label($rate)) . '</option>';
+            }
+            echo '</select></label>';
+            echo '<div class="hb-ucs-subscription-items-footer hb-ucs-subscription-items-footer--dashboard">';
+            echo '<button type="submit" class="button hb-ucs-button hb-ucs-button--primary" ' . disabled($manageDisabled, true, false) . '>' . esc_html__('Verzendmethode opslaan', 'hb-ucs') . '</button>';
+            echo '</div>';
+            echo '</form>';
+        }
         echo '</section>';
 
         echo '<div class="hb-ucs-detail-secondary">';
@@ -3150,6 +3186,52 @@ class SubscriptionsModule {
                 }
                 $didUpdateSubscription = true;
                 wc_add_notice(__('De abonnementartikelen zijn bijgewerkt.', 'hb-ucs'));
+                break;
+
+            case 'update_shipping_method':
+                if ($manageDisabled) {
+                    wc_add_notice(__('De verzendmethode kan nu niet worden aangepast.', 'hb-ucs'), 'error');
+                    break;
+                }
+
+                $selectedRateKey = isset($_POST['hb_ucs_subscription_shipping_rate'])
+                    ? sanitize_text_field((string) wp_unslash($_POST['hb_ucs_subscription_shipping_rate']))
+                    : '';
+                $currentItems = $this->get_subscription_items($subId);
+                if (empty($currentItems)) {
+                    wc_add_notice(__('Een abonnement zonder producten heeft geen verzendmethode.', 'hb-ucs'), 'error');
+                    break;
+                }
+
+                $availableRates = $this->get_available_subscription_shipping_rates($subId, $currentItems, $subscription);
+                if (empty($availableRates)) {
+                    wc_add_notice(__('Er zijn geen verzendmethodes beschikbaar voor dit abonnement.', 'hb-ucs'), 'error');
+                    break;
+                }
+
+                $previousRateKey = $this->get_selected_subscription_shipping_rate_key($subId, $availableRates, $subscription);
+                $shippingLines = $this->calculate_subscription_shipping_lines($subId, $currentItems, $subscription, $selectedRateKey);
+                if (empty($shippingLines)) {
+                    wc_add_notice(__('De gekozen verzendmethode is niet beschikbaar.', 'hb-ucs'), 'error');
+                    break;
+                }
+
+                $this->persist_subscription_shipping_lines($subId, $shippingLines);
+                $this->persist_linked_legacy_subscription_shipping_lines($subId, $shippingLines);
+
+                $newRateKey = $this->get_subscription_shipping_rate_key($shippingLines[0]);
+                if ($newRateKey !== '' && $newRateKey !== $previousRateKey) {
+                    $this->add_subscription_admin_note(
+                        $subId,
+                        sprintf(
+                            __('Klant heeft de verzendmethode aangepast via Mijn Account naar: %s.', 'hb-ucs'),
+                            (string) ($shippingLines[0]['method_title'] ?? __('Verzendmethode', 'hb-ucs'))
+                        )
+                    );
+                }
+
+                $didUpdateSubscription = true;
+                wc_add_notice(__('De verzendmethode van het abonnement is bijgewerkt.', 'hb-ucs'));
                 break;
         }
 
@@ -5996,6 +6078,7 @@ class SubscriptionsModule {
         $methodId = sanitize_text_field((string) ($line['method_id'] ?? ''));
         $methodTitle = sanitize_text_field((string) ($line['method_title'] ?? ''));
         $instanceId = (int) ($line['instance_id'] ?? 0);
+        $rateKey = sanitize_text_field((string) ($line['rate_key'] ?? ''));
         $total = isset($line['total']) ? (float) wc_format_decimal((string) $line['total']) : 0.0;
         $tax = isset($line['tax']) ? (float) wc_format_decimal((string) $line['tax']) : 0.0;
         $taxes = isset($line['taxes']) && is_array($line['taxes']) ? $line['taxes'] : [];
@@ -6034,6 +6117,7 @@ class SubscriptionsModule {
         }
 
         return [
+            'rate_key' => $rateKey !== '' ? $rateKey : ($methodId !== '' ? $methodId . ':' . max(0, $instanceId) : ''),
             'method_id' => $methodId,
             'method_title' => $methodTitle,
             'instance_id' => max(0, $instanceId),
@@ -6407,6 +6491,9 @@ class SubscriptionsModule {
             $shippingItem->set_method_id((string) ($line['method_id'] ?? ''));
             $shippingItem->set_instance_id((int) ($line['instance_id'] ?? 0));
             $shippingItem->set_total((float) ($lineTotals['line_subtotal'] ?? 0.0));
+            if (!empty($line['rate_key'])) {
+                $shippingItem->add_meta_data('_hb_ucs_shipping_rate_key', sanitize_text_field((string) $line['rate_key']), true);
+            }
             if (method_exists($shippingItem, 'set_taxes')) {
                 $shippingItem->set_taxes(isset($line['taxes']) && is_array($line['taxes']) ? (array) $line['taxes'] : []);
             }
@@ -6432,6 +6519,7 @@ class SubscriptionsModule {
 
     private function get_subscription_shipping_line_hash(array $line): string {
         return wp_json_encode([
+            'rate_key' => (string) ($line['rate_key'] ?? ''),
             'method_id' => (string) ($line['method_id'] ?? ''),
             'method_title' => (string) ($line['method_title'] ?? ''),
             'instance_id' => (int) ($line['instance_id'] ?? 0),
@@ -6440,7 +6528,7 @@ class SubscriptionsModule {
         ]);
     }
 
-    private function calculate_subscription_shipping_lines(int $subId, array $items, $fallbackOrder = null): array {
+    private function get_available_subscription_shipping_rates(int $subId, array $items, $fallbackOrder = null): array {
         if ($subId <= 0 || empty($items) || !function_exists('WC') || !WC() || !WC()->shipping()) {
             return [];
         }
@@ -6514,9 +6602,7 @@ class SubscriptionsModule {
         ];
 
         try {
-            if (
-                class_exists('HB\\UCS\\Modules\\B2B\\Support\\Context')
-            ) {
+            if (class_exists('HB\\UCS\\Modules\\B2B\\Support\\Context')) {
                 \HB\UCS\Modules\B2B\Support\Context::set_forced_user_id((int) get_post_meta($subId, self::SUB_META_USER_ID, true));
             }
 
@@ -6535,42 +6621,86 @@ class SubscriptionsModule {
             return [];
         }
 
-        $existingLines = $this->get_subscription_shipping_lines($subId);
-        $selectedRate = null;
-        foreach ($existingLines as $existingLine) {
-            $existingMethodId = (string) ($existingLine['method_id'] ?? '');
-            $existingInstanceId = (int) ($existingLine['instance_id'] ?? 0);
-            foreach ($rates as $rate) {
-                if (!$rate || !is_object($rate)) {
-                    continue;
-                }
-                $rateMethodId = method_exists($rate, 'get_method_id') ? (string) $rate->get_method_id() : '';
-                $rateInstanceId = method_exists($rate, 'get_instance_id') ? (int) $rate->get_instance_id() : 0;
-                if ($existingMethodId === $rateMethodId && $existingInstanceId === $rateInstanceId) {
-                    $selectedRate = $rate;
-                    break 2;
+        $availableRates = [];
+        foreach ($rates as $rate) {
+            if (!$rate || !is_object($rate)) {
+                continue;
+            }
+
+            $normalized = $this->normalize_subscription_shipping_line([
+                'rate_key' => method_exists($rate, 'get_id') ? (string) $rate->get_id() : '',
+                'method_id' => method_exists($rate, 'get_method_id') ? (string) $rate->get_method_id() : '',
+                'method_title' => method_exists($rate, 'get_label') ? (string) $rate->get_label() : '',
+                'instance_id' => method_exists($rate, 'get_instance_id') ? (int) $rate->get_instance_id() : 0,
+                'total' => method_exists($rate, 'get_cost') ? (float) $rate->get_cost() : 0.0,
+                'taxes' => method_exists($rate, 'get_taxes') ? ['total' => (array) $rate->get_taxes()] : [],
+            ]);
+
+            if ($normalized) {
+                $availableRates[] = $normalized;
+            }
+        }
+
+        return $availableRates;
+    }
+
+    private function resolve_subscription_shipping_rate_selection(array $availableRates, string $preferredRateKey = '', array $existingLines = []): ?array {
+        if (!empty($preferredRateKey)) {
+            foreach ($availableRates as $rate) {
+                if ($this->get_subscription_shipping_rate_key((array) $rate) === $preferredRateKey) {
+                    return is_array($rate) ? $rate : null;
                 }
             }
         }
 
-        if (!$selectedRate) {
-            $firstRate = reset($rates);
-            $selectedRate = $firstRate && is_object($firstRate) ? $firstRate : null;
+        foreach ($existingLines as $existingLine) {
+            if (!is_array($existingLine)) {
+                continue;
+            }
+
+            $existingMethodId = (string) ($existingLine['method_id'] ?? '');
+            $existingInstanceId = (int) ($existingLine['instance_id'] ?? 0);
+            foreach ($availableRates as $rate) {
+                if (!is_array($rate)) {
+                    continue;
+                }
+
+                if (
+                    $existingMethodId === (string) ($rate['method_id'] ?? '')
+                    && $existingInstanceId === (int) ($rate['instance_id'] ?? 0)
+                ) {
+                    return $rate;
+                }
+            }
         }
 
-        if (!$selectedRate || !is_object($selectedRate)) {
+        foreach ($availableRates as $rate) {
+            if (is_array($rate) && (string) ($rate['method_id'] ?? '') === 'free_shipping') {
+                return $rate;
+            }
+        }
+
+        $firstRate = reset($availableRates);
+
+        return is_array($firstRate) ? $firstRate : null;
+    }
+
+    private function calculate_subscription_shipping_lines(int $subId, array $items, $fallbackOrder = null, string $preferredRateKey = ''): array {
+        $availableRates = $this->get_available_subscription_shipping_rates($subId, $items, $fallbackOrder);
+        if (empty($availableRates)) {
             return [];
         }
 
-        return array_values(array_filter([
-            $this->normalize_subscription_shipping_line([
-                'method_id' => method_exists($selectedRate, 'get_method_id') ? (string) $selectedRate->get_method_id() : '',
-                'method_title' => method_exists($selectedRate, 'get_label') ? (string) $selectedRate->get_label() : '',
-                'instance_id' => method_exists($selectedRate, 'get_instance_id') ? (int) $selectedRate->get_instance_id() : 0,
-                'total' => method_exists($selectedRate, 'get_cost') ? (float) $selectedRate->get_cost() : 0.0,
-                'taxes' => method_exists($selectedRate, 'get_taxes') ? ['total' => (array) $selectedRate->get_taxes()] : [],
-            ]),
-        ]));
+        $selectedRate = $this->resolve_subscription_shipping_rate_selection(
+            $availableRates,
+            $preferredRateKey,
+            $this->get_subscription_shipping_lines($subId)
+        );
+        if (!$selectedRate) {
+            return [];
+        }
+
+        return [$selectedRate];
     }
 
     private function extract_subscription_shipping_lines($order): array {
@@ -6585,6 +6715,7 @@ class SubscriptionsModule {
             }
 
             $line = $this->normalize_subscription_shipping_line([
+                'rate_key' => method_exists($shipItem, 'get_meta') ? (string) $shipItem->get_meta('_hb_ucs_shipping_rate_key', true) : '',
                 'method_id' => method_exists($shipItem, 'get_method_id') ? (string) $shipItem->get_method_id() : '',
                 'method_title' => method_exists($shipItem, 'get_method_title') ? (string) $shipItem->get_method_title() : '',
                 'instance_id' => method_exists($shipItem, 'get_instance_id') ? (int) $shipItem->get_instance_id() : 0,
@@ -6794,6 +6925,72 @@ class SubscriptionsModule {
                 ? __('Alle bedragen zijn inclusief btw per levering.', 'hb-ucs')
                 : __('Alle bedragen zijn exclusief btw per levering.', 'hb-ucs'),
         ];
+    }
+
+    private function format_account_subscription_shipping_rate_label(array $rate): string {
+        $label = trim((string) ($rate['method_title'] ?? ''));
+        if ($label === '') {
+            $label = __('Verzendmethode', 'hb-ucs');
+        }
+
+        $lineTotals = $this->get_subscription_shipping_line_totals($rate);
+        $amount = $this->should_display_account_subscription_prices_including_tax()
+            ? (float) ($lineTotals['line_total'] ?? 0.0)
+            : (float) ($lineTotals['line_subtotal'] ?? 0.0);
+
+        return sprintf(
+            __('%1$s — %2$s', 'hb-ucs'),
+            $label,
+            wp_strip_all_tags($this->format_subscription_frontend_price($amount))
+        );
+    }
+
+    private function get_subscription_shipping_rate_key(array $rate): string {
+        $rateKey = sanitize_text_field((string) ($rate['rate_key'] ?? ''));
+        if ($rateKey !== '') {
+            return $rateKey;
+        }
+
+        $methodId = sanitize_text_field((string) ($rate['method_id'] ?? ''));
+        $instanceId = (int) ($rate['instance_id'] ?? 0);
+
+        if ($methodId === '') {
+            return '';
+        }
+
+        return $methodId . ':' . $instanceId;
+    }
+
+    private function get_selected_subscription_shipping_rate_key(int $subId, array $availableRates, $fallbackOrder = null): string {
+        if (empty($availableRates)) {
+            return '';
+        }
+
+        $currentLines = $this->get_effective_subscription_shipping_lines($subId, $fallbackOrder);
+        foreach ($currentLines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+
+            $currentMethodId = (string) ($line['method_id'] ?? '');
+            $currentInstanceId = (int) ($line['instance_id'] ?? 0);
+            foreach ($availableRates as $rate) {
+                if (!is_array($rate)) {
+                    continue;
+                }
+
+                if (
+                    $currentMethodId === (string) ($rate['method_id'] ?? '')
+                    && $currentInstanceId === (int) ($rate['instance_id'] ?? 0)
+                ) {
+                    return $this->get_subscription_shipping_rate_key($rate);
+                }
+            }
+        }
+
+        $selectedRate = $this->resolve_subscription_shipping_rate_selection($availableRates);
+
+        return $selectedRate ? $this->get_subscription_shipping_rate_key($selectedRate) : '';
     }
 
     private function format_subscription_frontend_price(float $amount): string {
