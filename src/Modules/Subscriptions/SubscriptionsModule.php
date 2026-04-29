@@ -2948,6 +2948,7 @@ class SubscriptionsModule {
         $manageDisabled = in_array($status, ['cancelled', 'expired'], true);
         $didUpdateSubscription = false;
         $syncViaOrderObject = false;
+        $saveSubscriptionObject = true;
         $shadowMetaUpdates = [];
 
         SubscriptionSyncLogger::debug('frontend.account_action.start', [
@@ -3185,6 +3186,7 @@ class SubscriptionsModule {
                     $this->add_subscription_admin_note($subId, $itemsNote);
                 }
                 $didUpdateSubscription = true;
+                $saveSubscriptionObject = false;
                 wc_add_notice(__('De abonnementartikelen zijn bijgewerkt.', 'hb-ucs'));
                 break;
 
@@ -3231,12 +3233,13 @@ class SubscriptionsModule {
                 }
 
                 $didUpdateSubscription = true;
+                $saveSubscriptionObject = false;
                 wc_add_notice(__('De verzendmethode van het abonnement is bijgewerkt.', 'hb-ucs'));
                 break;
         }
 
         if ($didUpdateSubscription) {
-            if (method_exists($subscription, 'save')) {
+            if ($saveSubscriptionObject && method_exists($subscription, 'save')) {
                 $subscription->save();
             }
 
@@ -6528,6 +6531,63 @@ class SubscriptionsModule {
         ]);
     }
 
+    private function get_subscription_shipping_displayed_subtotal(int $subId, array $items, $fallbackOrder = null): float {
+        $displayIncludingTax = function_exists('wc_tax_enabled')
+            && wc_tax_enabled()
+            && get_option('woocommerce_tax_display_cart', 'excl') === 'incl';
+        $customer = $this->get_subscription_tax_customer($subId, $fallbackOrder);
+        $subtotal = 0.0;
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $qty = max(1, (int) ($item['qty'] ?? 1));
+            $subtotal += $this->get_subscription_item_display_amount($item, $qty, $displayIncludingTax, $customer);
+        }
+
+        return (float) wc_format_decimal((string) $subtotal);
+    }
+
+    private function is_subscription_free_shipping_method_available($shippingMethod, array $package, int $subId, array $items, $fallbackOrder = null): bool {
+        if (!$shippingMethod || !is_object($shippingMethod)) {
+            return false;
+        }
+
+        $requires = isset($shippingMethod->requires) ? (string) $shippingMethod->requires : '';
+        $hasCoupon = false;
+        $hasMetMinAmount = false;
+
+        if (in_array($requires, ['coupon', 'either', 'both'], true)) {
+            $hasCoupon = false;
+        }
+
+        if (in_array($requires, ['min_amount', 'either', 'both'], true)) {
+            $subtotal = $this->get_subscription_shipping_displayed_subtotal($subId, $items, $fallbackOrder);
+            $minAmount = isset($shippingMethod->min_amount)
+                ? (float) wc_format_decimal((string) $shippingMethod->min_amount)
+                : 0.0;
+
+            if ($subtotal >= $minAmount) {
+                $hasMetMinAmount = true;
+            }
+        }
+
+        switch ($requires) {
+            case 'min_amount':
+                return $hasMetMinAmount;
+            case 'coupon':
+                return $hasCoupon;
+            case 'both':
+                return $hasCoupon && $hasMetMinAmount;
+            case 'either':
+                return $hasCoupon || $hasMetMinAmount;
+            default:
+                return true;
+        }
+    }
+
     private function get_available_subscription_shipping_rates(int $subId, array $items, $fallbackOrder = null): array {
         if ($subId <= 0 || empty($items) || !function_exists('WC') || !WC() || !WC()->shipping()) {
             return [];
@@ -6601,15 +6661,49 @@ class SubscriptionsModule {
             'cart_subtotal' => (float) wc_format_decimal((string) $contentsCost),
         ];
 
+        $freeShippingAvailabilityFilter = function ($isAvailable, $filterPackage, $shippingMethod) use ($package, $subId, $items, $fallbackOrder) {
+            if (!$shippingMethod || !is_object($shippingMethod) || (string) ($shippingMethod->id ?? '') !== 'free_shipping') {
+                return $isAvailable;
+            }
+
+            $packageHash = md5(wp_json_encode([
+                'destination' => (array) ($package['destination'] ?? []),
+                'contents_cost' => (float) ($package['contents_cost'] ?? 0.0),
+                'cart_subtotal' => (float) ($package['cart_subtotal'] ?? 0.0),
+            ]));
+            $filterPackageHash = md5(wp_json_encode([
+                'destination' => (array) (($filterPackage['destination'] ?? [])),
+                'contents_cost' => (float) (($filterPackage['contents_cost'] ?? 0.0)),
+                'cart_subtotal' => (float) (($filterPackage['cart_subtotal'] ?? 0.0)),
+            ]));
+
+            if ($packageHash !== $filterPackageHash) {
+                return $isAvailable;
+            }
+
+            return $this->is_subscription_free_shipping_method_available($shippingMethod, $filterPackage, $subId, $items, $fallbackOrder);
+        };
+
         try {
             if (class_exists('HB\\UCS\\Modules\\B2B\\Support\\Context')) {
                 \HB\UCS\Modules\B2B\Support\Context::set_forced_user_id((int) get_post_meta($subId, self::SUB_META_USER_ID, true));
             }
 
+            if (method_exists($shipping, 'reset_shipping')) {
+                $shipping->reset_shipping();
+            }
+            if (WC()->session && method_exists(WC()->session, 'set')) {
+                WC()->session->set('shipping_for_package_0', null);
+            }
+
+            add_filter('woocommerce_shipping_free_shipping_is_available', $freeShippingAvailabilityFilter, 10, 3);
+
             $shipping->calculate_shipping([$package]);
             $packages = (array) $shipping->get_packages();
         } catch (\Throwable $e) {
             $packages = [];
+        } finally {
+            remove_filter('woocommerce_shipping_free_shipping_is_available', $freeShippingAvailabilityFilter, 10);
         }
 
         if (class_exists('HB\\UCS\\Modules\\B2B\\Support\\Context')) {

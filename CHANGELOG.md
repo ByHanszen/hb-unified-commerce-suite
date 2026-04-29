@@ -4,6 +4,11 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.173] — 2026-04-29
+### Fixed
+- Abonnementen verzending: het opslaan van een aangepaste verzendmethode via Mijn Account laat de gekozen rate nu ook echt terugkomen in de frontend-prijsopbouw en op de subscription-order in de backend, in plaats van dat een stale orderobject de nieuwe shipping line weer kon overschrijven.
+- Abonnementen gratis verzending: de beschikbare rates voor abonnementen evalueren free shipping nu tegen de actuele abonnementsinhoud en het afleveradres, met een expliciete reset van WooCommerce shipping-cache voor die berekening. Daardoor verschijnt gratis verzending nu ook als optie zodra de ingestelde drempel is gehaald.
+
 ## [0.3.172] — 2026-04-29
 ### Fixed
 - Abonnementen Mijn Account: klanten kunnen nu zelf een beschikbare WooCommerce-verzendmethode kiezen op de abonnementsdetailpagina. De lijst wordt opnieuw opgebouwd op basis van het actuele afleveradres en de huidige abonnementsinhoud.
