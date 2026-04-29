@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.175] — 2026-04-29
+### Fixed
+- Abonnementen verzending: wanneer meerdere betaalde WooCommerce-rates onder dezelfde verzendmethode-instance vallen, blijft de gekozen variant nu correct behouden via de opgeslagen `rate_key` in plaats van terug te vallen naar de eerste beschikbare optie.
+
 ## [0.3.174] — 2026-04-29
 ### Fixed
 - Abonnementen frontend: de informatieve helpertekst boven de verzendmethodekeuze op Mijn Account wordt niet langer zichtbaar getoond.

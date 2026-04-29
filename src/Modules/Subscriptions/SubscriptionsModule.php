@@ -6751,6 +6751,19 @@ class SubscriptionsModule {
                 continue;
             }
 
+            $existingRateKey = $this->get_subscription_shipping_rate_key($existingLine);
+            if ($existingRateKey !== '') {
+                foreach ($availableRates as $rate) {
+                    if (!is_array($rate)) {
+                        continue;
+                    }
+
+                    if ($existingRateKey === $this->get_subscription_shipping_rate_key($rate)) {
+                        return $rate;
+                    }
+                }
+            }
+
             $existingMethodId = (string) ($existingLine['method_id'] ?? '');
             $existingInstanceId = (int) ($existingLine['instance_id'] ?? 0);
             foreach ($availableRates as $rate) {
@@ -7063,6 +7076,19 @@ class SubscriptionsModule {
         foreach ($currentLines as $line) {
             if (!is_array($line)) {
                 continue;
+            }
+
+            $currentRateKey = $this->get_subscription_shipping_rate_key($line);
+            if ($currentRateKey !== '') {
+                foreach ($availableRates as $rate) {
+                    if (!is_array($rate)) {
+                        continue;
+                    }
+
+                    if ($currentRateKey === $this->get_subscription_shipping_rate_key($rate)) {
+                        return $currentRateKey;
+                    }
+                }
             }
 
             $currentMethodId = (string) ($line['method_id'] ?? '');
