@@ -2798,7 +2798,6 @@ class SubscriptionsModule {
         echo '<section class="hb-ucs-panel hb-ucs-panel--secondary woocommerce-MyAccount-content-wrapper">';
         echo '<div class="hb-ucs-panel__header hb-ucs-panel__header--compact">';
         echo '<h3>' . esc_html__('Verzendmethode', 'hb-ucs') . '</h3>';
-        echo '<p>' . esc_html__('Deze opties komen direct uit WooCommerce voor het huidige afleveradres en de actuele abonnementsinhoud.', 'hb-ucs') . '</p>';
         echo '</div>';
         if (empty($availableShippingRates)) {
             echo '<p class="woocommerce-info hb-ucs-inline-help">' . esc_html__('Er zijn momenteel geen verzendmethodes beschikbaar voor dit abonnement. Controleer het verzendadres en de WooCommerce verzendzones.', 'hb-ucs') . '</p>';

@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.174] — 2026-04-29
+### Fixed
+- Abonnementen frontend: de informatieve helpertekst boven de verzendmethodekeuze op Mijn Account wordt niet langer zichtbaar getoond.
+
 ## [0.3.173] — 2026-04-29
 ### Fixed
 - Abonnementen verzending: het opslaan van een aangepaste verzendmethode via Mijn Account laat de gekozen rate nu ook echt terugkomen in de frontend-prijsopbouw en op de subscription-order in de backend, in plaats van dat een stale orderobject de nieuwe shipping line weer kon overschrijven.
