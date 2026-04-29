@@ -32,6 +32,368 @@ class QLSModule {
 
         // REST API: filter orders voor geselecteerde API user
         add_filter('rest_post_dispatch', [$this, 'rest_filter_orders_for_api_user'], 10, 3);
+
+        add_action('wp_footer', [$this, 'render_servicepoint_modal_fix'], 99);
+    }
+
+    public function render_servicepoint_modal_fix(): void {
+        if (!function_exists('is_checkout') || !is_checkout()) {
+            return;
+        }
+        ?>
+        <style>
+            /*
+             * HB UCS - QLS servicepunt iframe/popup fix
+             * Zorgt dat het QLS servicepuntvenster gecentreerd opent
+             * met maximaal 80% schermbreedte en 80% schermhoogte.
+             */
+
+            body.woocommerce-checkout iframe[src*="pakketdienstqls.nl"],
+            body.woocommerce-checkout iframe[src*="servicepoint"],
+            body.woocommerce-checkout iframe[src*="service-point"],
+            body.woocommerce-checkout iframe[id*="qls"],
+            body.woocommerce-checkout iframe[class*="qls"] {
+                position: fixed !important;
+                top: 50% !important;
+                left: 50% !important;
+                width: 80vw !important;
+                height: 80vh !important;
+                max-width: 80vw !important;
+                max-height: 80vh !important;
+                transform: translate(-50%, -50%) !important;
+                z-index: 999999 !important;
+                border: 0 !important;
+                border-radius: 12px !important;
+                background: #ffffff !important;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35) !important;
+                overflow: hidden !important;
+            }
+
+            body.woocommerce-checkout .qls-servicepoint-modal,
+            body.woocommerce-checkout .qls-servicepoint-popup,
+            body.woocommerce-checkout [class*="qls"][class*="modal"],
+            body.woocommerce-checkout [class*="qls"][class*="popup"],
+            body.woocommerce-checkout [id*="qls"][id*="modal"],
+            body.woocommerce-checkout [id*="qls"][id*="popup"],
+            body.woocommerce-checkout [class*="servicepoint"][class*="modal"],
+            body.woocommerce-checkout [class*="servicepoint"][class*="popup"],
+            body.woocommerce-checkout [id*="servicepoint"][id*="modal"],
+            body.woocommerce-checkout [id*="servicepoint"][id*="popup"] {
+                position: fixed !important;
+                top: 50% !important;
+                left: 50% !important;
+                width: 80vw !important;
+                height: 80vh !important;
+                max-width: 80vw !important;
+                max-height: 80vh !important;
+                transform: translate(-50%, -50%) !important;
+                z-index: 999998 !important;
+                background: #ffffff !important;
+                border-radius: 12px !important;
+                overflow: hidden !important;
+            }
+
+            #hb-ucs-qls-servicepoint-backdrop {
+                position: fixed !important;
+                inset: 0 !important;
+                z-index: 999997 !important;
+                background: rgba(0, 0, 0, 0.45) !important;
+            }
+
+            #hb-ucs-qls-servicepoint-close {
+                position: fixed !important;
+                top: calc(10vh - 19px) !important;
+                right: calc(10vw - 19px) !important;
+                width: 38px !important;
+                height: 38px !important;
+                z-index: 1000000 !important;
+                border: 0 !important;
+                border-radius: 999px !important;
+                background: #111111 !important;
+                color: #ffffff !important;
+                font-size: 28px !important;
+                line-height: 38px !important;
+                text-align: center !important;
+                cursor: pointer !important;
+                box-shadow: 0 8px 25px rgba(0, 0, 0, 0.35) !important;
+                padding: 0 !important;
+                font-family: Arial, sans-serif !important;
+            }
+
+            #hb-ucs-qls-servicepoint-close:hover,
+            #hb-ucs-qls-servicepoint-close:focus {
+                background: #333333 !important;
+                outline: none !important;
+            }
+
+            body.hb-ucs-qls-servicepoint-open {
+                overflow: hidden !important;
+            }
+
+            @media (max-width: 768px) {
+                body.woocommerce-checkout iframe[src*="pakketdienstqls.nl"],
+                body.woocommerce-checkout iframe[src*="servicepoint"],
+                body.woocommerce-checkout iframe[src*="service-point"],
+                body.woocommerce-checkout iframe[id*="qls"],
+                body.woocommerce-checkout iframe[class*="qls"],
+                body.woocommerce-checkout .qls-servicepoint-modal,
+                body.woocommerce-checkout .qls-servicepoint-popup,
+                body.woocommerce-checkout [class*="qls"][class*="modal"],
+                body.woocommerce-checkout [class*="qls"][class*="popup"],
+                body.woocommerce-checkout [id*="qls"][id*="modal"],
+                body.woocommerce-checkout [id*="qls"][id*="popup"],
+                body.woocommerce-checkout [class*="servicepoint"][class*="modal"],
+                body.woocommerce-checkout [class*="servicepoint"][class*="popup"],
+                body.woocommerce-checkout [id*="servicepoint"][id*="modal"],
+                body.woocommerce-checkout [id*="servicepoint"][id*="popup"] {
+                    width: 90vw !important;
+                    height: 85vh !important;
+                    max-width: 90vw !important;
+                    max-height: 85vh !important;
+                }
+
+                #hb-ucs-qls-servicepoint-close {
+                    top: calc(7.5vh - 19px) !important;
+                    right: calc(5vw - 10px) !important;
+                }
+            }
+        </style>
+
+        <script>
+            (function () {
+                'use strict';
+
+                var closeButtonId = 'hb-ucs-qls-servicepoint-close';
+                var backdropId = 'hb-ucs-qls-servicepoint-backdrop';
+                var bodyOpenClass = 'hb-ucs-qls-servicepoint-open';
+
+                function findQlsIframe() {
+                    return document.querySelector(
+                        'iframe[src*="pakketdienstqls.nl"], ' +
+                        'iframe[src*="servicepoint"], ' +
+                        'iframe[src*="service-point"], ' +
+                        'iframe[id*="qls"], ' +
+                        'iframe[class*="qls"]'
+                    );
+                }
+
+                function elementIsVisible(element) {
+                    if (!element) {
+                        return false;
+                    }
+
+                    var style = window.getComputedStyle(element);
+
+                    if (
+                        style.display === 'none' ||
+                        style.visibility === 'hidden' ||
+                        style.opacity === '0'
+                    ) {
+                        return false;
+                    }
+
+                    return !!(
+                        element.offsetWidth ||
+                        element.offsetHeight ||
+                        element.getClientRects().length
+                    );
+                }
+
+                function findQlsWrapper(iframe) {
+                    if (!iframe) {
+                        return null;
+                    }
+
+                    return iframe.closest(
+                        '.qls-servicepoint-modal, ' +
+                        '.qls-servicepoint-popup, ' +
+                        '[class*="qls"][class*="modal"], ' +
+                        '[class*="qls"][class*="popup"], ' +
+                        '[id*="qls"][id*="modal"], ' +
+                        '[id*="qls"][id*="popup"], ' +
+                        '[class*="servicepoint"][class*="modal"], ' +
+                        '[class*="servicepoint"][class*="popup"], ' +
+                        '[id*="servicepoint"][id*="modal"], ' +
+                        '[id*="servicepoint"][id*="popup"]'
+                    ) || iframe;
+                }
+
+                function removeCustomControls() {
+                    var closeButton = document.getElementById(closeButtonId);
+                    var backdrop = document.getElementById(backdropId);
+
+                    if (closeButton) {
+                        closeButton.remove();
+                    }
+
+                    if (backdrop) {
+                        backdrop.remove();
+                    }
+
+                    document.body.classList.remove(bodyOpenClass);
+                }
+
+                function closeQlsServicepointModal() {
+                    var iframe = findQlsIframe();
+                    var wrapper = findQlsWrapper(iframe);
+
+                    /*
+                     * Eerst proberen we een native sluitknop van QLS te gebruiken.
+                     * Daardoor blijft interne QLS-state zo veel mogelijk intact.
+                     */
+                    if (wrapper && wrapper !== iframe) {
+                        var nativeCloseButton = wrapper.querySelector(
+                            'button[class*="close"], ' +
+                            'button[aria-label*="close"], ' +
+                            'button[aria-label*="Close"], ' +
+                            'button[aria-label*="sluit"], ' +
+                            'button[aria-label*="Sluit"], ' +
+                            '[class*="close"], ' +
+                            '[class*="Close"]'
+                        );
+
+                        if (nativeCloseButton) {
+                            nativeCloseButton.click();
+                            removeCustomControls();
+                            return;
+                        }
+                    }
+
+                    /*
+                     * Fallback: als QLS geen native sluitknop heeft,
+                     * verbergen we de wrapper/iframe.
+                     */
+                    if (wrapper) {
+                        wrapper.style.display = 'none';
+                        wrapper.style.visibility = 'hidden';
+                    }
+
+                    if (iframe) {
+                        iframe.style.display = 'none';
+                        iframe.style.visibility = 'hidden';
+                    }
+
+                    removeCustomControls();
+                }
+
+                function createBackdrop() {
+                    if (document.getElementById(backdropId)) {
+                        return;
+                    }
+
+                    var backdrop = document.createElement('div');
+                    backdrop.id = backdropId;
+
+                    backdrop.addEventListener('click', function () {
+                        closeQlsServicepointModal();
+                    });
+
+                    document.body.appendChild(backdrop);
+                }
+
+                function createCloseButton() {
+                    if (document.getElementById(closeButtonId)) {
+                        return;
+                    }
+
+                    var closeButton = document.createElement('button');
+                    closeButton.type = 'button';
+                    closeButton.id = closeButtonId;
+                    closeButton.setAttribute('aria-label', 'Sluit servicepunt keuze');
+                    closeButton.innerHTML = '&times;';
+
+                    closeButton.addEventListener('click', function () {
+                        closeQlsServicepointModal();
+                    });
+
+                    document.body.appendChild(closeButton);
+                }
+
+                function applyQlsModalFix() {
+                    var iframe = findQlsIframe();
+
+                    if (!iframe || !elementIsVisible(iframe)) {
+                        removeCustomControls();
+                        return;
+                    }
+
+                    var wrapper = findQlsWrapper(iframe);
+                    var isMobile = window.innerWidth <= 768;
+                    var modalWidth = isMobile ? '90vw' : '80vw';
+                    var modalHeight = isMobile ? '85vh' : '80vh';
+
+                    if (wrapper) {
+                        wrapper.style.position = 'fixed';
+                        wrapper.style.top = '50%';
+                        wrapper.style.left = '50%';
+                        wrapper.style.width = modalWidth;
+                        wrapper.style.height = modalHeight;
+                        wrapper.style.maxWidth = modalWidth;
+                        wrapper.style.maxHeight = modalHeight;
+                        wrapper.style.transform = 'translate(-50%, -50%)';
+                        wrapper.style.zIndex = '999998';
+                        wrapper.style.background = '#ffffff';
+                        wrapper.style.borderRadius = '12px';
+                        wrapper.style.overflow = 'hidden';
+                    }
+
+                    iframe.style.position = 'fixed';
+                    iframe.style.top = '50%';
+                    iframe.style.left = '50%';
+                    iframe.style.width = modalWidth;
+                    iframe.style.height = modalHeight;
+                    iframe.style.maxWidth = modalWidth;
+                    iframe.style.maxHeight = modalHeight;
+                    iframe.style.transform = 'translate(-50%, -50%)';
+                    iframe.style.zIndex = '999999';
+                    iframe.style.border = '0';
+                    iframe.style.borderRadius = '12px';
+                    iframe.style.background = '#ffffff';
+                    iframe.style.boxShadow = '0 20px 60px rgba(0, 0, 0, 0.35)';
+
+                    createBackdrop();
+                    createCloseButton();
+
+                    document.body.classList.add(bodyOpenClass);
+                }
+
+                var observer = new MutationObserver(function () {
+                    window.setTimeout(applyQlsModalFix, 100);
+                });
+
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                    attributeFilter: ['style', 'class', 'src']
+                });
+
+                document.addEventListener('click', function () {
+                    window.setTimeout(applyQlsModalFix, 250);
+                }, true);
+
+                document.addEventListener('keydown', function (event) {
+                    if (event.key === 'Escape') {
+                        closeQlsServicepointModal();
+                    }
+                });
+
+                window.addEventListener('resize', function () {
+                    window.setTimeout(applyQlsModalFix, 100);
+                });
+
+                window.addEventListener('load', function () {
+                    window.setTimeout(applyQlsModalFix, 300);
+                });
+
+                if (window.jQuery) {
+                    window.jQuery(document.body).on('updated_checkout', function () {
+                        window.setTimeout(applyQlsModalFix, 300);
+                    });
+                }
+            })();
+        </script>
+        <?php
     }
 
     /* -----------------------------

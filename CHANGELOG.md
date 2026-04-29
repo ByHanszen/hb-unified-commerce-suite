@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.180] — 2026-04-29
+### Fixed
+- QLS checkout: het servicepunt iframe/popup opent nu gecentreerd met een donkere overlay, een sluitknop, Escape-sluiting en backdrop-sluiting. De fix wordt opnieuw toegepast na WooCommerce checkout AJAX-refreshes zonder de bestaande QLS order- of opslaglogica aan te passen.
+
 ## [0.3.179] — 2026-04-29
 ### Fixed
 - Abonnementen verzending: de actieve waarde van de verzenddropdown op Mijn Account kiest nu de best passende WooCommerce-rate op basis van een gerankte match. Daardoor blijft de zichtbare geselecteerde optie gelijk aan de werkelijk opgeslagen abonnementsorder, ook wanneer meerdere rates dezelfde globale methodefallback delen.
