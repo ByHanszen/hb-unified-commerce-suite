@@ -13,6 +13,7 @@ class QLSModule {
     const META_PRODUCT = '_hb_qls_exclude_product'; // 1/0 (manual per product)
     const META_ORDER   = '_hb_qls_exclude_order';   // 1/0 (manual per order)
     const META_ORDER_LEGACY = '_qls_exclude';       // 1/0 (oude plugin/meta-compat)
+    const SERVICEPOINT_PLUGIN_SLUG = 'qlsgroup-woocommerce-service-points';
 
     public function init(): void {
         if (!class_exists('WooCommerce')) {
@@ -33,11 +34,35 @@ class QLSModule {
         // REST API: filter orders voor geselecteerde API user
         add_filter('rest_post_dispatch', [$this, 'rest_filter_orders_for_api_user'], 10, 3);
 
-        add_action('wp_footer', [$this, 'render_servicepoint_modal_fix'], 99);
+        if ($this->has_active_servicepoint_plugin()) {
+            add_action('wp_footer', [$this, 'render_servicepoint_modal_fix'], 99);
+        }
+    }
+
+    private function has_active_servicepoint_plugin(): bool {
+        $active_plugins = (array) get_option('active_plugins', []);
+
+        foreach ($active_plugins as $plugin_file) {
+            if (is_string($plugin_file) && strpos($plugin_file, self::SERVICEPOINT_PLUGIN_SLUG) !== false) {
+                return true;
+            }
+        }
+
+        if (is_multisite()) {
+            $network_plugins = (array) get_site_option('active_sitewide_plugins', []);
+
+            foreach (array_keys($network_plugins) as $plugin_file) {
+                if (is_string($plugin_file) && strpos($plugin_file, self::SERVICEPOINT_PLUGIN_SLUG) !== false) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     public function render_servicepoint_modal_fix(): void {
-        if (!function_exists('is_checkout') || !is_checkout()) {
+        if (!function_exists('is_checkout') || !is_checkout() || !$this->has_active_servicepoint_plugin()) {
             return;
         }
         ?>
