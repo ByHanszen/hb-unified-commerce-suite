@@ -139,6 +139,7 @@ class Settings {
     private function defaults_qls(): array {
         return [
             'api_user_id'                    => 0,
+            'servicepoint_button_color'      => '#111111',
             'excluded_shipping_method_ids'   => [], // bv ['flat_rate','local_pickup']
             'excluded_shipping_instance_ids' => [], // ints (instance_id)
             'delete_data_on_uninstall'       => 0,
@@ -932,6 +933,15 @@ class Settings {
         echo '</td>';
         echo '</tr>';
 
+        // Kleur servicepunt-knop
+        echo '<tr>';
+        echo '<th scope="row"><label for="hb_ucs_qls_servicepoint_button_color">'.esc_html__('Knopkleur servicepunt', 'hb-ucs').'</label></th>';
+        echo '<td>';
+        echo '<input type="color" id="hb_ucs_qls_servicepoint_button_color" name="hb_ucs_qls[servicepoint_button_color]" value="'.esc_attr((string) ($opt['servicepoint_button_color'] ?? '#111111')).'" />';
+        echo '<p class="description">'.esc_html__('Achtergrondkleur voor de checkoutknop “Selecteer servicepunt” van de externe QLS locator-plugin.', 'hb-ucs').'</p>';
+        echo '</td>';
+        echo '</tr>';
+
         // Uitsluiten per methode-type
         echo '<tr>';
         echo '<th scope="row"><label for="hb_ucs_qls_excluded_shipping_method_ids">'.esc_html__('Uitsluiten per methode-type', 'hb-ucs').'</label></th>';
@@ -1031,8 +1041,10 @@ class Settings {
 
         $current = get_option(self::OPT_QLS, $this->defaults_qls());
         $raw = isset($_POST['hb_ucs_qls']) ? (array) $_POST['hb_ucs_qls'] : [];
+        $servicepoint_button_color = isset($raw['servicepoint_button_color']) ? sanitize_hex_color((string) $raw['servicepoint_button_color']) : '';
         $clean = [
             'api_user_id'                    => isset($raw['api_user_id']) ? (int)$raw['api_user_id'] : 0,
+            'servicepoint_button_color'      => $servicepoint_button_color ?: (string) ($current['servicepoint_button_color'] ?? '#111111'),
             'excluded_shipping_method_ids'   => array_values(array_filter(array_map('strval', $raw['excluded_shipping_method_ids'] ?? []))),
             'excluded_shipping_instance_ids' => array_values(array_filter(array_map('intval', $raw['excluded_shipping_instance_ids'] ?? []))),
             'delete_data_on_uninstall'       => empty($raw['delete_data_on_uninstall']) ? 0 : 1,

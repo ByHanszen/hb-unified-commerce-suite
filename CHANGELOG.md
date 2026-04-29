@@ -4,6 +4,10 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [0.3.184] — 2026-04-29
+### Added
+- QLS instellingen: er is nu een configureerbare knopkleur toegevoegd voor de checkoutknop “Selecteer servicepunt”. De gekozen kleur wordt binnen de bestaande QLS-module opgeslagen en direct toegepast op de frontend-knop van de externe QLS locator-plugin.
+
 ## [0.3.183] — 2026-04-29
 ### Fixed
 - QLS checkout: de modal-fix volgt nu de echte opbouw van de externe QLS locator-plugin, die een fullscreen wrapper-div met `iframe#qls_servicepoint_locator` injecteert. Daardoor staat de sluitknop weer rechtsboven bij het venster en wordt bij handmatig sluiten de volledige wrapper verwijderd, zodat er geen onzichtbare overlay achterblijft.

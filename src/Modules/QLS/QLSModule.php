@@ -65,6 +65,9 @@ class QLSModule {
         if (!function_exists('is_checkout') || !is_checkout() || !$this->has_active_servicepoint_plugin()) {
             return;
         }
+
+        $options = get_option(Settings::OPT_QLS, []);
+        $button_color = sanitize_hex_color((string) ($options['servicepoint_button_color'] ?? '#111111')) ?: '#111111';
         ?>
         <style>
             /*
@@ -72,6 +75,20 @@ class QLSModule {
              * Sluit aan op de externe QLS locator-plugin, die een fullscreen
              * wrapper-div met iframe#qls_servicepoint_locator toevoegt.
              */
+
+            body.woocommerce-checkout #qls_servicepoint_select_button {
+                background: <?php echo esc_html($button_color); ?> !important;
+                border-color: <?php echo esc_html($button_color); ?> !important;
+                color: #ffffff !important;
+            }
+
+            body.woocommerce-checkout #qls_servicepoint_select_button:hover,
+            body.woocommerce-checkout #qls_servicepoint_select_button:focus {
+                background: <?php echo esc_html($button_color); ?> !important;
+                border-color: <?php echo esc_html($button_color); ?> !important;
+                color: #ffffff !important;
+                filter: brightness(0.94) !important;
+            }
 
             body.woocommerce-checkout iframe#qls_servicepoint_locator,
             body.woocommerce-checkout iframe[src*="pakketdienstqls.nl"],
