@@ -1106,6 +1106,7 @@ class SubscriptionRepository {
             }
 
             $lines[] = [
+                'rate_key' => method_exists($item, 'get_meta') ? (string) $item->get_meta('_hb_ucs_shipping_rate_key', true) : '',
                 'method_title' => method_exists($item, 'get_method_title') ? (string) $item->get_method_title() : __('Verzending', 'hb-ucs'),
                 'method_id' => method_exists($item, 'get_method_id') ? (string) $item->get_method_id() : '',
                 'instance_id' => method_exists($item, 'get_instance_id') ? (int) $item->get_instance_id() : 0,
@@ -1358,6 +1359,9 @@ class SubscriptionRepository {
             }
             if (method_exists($item, 'set_instance_id')) {
                 $item->set_instance_id((int) ($row['instance_id'] ?? 0));
+            }
+            if (!empty($row['rate_key'])) {
+                $item->add_meta_data('_hb_ucs_shipping_rate_key', sanitize_text_field((string) $row['rate_key']), true);
             }
             $item->set_total($this->normalize_decimal($row['total'] ?? 0.0));
             if (method_exists($item, 'set_taxes')) {
