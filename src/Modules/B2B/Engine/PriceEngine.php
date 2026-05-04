@@ -9,6 +9,7 @@ use HB\UCS\Modules\B2B\Storage\ProfilesStore;
 use HB\UCS\Modules\B2B\Storage\RoleRulesStore;
 use HB\UCS\Modules\B2B\Storage\SettingsStore;
 use HB\UCS\Modules\B2B\Support\Context;
+use HB\UCS\Modules\B2B\Support\WpcProductBundlesSupport;
 
 if (!defined('ABSPATH')) exit;
 
@@ -17,17 +18,19 @@ class PriceEngine {
     private RoleRulesStore $roleRules;
     private CustomerRulesStore $customerRules;
     private ProfilesStore $profiles;
+    private WpcProductBundlesSupport $bundleSupport;
 
     private static bool $guard = false;
     private static bool $html_guard = false;
 
     private static array $cache_category_terms = [];
 
-    public function __construct(SettingsStore $settings) {
+    public function __construct(SettingsStore $settings, WpcProductBundlesSupport $bundleSupport) {
         $this->settings = $settings;
         $this->roleRules = new RoleRulesStore();
         $this->customerRules = new CustomerRulesStore();
         $this->profiles = new ProfilesStore();
+        $this->bundleSupport = $bundleSupport;
     }
 
     private function round_wc(float $value, int $precision): float {
@@ -73,6 +76,7 @@ class PriceEngine {
         try {
             foreach ($cart->get_cart() as $cart_item_key => $cart_item) {
                 if (empty($cart_item['data']) || !is_object($cart_item['data'])) continue;
+                if ($this->bundleSupport->should_preserve_cart_item_price($cart_item)) continue;
                 $product = $cart_item['data'];
 
                 $adjusted = $this->get_adjusted_price_raw($product, $user_id);
@@ -290,6 +294,7 @@ class PriceEngine {
     public function filter_cart_item_price(string $price_html, array $cart_item, string $cart_item_key): string {
         if (self::$html_guard) return $price_html;
         if (!Context::is_admin_safe_context()) return $price_html;
+        if ($this->bundleSupport->should_preserve_cart_item_price($cart_item)) return $price_html;
 
         $user_id = Context::get_effective_user_id();
         if ($user_id <= 0) return $price_html;
@@ -325,6 +330,7 @@ class PriceEngine {
     public function filter_cart_item_subtotal(string $subtotal_html, array $cart_item, string $cart_item_key): string {
         if (self::$html_guard) return $subtotal_html;
         if (!Context::is_admin_safe_context()) return $subtotal_html;
+        if ($this->bundleSupport->should_preserve_cart_item_price($cart_item)) return $subtotal_html;
 
         $user_id = Context::get_effective_user_id();
         if ($user_id <= 0) return $subtotal_html;

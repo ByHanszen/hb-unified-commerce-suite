@@ -9,6 +9,7 @@ use HB\UCS\Modules\B2B\Checkout\MethodVisibility;
 use HB\UCS\Modules\B2B\Engine\PriceEngine;
 use HB\UCS\Modules\B2B\Storage\SettingsStore;
 use HB\UCS\Modules\B2B\Support\Context;
+use HB\UCS\Modules\B2B\Support\WpcProductBundlesSupport;
 
 if (!defined('ABSPATH')) exit;
 
@@ -23,7 +24,8 @@ class B2BModule {
 
         $settings = new SettingsStore();
         $methodVisibility = new MethodVisibility($settings);
-        $priceEngine = new PriceEngine($settings);
+        $bundleSupport = new WpcProductBundlesSupport();
+        $priceEngine = new PriceEngine($settings, $bundleSupport);
 
         // Shipping / payment visibility in checkout.
         add_filter('woocommerce_package_rates', [$methodVisibility, 'filter_package_rates'], 100, 2);
@@ -42,7 +44,7 @@ class B2BModule {
         add_filter('woocommerce_cart_item_subtotal', [$priceEngine, 'filter_cart_item_subtotal'], 99, 3);
 
         // Admin order integrations.
-        (new AdminOrderPricing($priceEngine))->init();
+        (new AdminOrderPricing($priceEngine, $bundleSupport))->init();
     }
 
     public function maybe_force_user_from_admin_order_ajax(): void {

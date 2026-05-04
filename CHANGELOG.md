@@ -4,6 +4,18 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
+## [Unreleased]
+### Fixed
+- B2B pricing: WPC Product Bundles for WooCommerce bundelregels worden nu bundle-aware behandeld in cart- en admin-order herprijzing. Daardoor blijven bundle-onderdelen die door WPC op nul worden gezet ook echt nul, terwijl prijsdragende bundle-regels nog steeds klant- of klantgroepspecifieke B2B-korting kunnen krijgen.
+
+## [0.3.186] — 2026-04-29
+### Fixed
+- QLS checkout: de buitenste locator-modal gebruikt weer de eerdere afmetingen van 80% schermhoogte op desktop en 85% op mobiel. De interne Google Maps-kaart binnen de externe QLS iframe blijft daarbij ongewijzigd, omdat die layout niet vanuit deze plugin wordt aangestuurd.
+
+## [0.3.185] — 2026-04-29
+### Fixed
+- QLS checkout: de zichtbare locator-iframe wordt nu overal begrensd op maximaal 50% van de schermhoogte. Daardoor blijft de kaart compacter in beeld, zowel op desktop als mobiel.
+
 ## [0.3.184] — 2026-04-29
 ### Added
 - QLS instellingen: er is nu een configureerbare knopkleur toegevoegd voor de checkoutknop “Selecteer servicepunt”. De gekozen kleur wordt binnen de bestaande QLS-module opgeslagen en direct toegepast op de frontend-knop van de externe QLS locator-plugin.

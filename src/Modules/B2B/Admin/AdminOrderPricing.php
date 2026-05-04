@@ -7,16 +7,19 @@ namespace HB\UCS\Modules\B2B\Admin;
 use HB\UCS\Modules\B2B\Engine\PriceEngine;
 use HB\UCS\Modules\B2B\Storage\SettingsStore;
 use HB\UCS\Modules\B2B\Support\Validator;
+use HB\UCS\Modules\B2B\Support\WpcProductBundlesSupport;
 
 if (!defined('ABSPATH')) exit;
 
 class AdminOrderPricing {
     private PriceEngine $engine;
+    private WpcProductBundlesSupport $bundleSupport;
 
     private const META_MANUAL_PRICE_LOCK = '_hb_ucs_b2b_manual_price_lock';
 
-    public function __construct(PriceEngine $engine) {
+    public function __construct(PriceEngine $engine, WpcProductBundlesSupport $bundleSupport) {
         $this->engine = $engine;
+        $this->bundleSupport = $bundleSupport;
     }
 
     public function init(): void {
@@ -142,17 +145,30 @@ class AdminOrderPricing {
             $product = $item->get_product();
             if (!$product) continue;
 
-            // Base = regular/current depending on B2B setting, then apply B2B if any.
-            $regular = method_exists($product, 'get_regular_price') ? (string) $product->get_regular_price('edit') : '';
-            $current = method_exists($product, 'get_price') ? (string) $product->get_price('edit') : '';
-            $reg = is_numeric($regular) ? (float) $regular : null;
-            $cur = is_numeric($current) ? (float) $current : null;
-            $base_raw = ($baseMode === 'current') ? ($cur ?? $reg) : ($reg ?? $cur);
-            if ($base_raw === null) {
+            if ($this->bundleSupport->should_preserve_order_item_price($item, $product)) {
+                if ($force) {
+                    $item->delete_meta_data(self::META_MANUAL_PRICE_LOCK);
+                }
                 continue;
             }
 
-            $base_ex = (float) wc_get_price_excluding_tax($product, ['price' => $base_raw, 'qty' => 1]);
+            $isBundleManaged = $this->bundleSupport->is_bundle_managed_order_item($item, $product);
+
+            if ($isBundleManaged) {
+                $base_ex = $this->bundleSupport->get_bundle_order_item_base_unit_price_ex($item);
+            } else {
+                // Base = regular/current depending on B2B setting, then apply B2B if any.
+                $regular = method_exists($product, 'get_regular_price') ? (string) $product->get_regular_price('edit') : '';
+                $current = method_exists($product, 'get_price') ? (string) $product->get_price('edit') : '';
+                $reg = is_numeric($regular) ? (float) $regular : null;
+                $cur = is_numeric($current) ? (float) $current : null;
+                $base_raw = ($baseMode === 'current') ? ($cur ?? $reg) : ($reg ?? $cur);
+                if ($base_raw === null) {
+                    continue;
+                }
+
+                $base_ex = (float) wc_get_price_excluding_tax($product, ['price' => $base_raw, 'qty' => 1]);
+            }
 
             $new_ex = $this->engine->resolve_price_ex($product, $customer_id, $base_ex);
             if ($new_ex === null) {
