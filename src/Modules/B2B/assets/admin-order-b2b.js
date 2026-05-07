@@ -1,6 +1,7 @@
 /* global HB_UCS_B2B_ORDER */
 jQuery(function ($) {
   const manualPriceLockSelector = 'input[type="hidden"][name^="hb_ucs_b2b_manual_price_lock["]';
+  const manualPriceLockRowSelector = 'tr.hb-ucs-b2b-manual-price-locks';
 
   function getOrderItemIdFromInputName(name) {
     if (!name || typeof name !== 'string') return 0;
@@ -14,7 +15,55 @@ jQuery(function ($) {
     return ($context && $context.length) ? $context : $('#woocommerce-order-items');
   }
 
+  function getManualPriceLockSaveTarget($context) {
+    const $root = getManualPriceLockRoot($context);
+    const $tbody = $root.find('tbody#order_line_items').first();
+    if ($tbody.length) {
+      let $target = $tbody.find(manualPriceLockRowSelector + ' td').first();
+      if ($target.length) return $target;
+
+      const colspan = Math.max(1, $root.find('table.woocommerce_order_items thead tr th').length || 1);
+      $tbody.append('<tr class="hb-ucs-b2b-manual-price-locks" style="display:none;"><td colspan="' + colspan + '"></td></tr>');
+      $target = $tbody.find(manualPriceLockRowSelector + ' td').first();
+      if ($target.length) return $target;
+    }
+
+    return $root;
+  }
+
+  function normalizeManualPriceLocks($context) {
+    const $root = getManualPriceLockRoot($context);
+    if (!$root.length) return;
+
+    const $target = getManualPriceLockSaveTarget($root);
+    if (!$target.length) return;
+
+    const seen = {};
+
+    $root.find(manualPriceLockSelector).each(function () {
+      const $field = $(this);
+      const name = $field.attr('name') || '';
+
+      if (!name) {
+        $field.remove();
+        return;
+      }
+
+      if (seen[name]) {
+        $field.remove();
+        return;
+      }
+
+      seen[name] = true;
+
+      if (!$field.parent().is($target)) {
+        $field.appendTo($target);
+      }
+    });
+  }
+
   function serializeManualPriceLocks($context) {
+    normalizeManualPriceLocks($context);
     const $root = getManualPriceLockRoot($context);
     if (!$root.length) return '';
     return $root.find(manualPriceLockSelector).serialize();
@@ -35,12 +84,14 @@ jQuery(function ($) {
   function ensureManualPriceLockField(itemId, $context) {
     if (!itemId || itemId <= 0) return;
     const fieldName = 'hb_ucs_b2b_manual_price_lock[' + itemId + ']';
-    const $root = ($context && $context.length) ? $context : $('#woocommerce-order-items');
+    const $root = getManualPriceLockRoot($context);
     if (!$root.length) return;
+
+    normalizeManualPriceLocks($root);
 
     if ($root.find('input[type="hidden"][name="' + fieldName + '"]').length) return;
 
-    $root.append('<input type="hidden" name="' + fieldName + '" value="1" />');
+    getManualPriceLockSaveTarget($root).append('<input type="hidden" name="' + fieldName + '" value="1" />');
   }
 
   function extendWooSaveLineItemsData(data) {
@@ -236,7 +287,12 @@ jQuery(function ($) {
     doRecalc($(this), { force: !!(e && e.shiftKey) });
   });
 
+  $(document).on('click', '#save_order_items', function () {
+    normalizeManualPriceLocks($('#woocommerce-order-items'));
+  });
+
   $('#woocommerce-order-items').on('woocommerce_order_meta_box_save_line_items_ajax_data', function (event, data) {
+    normalizeManualPriceLocks($(this));
     return extendWooSaveLineItemsData(data);
   });
 
