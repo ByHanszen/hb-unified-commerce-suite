@@ -1,11 +1,35 @@
 /* global HB_UCS_B2B_ORDER */
 jQuery(function ($) {
+  const manualPriceLockSelector = 'input[type="hidden"][name^="hb_ucs_b2b_manual_price_lock["]';
+
   function getOrderItemIdFromInputName(name) {
     if (!name || typeof name !== 'string') return 0;
     const m = name.match(/\[(\d+)\]/);
     if (!m || !m[1]) return 0;
     const id = parseInt(m[1], 10);
     return id > 0 ? id : 0;
+  }
+
+  function getManualPriceLockRoot($context) {
+    return ($context && $context.length) ? $context : $('#woocommerce-order-items');
+  }
+
+  function serializeManualPriceLocks($context) {
+    const $root = getManualPriceLockRoot($context);
+    if (!$root.length) return '';
+    return $root.find(manualPriceLockSelector).serialize();
+  }
+
+  function appendSerializedData(base, extra) {
+    if (!extra) return base || '';
+    if (!base) return extra;
+    return base + '&' + extra;
+  }
+
+  function clearManualPriceLocks($context) {
+    const $root = getManualPriceLockRoot($context);
+    if (!$root.length) return;
+    $root.find(manualPriceLockSelector).remove();
   }
 
   function ensureManualPriceLockField(itemId, $context) {
@@ -17,6 +41,17 @@ jQuery(function ($) {
     if ($root.find('input[type="hidden"][name="' + fieldName + '"]').length) return;
 
     $root.append('<input type="hidden" name="' + fieldName + '" value="1" />');
+  }
+
+  function extendWooSaveLineItemsData(data) {
+    if (!data || typeof data !== 'object') return data;
+
+    const lockData = serializeManualPriceLocks($('#woocommerce-order-items'));
+    if (!lockData) return data;
+
+    return $.extend({}, data, {
+      items: appendSerializedData(data.items || '', lockData)
+    });
   }
 
   function showNotice(message, type) {
@@ -69,7 +104,10 @@ jQuery(function ($) {
 
     const data = {
       order_id: window.woocommerce_admin_meta_boxes.post_id,
-      items: $('table.woocommerce_order_items :input[name], .wc-order-totals-items :input[name], #woocommerce-order-items input[name^="hb_ucs_b2b_manual_price_lock["]').serialize(),
+      items: appendSerializedData(
+        $('table.woocommerce_order_items :input[name], .wc-order-totals-items :input[name]').serialize(),
+        serializeManualPriceLocks($('#woocommerce-order-items'))
+      ),
       action: 'woocommerce_save_order_items',
       security: window.woocommerce_admin_meta_boxes.order_item_nonce
     };
@@ -87,6 +125,7 @@ jQuery(function ($) {
     })
       .done(function (resp) {
         if (resp && resp.success && resp.data && resp.data.html) {
+          clearManualPriceLocks($('#woocommerce-order-items'));
           $('#woocommerce-order-items').find('.inside').empty().append(resp.data.html);
           if (resp.data.notes_html) {
             $('ul.order_notes').empty().append($(resp.data.notes_html).find('li'));
@@ -197,6 +236,10 @@ jQuery(function ($) {
     doRecalc($(this), { force: !!(e && e.shiftKey) });
   });
 
+  $('#woocommerce-order-items').on('woocommerce_order_meta_box_save_line_items_ajax_data', function (event, data) {
+    return extendWooSaveLineItemsData(data);
+  });
+
   // Optional auto recalculation when customer changes.
   $(document).on('change', '#customer_user', function () {
     queueRecalc('customer_change');
@@ -204,12 +247,17 @@ jQuery(function ($) {
 
   // Auto recalc when items are added/removed/saved, so customer-first flows add correct prices.
   $(document).ajaxSuccess(function (event, xhr, settings) {
-    if (!shouldAutoRecalc()) return;
     if (!settings || !settings.data) return;
-    if (HB_UCS_B2B_ORDER && HB_UCS_B2B_ORDER._recalcInFlight) return;
 
     const dataStr = (typeof settings.data === 'string') ? settings.data : '';
     if (!dataStr) return;
+
+    if (dataStr.indexOf('action=woocommerce_save_order_items') !== -1 && xhr && xhr.responseJSON && xhr.responseJSON.success) {
+      clearManualPriceLocks($('#woocommerce-order-items'));
+    }
+
+    if (!shouldAutoRecalc()) return;
+    if (HB_UCS_B2B_ORDER && HB_UCS_B2B_ORDER._recalcInFlight) return;
 
     // Ignore our own recalc requests.
     if (dataStr.indexOf('action=hb_ucs_b2b_recalc_order_prices') !== -1) return;

@@ -6,6 +6,7 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 ### Fixed
+- B2B orderbeheer: handmatig aangepaste orderregelprijzen zetten hun B2B lock-meta nu al mee in de standaard WooCommerce-actie “Order items opslaan”. Daardoor blijft een handmatige prijswijziging direct na de eerste save behouden en wordt die niet eerst nog een keer door de B2B herberekening overschreven.
 - B2B pricing: WPC Product Bundles for WooCommerce bundelregels worden nu bundle-aware behandeld in cart- en admin-order herprijzing. Daardoor blijven bundle-onderdelen die door WPC op nul worden gezet ook echt nul, terwijl prijsdragende bundle-regels nog steeds klant- of klantgroepspecifieke B2B-korting kunnen krijgen.
 
 ## [0.3.186] — 2026-04-29
