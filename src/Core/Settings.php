@@ -15,6 +15,7 @@ class Settings {
     const OPT_CUSTOMER_ORDER_NOTE = 'hb_ucs_customer_order_note_settings'; // Klantnotitie module instellingen
     const OPT_SUBSCRIPTIONS = 'hb_ucs_subscriptions_settings'; // Subscriptions module instellingen
     const OPT_ORDER_OVERVIEW_STATUS = 'hb_ucs_order_overview_status_settings'; // Orderoverzicht status module instellingen
+    const OPT_CHECKOUT = 'hb_ucs_checkout_settings'; // Checkout module instellingen
     const LEGACY_QLS = 'qls_exclude_settings'; // oude plugin optie (migratie)
 
     public function init(): void {
@@ -41,6 +42,7 @@ class Settings {
         add_action('admin_post_hb_ucs_save_invoice_email', [$this, 'handle_save_invoice_email']);
         add_action('admin_post_hb_ucs_save_customer_order_note', [$this, 'handle_save_customer_order_note']);
         add_action('admin_post_hb_ucs_save_subscriptions', [$this, 'handle_save_subscriptions']);
+        add_action('admin_post_hb_ucs_save_checkout', [$this, 'handle_save_checkout']);
     }
 
     public function seed_default_options(): void {
@@ -49,6 +51,7 @@ class Settings {
         add_option(self::OPT_CUSTOMER_ORDER_NOTE, $this->defaults_customer_order_note());
         add_option(self::OPT_SUBSCRIPTIONS, $this->defaults_subscriptions());
         add_option(self::OPT_ORDER_OVERVIEW_STATUS, $this->defaults_order_overview_status());
+        add_option(self::OPT_CHECKOUT, $this->defaults_checkout());
     }
 
     public function enqueue_admin_assets(string $hook): void {
@@ -132,6 +135,7 @@ class Settings {
                 'customer_order_note' => 0,
                 'subscriptions' => 0,
                 'order_overview_status' => 0,
+                'checkout'      => 0,
             ],
         ];
     }
@@ -228,6 +232,13 @@ class Settings {
         return [
             'delete_data_on_uninstall' => 0,
             'statuses' => [],
+        ];
+    }
+
+    private function defaults_checkout(): array {
+        return [
+            'force_shipping_selection' => 0,
+            'delete_data_on_uninstall' => 0,
         ];
     }
 
@@ -369,6 +380,15 @@ class Settings {
                 echo '<div class="notice notice-error"><p>'.esc_html__('Rollen module is niet geladen.', 'hb-ucs').'</p></div></div>';
             }
         );
+
+        add_submenu_page(
+            'hb-ucs',
+            __('Checkout', 'hb-ucs'),
+            __('Checkout', 'hb-ucs'),
+            'manage_options',
+            'hb-ucs-checkout',
+            [$this, 'render_checkout']
+        );
     }
 
     public function register(): void {
@@ -431,6 +451,14 @@ class Settings {
             $checked = !empty($mods['order_overview_status']) ? 'checked' : '';
             echo '<label><input type="checkbox" name="'.esc_attr(self::OPT).'[modules][order_overview_status]" value="1" '.$checked.'/> '.esc_html__('Activeren', 'hb-ucs').'</label>';
             echo '<p class="description">'.esc_html__('Voegt een extra beheerbare statuskolom toe aan het WooCommerce bestellingenoverzicht met direct opslaan via dropdown.', 'hb-ucs').'</p>';
+        }, 'hb-ucs', 'hb_ucs_modules');
+
+        add_settings_field('checkout', __('Checkout', 'hb-ucs'), function () {
+            $opt = get_option(self::OPT, $this->defaults_main());
+            $mods = $opt['modules'] ?? [];
+            $checked = !empty($mods['checkout']) ? 'checked' : '';
+            echo '<label><input type="checkbox" name="'.esc_attr(self::OPT).'[modules][checkout]" value="1" '.$checked.'/> '.esc_html__('Activeren', 'hb-ucs').'</label>';
+            echo '<p class="description">'.esc_html__('Extra checkoutgedrag zoals het verplichten van een bewuste verzendmethode-keuze.', 'hb-ucs').'</p>';
         }, 'hb-ucs', 'hb_ucs_modules');
     }
 
@@ -1255,5 +1283,91 @@ class Settings {
             $count++;
         }
         return $count;
+    }
+
+    // ====== Checkout module ======
+
+    public function render_checkout(): void {
+        if (!class_exists('WooCommerce')) {
+            echo '<div class="wrap">';
+            echo '<h1>' . esc_html__('Checkout', 'hb-ucs') . '</h1>';
+            echo '<div class="notice notice-error"><p>' . esc_html__('WooCommerce is vereist voor deze module.', 'hb-ucs') . '</p></div>';
+            echo '</div>';
+            return;
+        }
+
+        $main    = get_option(self::OPT, $this->defaults_main());
+        $mods    = $main['modules'] ?? [];
+        $enabled = !empty($mods['checkout']);
+        $opt     = get_option(self::OPT_CHECKOUT, $this->defaults_checkout());
+
+        echo '<div class="wrap">';
+        echo '<h1>' . esc_html__('Checkout', 'hb-ucs') . '</h1>';
+
+        if (!empty($_GET['updated'])) {
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Instellingen opgeslagen.', 'hb-ucs') . '</p></div>';
+        }
+
+        if ($enabled) {
+            echo '<div class="notice notice-success"><p>' . esc_html__('Module status: ingeschakeld.', 'hb-ucs') . '</p></div>';
+        } else {
+            $modulesUrl = add_query_arg(['page' => 'hb-ucs'], admin_url('admin.php'));
+            echo '<div class="notice notice-warning"><p>';
+            echo esc_html__('Module status: uitgeschakeld.', 'hb-ucs') . ' ';
+            echo '<a href="' . esc_url($modulesUrl) . '">' . esc_html__('Schakel in via Modules.', 'hb-ucs') . '</a>';
+            echo '</p></div>';
+        }
+
+        echo '<p>' . esc_html__('Beheer extra checkoutgedrag zoals het verplichten van een bewuste verzendmethode-keuze.', 'hb-ucs') . '</p>';
+
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        echo '<input type="hidden" name="action" value="hb_ucs_save_checkout" />';
+        wp_nonce_field('hb_ucs_save_checkout', 'hb_ucs_save_checkout_nonce');
+
+        echo '<h2>' . esc_html__('Instellingen', 'hb-ucs') . '</h2>';
+        echo '<table class="form-table" role="presentation"><tbody>';
+
+        $force = !empty($opt['force_shipping_selection']) ? 'checked' : '';
+        echo '<tr>';
+        echo '<th scope="row">' . esc_html__('Verplichte keuze verzendmethode', 'hb-ucs') . '</th>';
+        echo '<td>';
+        echo '<label><input type="checkbox" name="hb_ucs_checkout[force_shipping_selection]" value="1" ' . $force . ' /> ';
+        echo esc_html__('Inschakelen', 'hb-ucs') . '</label>';
+        echo '<p class="description">' . esc_html__('Wanneer ingeschakeld wordt er geen verzendmethode standaard voorselecteerd op de checkoutpagina. De klant moet bewust een keuze maken. Bij meerdere verzendopties blokkeert het systeem de bestelling als er geen methode geselecteerd is.', 'hb-ucs') . '</p>';
+        echo '</td>';
+        echo '</tr>';
+
+        $del = !empty($opt['delete_data_on_uninstall']) ? 'checked' : '';
+        echo '<tr>';
+        echo '<th scope="row">' . esc_html__('Data verwijderen bij uninstall', 'hb-ucs') . '</th>';
+        echo '<td>';
+        echo '<label><input type="checkbox" name="hb_ucs_checkout[delete_data_on_uninstall]" value="1" ' . $del . ' /> ';
+        echo esc_html__('Verwijder instellingen van deze module bij uninstall.', 'hb-ucs') . '</label>';
+        echo '</td>';
+        echo '</tr>';
+
+        echo '</tbody></table>';
+        submit_button(__('Instellingen opslaan', 'hb-ucs'));
+        echo '</form>';
+        echo '</div>';
+    }
+
+    public function handle_save_checkout(): void {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Onvoldoende rechten.', 'hb-ucs'));
+        }
+        check_admin_referer('hb_ucs_save_checkout', 'hb_ucs_save_checkout_nonce');
+
+        $raw = isset($_POST['hb_ucs_checkout']) ? (array) $_POST['hb_ucs_checkout'] : [];
+
+        $clean = [
+            'force_shipping_selection' => empty($raw['force_shipping_selection']) ? 0 : 1,
+            'delete_data_on_uninstall' => empty($raw['delete_data_on_uninstall']) ? 0 : 1,
+        ];
+        update_option(self::OPT_CHECKOUT, $clean, false);
+
+        $redirect = add_query_arg(['page' => 'hb-ucs-checkout', 'updated' => 'true'], admin_url('admin.php'));
+        wp_safe_redirect($redirect);
+        exit;
     }
 }

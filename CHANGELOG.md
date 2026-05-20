@@ -6,6 +6,13 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.188] — 2026-05-20
+### Added
+- Checkout-module: nieuwe optie "Verplichte keuze verzendmethode". Wanneer ingeschakeld wordt er geen verzendmethode standaard voorselecteerd op de checkoutpagina. De klant moet bewust een keuze maken. Bij meerdere verzendopties blokkeert zowel de frontend (JS) als de server-side validatie de bestelling wanneer er niets geselecteerd is.
+### Fixed
+- Checkout-module: de vorige implementatie werkte niet omdat WooCommerce's checkout-template `chosen_shipping_methods` rechtstreeks uit de WC-sessie leest (niet via de filter). De primaire fix manipuleert nu de sessie zelf via `woocommerce_after_calculate_totals` (prioriteit 999), zodat de template altijd een lege keuze ziet. De filter blijft actief als reservelaag.
+- Checkout-module: het afronden van de bestelling kan nu niet meer door een impliciete of door WooCommerce herstelde verzendmethode heen glippen. De validatie vertrouwt nu op een aparte expliciete gebruikersvlag die alleen wordt gezet wanneer de klant zelf een verzendmethode kiest.
+
 ## [0.3.187] — 2026-05-07
 ### Fixed
 - B2B orderbeheer: handmatig aangepaste orderregelprijzen zetten hun B2B lock-meta nu al mee in de standaard WooCommerce-actie “Order items opslaan”. Daardoor blijft een handmatige prijswijziging direct na de eerste save behouden en wordt die niet eerst nog een keer door de B2B herberekening overschreven.
