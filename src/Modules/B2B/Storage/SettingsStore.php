@@ -17,6 +17,7 @@ class SettingsStore {
             'default_behavior' => 'woocommerce_all', // woocommerce_all | whitelist
             'default_allowed_shipping' => [],
             'default_allowed_payments' => [],
+            'custom_shipping_choices' => [],
 
             // Guests (not logged in)
             // inherit_default | woocommerce_all | whitelist
@@ -101,6 +102,7 @@ class SettingsStore {
             'default_behavior' => $default_behavior,
             'default_allowed_shipping' => Validator::sanitize_allowed_shipping($raw['default_allowed_shipping'] ?? []),
             'default_allowed_payments' => Validator::sanitize_allowed_payments($raw['default_allowed_payments'] ?? []),
+            'custom_shipping_choices' => Validator::sanitize_manual_shipping_choices($raw['custom_shipping_choices'] ?? []),
 
             'guest_behavior' => $guest_behavior,
             'guest_allowed_shipping' => Validator::sanitize_allowed_shipping($raw['guest_allowed_shipping'] ?? []),

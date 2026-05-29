@@ -6,6 +6,14 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+### Fixed
+- Abonnement-editor: handmatig opgeslagen status-, schema- en datumvelden houden nu de primaire order-meta en de legacy shadow-meta binnen hetzelfde abonnement direct synchroon. Daardoor kan de volgende betaaldatum na een admin-save niet meer terugvallen door een interne meta-mismatch tussen beide opslaglagen.
+- B2B verzendmethodes: de whitelist kan nu ook specifieke runtime-ratekeys van externe verzendplugins opslaan en tonen, naast standaard WooCommerce methodetypes en zone-instances. Daardoor kun je per klant, rol, profiel, whitelist of standaardkeuze ook aparte checkout-varianten binnen dezelfde verzendmethode-instance sturen.
+- B2B instellingen: er is nu een handmatige lijst voor eigen verzendmethode-keys toegevoegd. Daardoor kun je custom checkout-varianten ook direct in de plugininstellingen registreren en kiezen, zonder eerst een checkout-run nodig te hebben om ze te laten detecteren.
+- B2B instellingen: verzendkeuzes tonen nu eerst de echte WooCommerce verzendtitels van zone-instances, zoals "HB Bezorging" of "Vast tarief standaard". De generieke methodetype-keuzes blijven beschikbaar als bredere fallback, maar zijn duidelijker gelabeld.
+- B2B verzendkeuzes: de validator laadt nu expliciet WooCommerce shipping zone classes in de admin-context voordat de selecties worden opgebouwd. Daardoor vallen B2B-instellingen niet meer onterecht terug op alleen de standaard methodetypes wanneer zone-instances nog niet door WooCommerce waren geïnitialiseerd.
+- B2B verzendkeuzes: instance-detectie leest WooCommerce zones nu altijd via echte `WC_Shipping_Zone` objecten in plaats van te vertrouwen op de ruwe `shipping_methods` payload uit `WC_Shipping_Zones::get_zones()`. Daardoor verschijnen ingestelde titels zoals "HB Bezorging" en "Vast tarief standaard" nu ook echt in de B2B selectielijst.
+
 ## [0.3.188] — 2026-05-20
 ### Added
 - Checkout-module: nieuwe optie "Verplichte keuze verzendmethode". Wanneer ingeschakeld wordt er geen verzendmethode standaard voorselecteerd op de checkoutpagina. De klant moet bewust een keuze maken. Bij meerdere verzendopties blokkeert zowel de frontend (JS) als de server-side validatie de bestelling wanneer er niets geselecteerd is.

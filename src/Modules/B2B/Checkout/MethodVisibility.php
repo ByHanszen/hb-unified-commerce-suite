@@ -9,6 +9,7 @@ use HB\UCS\Modules\B2B\Storage\ProfilesStore;
 use HB\UCS\Modules\B2B\Storage\RoleRulesStore;
 use HB\UCS\Modules\B2B\Storage\SettingsStore;
 use HB\UCS\Modules\B2B\Support\Context;
+use HB\UCS\Modules\B2B\Support\Validator;
 
 if (!defined('ABSPATH')) exit;
 
@@ -26,6 +27,8 @@ class MethodVisibility {
     }
 
     public function filter_package_rates(array $rates, array $package): array {
+        Validator::remember_runtime_shipping_choices($rates);
+
         if (!Context::is_admin_safe_context()) return $rates;
 
         $user_id = Context::get_effective_user_id();

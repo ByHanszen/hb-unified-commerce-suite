@@ -2,6 +2,7 @@
 
 namespace HB\UCS\Modules\Subscriptions\Orders;
 
+use HB\UCS\Modules\Subscriptions\Domain\SubscriptionRepository;
 use HB\UCS\Modules\Subscriptions\OrderTypes\SubscriptionOrderType;
 
 if (!defined('ABSPATH')) exit;
@@ -38,7 +39,10 @@ class HB_UCS_Subscription_Order extends \WC_Order {
     }
 
     public function set_subscription_status(string $status): void {
-        $this->update_meta_data('_hb_ucs_subscription_status', sanitize_key($status));
+        $status = sanitize_key($status);
+
+        $this->update_meta_data('_hb_ucs_subscription_status', $status);
+        $this->update_meta_data(SubscriptionRepository::LEGACY_STATUS_META, $status);
     }
 
     public function get_subscription_scheme(string $context = 'view'): string {
@@ -46,7 +50,10 @@ class HB_UCS_Subscription_Order extends \WC_Order {
     }
 
     public function set_subscription_scheme(string $scheme): void {
-        $this->update_meta_data('_hb_ucs_subscription_scheme', sanitize_key($scheme));
+        $scheme = sanitize_key($scheme);
+
+        $this->update_meta_data('_hb_ucs_subscription_scheme', $scheme);
+        $this->update_meta_data(SubscriptionRepository::LEGACY_SCHEME_META, $scheme);
     }
 
     public function get_next_payment_timestamp(string $context = 'view'): int {
@@ -54,6 +61,9 @@ class HB_UCS_Subscription_Order extends \WC_Order {
     }
 
     public function set_next_payment_timestamp(int $timestamp): void {
-        $this->update_meta_data('_hb_ucs_subscription_next_payment', max(0, $timestamp));
+        $timestamp = max(0, $timestamp);
+
+        $this->update_meta_data('_hb_ucs_subscription_next_payment', $timestamp);
+        $this->update_meta_data(SubscriptionRepository::LEGACY_NEXT_PAYMENT_META, $timestamp);
     }
 }

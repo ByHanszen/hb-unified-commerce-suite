@@ -933,10 +933,14 @@ class SubscriptionAdmin {
             if (isset($options[$scheme])) {
                 if (method_exists($order, 'set_subscription_scheme')) {
                     $order->set_subscription_scheme($scheme);
-                } elseif (method_exists($order, 'update_meta_data')) {
-                    $order->update_meta_data('_hb_ucs_subscription_scheme', $scheme);
                 } else {
-                    update_post_meta($orderId, '_hb_ucs_subscription_scheme', $scheme);
+                    $this->update_subscription_order_meta_pair(
+                        $order,
+                        $orderId,
+                        '_hb_ucs_subscription_scheme',
+                        SubscriptionRepository::LEGACY_SCHEME_META,
+                        $scheme
+                    );
                 }
                 $savedScheme = $scheme;
             }
@@ -1028,11 +1032,26 @@ class SubscriptionAdmin {
 
         $savedDates = $previousDates;
         foreach ([
-            'hb_ucs_sub_next_payment' => '_hb_ucs_subscription_next_payment',
-            'hb_ucs_sub_trial_end' => '_hb_ucs_subscription_trial_end',
-            'hb_ucs_sub_end_date' => '_hb_ucs_subscription_end_date',
-        ] as $inputKey => $metaKey) {
+            'hb_ucs_sub_next_payment' => [
+                'primary' => '_hb_ucs_subscription_next_payment',
+                'legacy' => SubscriptionRepository::LEGACY_NEXT_PAYMENT_META,
+            ],
+            'hb_ucs_sub_trial_end' => [
+                'primary' => '_hb_ucs_subscription_trial_end',
+                'legacy' => SubscriptionRepository::LEGACY_TRIAL_END_META,
+            ],
+            'hb_ucs_sub_end_date' => [
+                'primary' => '_hb_ucs_subscription_end_date',
+                'legacy' => SubscriptionRepository::LEGACY_END_DATE_META,
+            ],
+        ] as $inputKey => $metaKeys) {
             if (!isset($_POST[$inputKey])) {
+                continue;
+            }
+
+            $metaKey = (string) ($metaKeys['primary'] ?? '');
+            $legacyMetaKey = (string) ($metaKeys['legacy'] ?? '');
+            if ($metaKey === '' || $legacyMetaKey === '') {
                 continue;
             }
 
@@ -1057,19 +1076,15 @@ class SubscriptionAdmin {
             if ($timestamp > 0) {
                 if ($metaKey === '_hb_ucs_subscription_next_payment' && method_exists($order, 'set_next_payment_timestamp')) {
                     $order->set_next_payment_timestamp($timestamp);
-                } elseif (method_exists($order, 'update_meta_data')) {
-                    $order->update_meta_data($metaKey, $timestamp);
                 } else {
-                    update_post_meta($orderId, $metaKey, $timestamp);
+                    $this->update_subscription_order_meta_pair($order, $orderId, $metaKey, $legacyMetaKey, $timestamp);
                 }
                 $savedDates[$metaKey] = $timestamp;
             } else {
                 if ($metaKey === '_hb_ucs_subscription_next_payment' && method_exists($order, 'set_next_payment_timestamp')) {
                     $order->set_next_payment_timestamp(0);
-                } elseif (method_exists($order, 'delete_meta_data')) {
-                    $order->delete_meta_data($metaKey);
                 } else {
-                    delete_post_meta($orderId, $metaKey);
+                    $this->update_subscription_order_meta_pair($order, $orderId, $metaKey, $legacyMetaKey, null, true);
                 }
                 $savedDates[$metaKey] = 0;
             }
@@ -1471,6 +1486,38 @@ class SubscriptionAdmin {
             }
 
             update_post_meta($orderId, (string) $metaKey, $metaValue);
+        }
+    }
+
+    private function update_subscription_order_meta_pair($order, int $orderId, string $primaryMetaKey, string $legacyMetaKey, $value, bool $delete = false): void {
+        if ($primaryMetaKey === '' || $legacyMetaKey === '') {
+            return;
+        }
+
+        if (!$delete) {
+            if ($order && is_object($order) && method_exists($order, 'update_meta_data')) {
+                $order->update_meta_data($primaryMetaKey, $value);
+                $order->update_meta_data($legacyMetaKey, $value);
+                return;
+            }
+
+            if ($orderId > 0) {
+                update_post_meta($orderId, $primaryMetaKey, $value);
+                update_post_meta($orderId, $legacyMetaKey, $value);
+            }
+
+            return;
+        }
+
+        if ($order && is_object($order) && method_exists($order, 'delete_meta_data')) {
+            $order->delete_meta_data($primaryMetaKey);
+            $order->delete_meta_data($legacyMetaKey);
+            return;
+        }
+
+        if ($orderId > 0) {
+            delete_post_meta($orderId, $primaryMetaKey);
+            delete_post_meta($orderId, $legacyMetaKey);
         }
     }
 

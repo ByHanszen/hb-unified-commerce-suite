@@ -9,6 +9,8 @@ if (!defined('ABSPATH')) exit;
 class Validator {
     public const RULE_TYPES = ['percent', 'fixed_price', 'fixed_discount'];
     public const PRICE_DISPLAY_MODES = ['adjusted', 'original', 'both'];
+    private const OPT_OBSERVED_SHIPPING_CHOICES = 'hb_ucs_b2b_observed_shipping_choices';
+    private const MAX_OBSERVED_SHIPPING_CHOICES = 200;
 
     private static ?array $cache_shipping_choices = null;
     private static ?array $cache_payment_choices = null;
@@ -18,8 +20,8 @@ class Validator {
     }
 
     /**
-     * Returns [shipping_id => label] with both type ids (e.g. flat_rate)
-     * and instance ids (e.g. flat_rate:3).
+     * Returns [shipping_id => label] with method types, zone instances,
+     * and any runtime checkout rate variants observed earlier.
      */
     public static function shipping_choices(): array {
         if (self::$cache_shipping_choices !== null) {
@@ -27,6 +29,10 @@ class Validator {
         }
 
         $choices = [];
+        $typeChoices = [];
+        $instanceChoices = [];
+
+        self::ensure_shipping_zone_classes_loaded();
 
         // Ensure shipping is initialized on admin pages before reading zones/method instances.
         $shipping = null;
@@ -43,7 +49,7 @@ class Validator {
             }
         }
 
-        // Always include shipping METHOD TYPES, even when there are no zone instances.
+        // Collect shipping METHOD TYPES first. These remain available as fallback selections.
         if (is_object($shipping) && method_exists($shipping, 'get_shipping_methods')) {
             foreach ((array) $shipping->get_shipping_methods() as $mid => $method) {
                 $mid = (string) $mid;
@@ -62,22 +68,20 @@ class Validator {
                     $label = $mid;
                 }
 
-                if (!isset($choices[$mid])) {
-                    $choices[$mid] = sprintf('%s (%s)', $label, $mid);
-                }
+                $typeChoices[$mid] = $label;
             }
         }
 
         // If zones are not loaded/available, fall back to types only.
         if (!class_exists('WC_Shipping_Zones')) {
+            foreach ($typeChoices as $mid => $label) {
+                $choices[$mid] = sprintf('%s (%s)', $label, $mid);
+            }
             asort($choices, SORT_NATURAL);
             return $choices;
         }
 
-        // Zones via public API.
-        $zones_raw = \WC_Shipping_Zones::get_zones();
-
-        $iterate_zone_methods = static function ($methods, string $zone_name) use (&$choices): void {
+        $iterate_zone_methods = static function ($methods, string $zone_name) use (&$instanceChoices): void {
             foreach ((array) $methods as $method) {
                 if (!is_object($method)) continue;
                 $mid = method_exists($method, 'get_method_id') ? (string) $method->get_method_id() : '';
@@ -96,35 +100,38 @@ class Validator {
                 }
 
                 $key = $mid . ':' . $iid;
-                if (!isset($choices[$key])) {
-                    // Prefer the instance title (as configured in WooCommerce) as primary label.
-                    $choices[$key] = sprintf('%s — %s (%s)%s', $title, $zone_name, $key, $enabled_suffix);
-                }
+                $instanceChoices[$key] = [
+                    'title' => trim($title) !== '' ? trim($title) : $mid,
+                    'zone_name' => $zone_name,
+                    'type' => $mid,
+                    'enabled_suffix' => $enabled_suffix,
+                ];
             }
         };
 
-        // Prefer reading the already-materialized shipping methods from WC_Shipping_Zones::get_zones().
+        // Read configured shipping instances from real zone objects.
+        $zones_raw = \WC_Shipping_Zones::get_zones();
         if (is_array($zones_raw)) {
             foreach ($zones_raw as $zr) {
                 if (!is_array($zr)) {
                     continue;
                 }
 
-                $zone_name = isset($zr['zone_name']) ? (string) $zr['zone_name'] : '';
-                $methods = $zr['shipping_methods'] ?? null;
-                if (is_array($methods)) {
-                    $iterate_zone_methods($methods, $zone_name);
+                $zid = isset($zr['id']) ? (int) $zr['id'] : (int) ($zr['zone_id'] ?? 0);
+                if ($zid <= 0) {
                     continue;
                 }
 
-                // Fallback: instantiate zone and fetch methods.
-                $zid = isset($zr['id']) ? (int) $zr['id'] : (int) ($zr['zone_id'] ?? 0);
-                if ($zid <= 0) continue;
                 $zone = new \WC_Shipping_Zone($zid);
-                if (is_object($zone) && method_exists($zone, 'get_shipping_methods')) {
-                    $zn = method_exists($zone, 'get_zone_name') ? (string) $zone->get_zone_name() : $zone_name;
-                    $iterate_zone_methods($zone->get_shipping_methods(false), $zn);
+                if (!is_object($zone) || !method_exists($zone, 'get_shipping_methods')) {
+                    continue;
                 }
+
+                $zoneName = method_exists($zone, 'get_zone_name')
+                    ? (string) $zone->get_zone_name()
+                    : (string) ($zr['zone_name'] ?? '');
+
+                $iterate_zone_methods($zone->get_shipping_methods(false), $zoneName);
             }
         }
 
@@ -141,9 +148,116 @@ class Validator {
             $iterate_zone_methods($zone0->get_shipping_methods(false), $zone0_name);
         }
 
+        $titleCounts = [];
+        foreach ($instanceChoices as $meta) {
+            $title = isset($meta['title']) ? trim((string) $meta['title']) : '';
+            if ($title === '') {
+                continue;
+            }
+
+            $countKey = strtolower($title);
+            $titleCounts[$countKey] = (int) ($titleCounts[$countKey] ?? 0) + 1;
+        }
+
+        $specificChoiceTypes = [];
+        foreach ($instanceChoices as $key => $meta) {
+            $title = isset($meta['title']) ? trim((string) $meta['title']) : $key;
+            $zoneName = isset($meta['zone_name']) ? trim((string) $meta['zone_name']) : '';
+            $enabledSuffix = (string) ($meta['enabled_suffix'] ?? '');
+            $type = isset($meta['type']) ? (string) $meta['type'] : '';
+
+            $display = $title !== '' ? $title : $key;
+            $countKey = strtolower($display);
+            if (($titleCounts[$countKey] ?? 0) > 1 && $zoneName !== '') {
+                $display .= ' — ' . $zoneName;
+            }
+            $display .= $enabledSuffix;
+
+            $choices[$key] = $display;
+            if ($type !== '') {
+                $specificChoiceTypes[$type] = true;
+            }
+        }
+
+        foreach (self::observed_shipping_choices() as $key => $label) {
+            $choices[$key] = $label;
+            if (strpos((string) $key, ':') !== false) {
+                $parts = explode(':', (string) $key, 2);
+                $type = (string) ($parts[0] ?? '');
+                if ($type !== '') {
+                    $specificChoiceTypes[$type] = true;
+                }
+            }
+        }
+
+        foreach (self::manual_shipping_choices() as $key => $label) {
+            $choices[$key] = $label;
+            if (strpos((string) $key, ':') !== false) {
+                $parts = explode(':', (string) $key, 2);
+                $type = (string) ($parts[0] ?? '');
+                if ($type !== '') {
+                    $specificChoiceTypes[$type] = true;
+                }
+            }
+        }
+
+        foreach ($typeChoices as $mid => $label) {
+            if (isset($specificChoiceTypes[$mid])) {
+                $choices[$mid] = sprintf(__('Alle %s methodes (%s)', 'hb-ucs'), $label, $mid);
+                continue;
+            }
+
+            $choices[$mid] = sprintf('%s (%s)', $label, $mid);
+        }
+
         asort($choices, SORT_NATURAL);
         self::$cache_shipping_choices = $choices;
         return self::$cache_shipping_choices;
+    }
+
+    public static function remember_runtime_shipping_choices(array $rates): void {
+        if (empty($rates)) {
+            return;
+        }
+
+        $existing = self::observed_shipping_choices();
+        $changed = false;
+
+        foreach ($rates as $rate_key => $rate) {
+            if (!is_object($rate)) {
+                continue;
+            }
+
+            $key = method_exists($rate, 'get_id') ? (string) $rate->get_id() : (string) $rate_key;
+            $key = self::sanitize_shipping_choice_key($key);
+            if ($key === '') {
+                continue;
+            }
+
+            $label = self::build_runtime_shipping_choice_label($rate, $key);
+
+            if (isset($existing[$key]) && $existing[$key] === $label) {
+                continue;
+            }
+
+            if (isset($existing[$key])) {
+                unset($existing[$key]);
+            }
+
+            $existing[$key] = $label;
+            $changed = true;
+        }
+
+        if (!$changed) {
+            return;
+        }
+
+        if (count($existing) > self::MAX_OBSERVED_SHIPPING_CHOICES) {
+            $existing = array_slice($existing, -self::MAX_OBSERVED_SHIPPING_CHOICES, null, true);
+        }
+
+        update_option(self::OPT_OBSERVED_SHIPPING_CHOICES, $existing, false);
+        self::$cache_shipping_choices = null;
     }
 
     /** Returns [gateway_id => title] */
@@ -181,20 +295,9 @@ class Validator {
         $out = [];
 
         foreach ($raw as $val) {
-            $val = trim((string) $val);
-            if ($val === '') continue;
-
-            if (strpos($val, ':') !== false) {
-                $parts = explode(':', $val, 2);
-                $type = sanitize_key((string) ($parts[0] ?? ''));
-                $iid = (int) ($parts[1] ?? 0);
-                if ($type !== '' && $iid > 0) {
-                    $out[] = $type . ':' . $iid;
-                }
-                continue;
-            }
-
-            $out[] = sanitize_key($val);
+            $key = self::sanitize_shipping_choice_key((string) $val);
+            if ($key === '') continue;
+            $out[] = $key;
         }
 
         $out = array_values(array_unique(array_filter($out)));
@@ -206,6 +309,145 @@ class Validator {
         }
 
         return $out;
+    }
+
+    public static function sanitize_manual_shipping_choices($raw): array {
+        $rows = is_array($raw) ? $raw : [];
+        $choices = [];
+
+        foreach ($rows as $key => $label) {
+            if (is_int($key)) {
+                $line = trim((string) $label);
+                if ($line === '') {
+                    continue;
+                }
+
+                $parts = explode('|', $line, 2);
+                $key = (string) ($parts[0] ?? '');
+                $label = (string) ($parts[1] ?? '');
+            }
+
+            $sanitizedKey = self::sanitize_shipping_choice_key((string) $key);
+            if ($sanitizedKey === '') {
+                continue;
+            }
+
+            $sanitizedLabel = trim(wp_strip_all_tags((string) $label));
+            if ($sanitizedLabel === '') {
+                $sanitizedLabel = $sanitizedKey;
+            }
+
+            if (function_exists('mb_substr')) {
+                $sanitizedLabel = (string) mb_substr($sanitizedLabel, 0, 160);
+            } else {
+                $sanitizedLabel = (string) substr($sanitizedLabel, 0, 160);
+            }
+
+            $choices[$sanitizedKey] = $sanitizedLabel;
+        }
+
+        return $choices;
+    }
+
+    private static function observed_shipping_choices(): array {
+        $stored = get_option(self::OPT_OBSERVED_SHIPPING_CHOICES, []);
+        if (!is_array($stored)) {
+            return [];
+        }
+
+        $choices = [];
+        foreach ($stored as $key => $label) {
+            $sanitizedKey = self::sanitize_shipping_choice_key((string) $key);
+            if ($sanitizedKey === '') {
+                continue;
+            }
+
+            $sanitizedLabel = trim(wp_strip_all_tags((string) $label));
+            if ($sanitizedLabel === '') {
+                $sanitizedLabel = $sanitizedKey;
+            }
+
+            $choices[$sanitizedKey] = $sanitizedLabel;
+        }
+
+        return $choices;
+    }
+
+    private static function manual_shipping_choices(): array {
+        $settings = get_option('hb_ucs_b2b_settings', []);
+        if (!is_array($settings)) {
+            return [];
+        }
+
+        return self::sanitize_manual_shipping_choices($settings['custom_shipping_choices'] ?? []);
+    }
+
+    private static function ensure_shipping_zone_classes_loaded(): void {
+        if (class_exists('WC_Shipping_Zones') && class_exists('WC_Shipping_Zone')) {
+            return;
+        }
+
+        if (!defined('WC_ABSPATH')) {
+            return;
+        }
+
+        $files = [
+            WC_ABSPATH . 'includes/class-wc-shipping-zone.php',
+            WC_ABSPATH . 'includes/class-wc-shipping-zones.php',
+        ];
+
+        foreach ($files as $file) {
+            if (is_string($file) && $file !== '' && file_exists($file)) {
+                require_once $file;
+            }
+        }
+    }
+
+    private static function sanitize_shipping_choice_key(string $raw): string {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return '';
+        }
+
+        if (strpos($raw, ':') === false) {
+            return sanitize_key($raw);
+        }
+
+        $segments = array_map('trim', explode(':', $raw));
+        $segments = array_map('sanitize_key', $segments);
+        $segments = array_values(array_filter($segments, static function ($segment) {
+            return $segment !== '';
+        }));
+
+        if (count($segments) < 2) {
+            return '';
+        }
+
+        return implode(':', $segments);
+    }
+
+    private static function build_runtime_shipping_choice_label(object $rate, string $key): string {
+        $title = method_exists($rate, 'get_label') ? (string) $rate->get_label() : '';
+        if ($title === '' && method_exists($rate, 'get_method_id')) {
+            $title = (string) $rate->get_method_id();
+        }
+        if ($title === '') {
+            $title = $key;
+        }
+
+        $methodId = method_exists($rate, 'get_method_id') ? (string) $rate->get_method_id() : '';
+        $instanceId = method_exists($rate, 'get_instance_id') ? (int) $rate->get_instance_id() : 0;
+        $instanceKey = ($methodId !== '' && $instanceId > 0) ? ($methodId . ':' . $instanceId) : '';
+
+        if ($instanceKey !== '' && $instanceKey !== $key) {
+            return sprintf('%s — checkout-variant (%s; basis %s)', $title, $key, $instanceKey);
+        }
+
+        if ($methodId !== '' && $methodId !== $key) {
+            return sprintf('%s — checkout-variant (%s; methode %s)', $title, $key, $methodId);
+        }
+
+        return sprintf('%s (%s)', $title, $key);
     }
 
     public static function sanitize_allowed_payments($raw): array {

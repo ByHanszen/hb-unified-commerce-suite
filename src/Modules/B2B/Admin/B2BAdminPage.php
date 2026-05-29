@@ -117,7 +117,7 @@ class B2BAdminPage {
         }
 
         echo '<div class="notice notice-info"><p>';
-        echo esc_html__('Geen verzendmethodes (zone-instances) gevonden in WooCommerce verzendzones. Voeg eerst verzendmethodes toe via WooCommerce → Instellingen → Verzenden, daarna verschijnen ze hier als bijv. flat_rate:3. Je kunt wel alvast op type-niveau (bijv. flat_rate) configureren.', 'hb-ucs');
+        echo esc_html__('Geen verzendmethodes (zone-instances) gevonden in WooCommerce verzendzones. Voeg eerst verzendmethodes toe via WooCommerce → Instellingen → Verzenden, daarna verschijnen ze hier als bijv. flat_rate:3. Checkout-varianten van externe verzendplugins worden nu ook onthouden nadat ze minimaal één keer op winkelwagen of checkout zijn berekend.', 'hb-ucs');
         echo '</p></div>';
     }
 
@@ -131,6 +131,7 @@ class B2BAdminPage {
         $main = get_option(CoreSettings::OPT, []);
         $enabled = !empty(($main['modules'] ?? [])['b2b']);
         $opt = $this->settings->get();
+        $customShippingChoices = (array)($opt['custom_shipping_choices'] ?? []);
 
         $shippingChoices = \HB\UCS\Modules\B2B\Support\Validator::shipping_choices();
         $paymentChoices = \HB\UCS\Modules\B2B\Support\Validator::payment_gateway_choices();
@@ -176,6 +177,11 @@ class B2BAdminPage {
 
         echo '<tr><th scope="row">' . esc_html__('Standaard betaalmethodes', 'hb-ucs') . '</th><td>';
         $this->render_multiselect('hb_ucs_b2b[default_allowed_payments][]', (array)$opt['default_allowed_payments'], $paymentChoices);
+        echo '</td></tr>';
+
+        echo '<tr><th scope="row">' . esc_html__('Eigen verzendmethodes', 'hb-ucs') . '</th><td>';
+        echo '<textarea name="hb_ucs_b2b[custom_shipping_choices_text]" rows="7" class="large-text code" placeholder="my_plugin:express_evening|Avondlevering&#10;my_plugin:pickup_morning|Afhalen ochtend">' . esc_textarea($this->format_manual_shipping_choices_for_textarea($customShippingChoices)) . '</textarea>';
+        echo '<p class="description">' . esc_html__('Voeg hier handmatig extra verzendmethode-keys toe die WooCommerce of een verzendplugin op checkout gebruikt. Gebruik per regel het formaat key|label. Deze keuzes verschijnen daarna direct in alle B2B selecties voor standaard, gast, rol, klant en profiel.', 'hb-ucs') . '</p>';
         echo '</td></tr>';
 
         echo '<tr><th scope="row">' . esc_html__('Merge regels (meerdere rollen)', 'hb-ucs') . '</th><td>';
@@ -514,6 +520,21 @@ class B2BAdminPage {
         echo '<p class="description">' . esc_html__('Profielen worden samengevoegd met de regels van de rol/klant.', 'hb-ucs') . '</p>';
     }
 
+    private function format_manual_shipping_choices_for_textarea(array $choices): string {
+        $lines = [];
+        foreach ($choices as $key => $label) {
+            $key = trim((string) $key);
+            if ($key === '') {
+                continue;
+            }
+
+            $label = trim((string) $label);
+            $lines[] = $label !== '' ? ($key . '|' . $label) : $key;
+        }
+
+        return implode("\n", $lines);
+    }
+
     private function render_price_display_fields(string $context, array $data): void {
         $mode = isset($data['price_display_mode']) ? (string) $data['price_display_mode'] : '';
         $label = isset($data['price_display_label']) ? (string) $data['price_display_label'] : '';
@@ -676,6 +697,28 @@ class B2BAdminPage {
         check_admin_referer('hb_ucs_b2b_save_settings', 'hb_ucs_b2b_nonce');
 
         $b2bRaw = isset($_POST['hb_ucs_b2b']) ? (array) $_POST['hb_ucs_b2b'] : [];
+        if (isset($b2bRaw['custom_shipping_choices_text'])) {
+            $lines = preg_split('/\r\n|\r|\n/', (string) $b2bRaw['custom_shipping_choices_text']);
+            $choices = [];
+            foreach ((array) $lines as $line) {
+                $line = trim((string) $line);
+                if ($line === '') {
+                    continue;
+                }
+
+                $parts = explode('|', $line, 2);
+                $key = trim((string) ($parts[0] ?? ''));
+                $label = trim((string) ($parts[1] ?? ''));
+                if ($key === '') {
+                    continue;
+                }
+
+                $choices[$key] = $label;
+            }
+
+            $b2bRaw['custom_shipping_choices'] = $choices;
+            unset($b2bRaw['custom_shipping_choices_text']);
+        }
         $this->settings->update($b2bRaw);
 
         // Module toggle in main settings
