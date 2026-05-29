@@ -6,6 +6,10 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+### Added
+- Productpagina's module: nieuwe module-toggle waarmee je per product de add-to-cart knoptekst kunt overschrijven voor zowel de productpagina als shop/archive-overzichten. De implementatie gebruikt WooCommerce knoptekstfilters zodat standaard WooCommerce en Elementor WooCommerce widgets dezelfde productteksten volgen.
+- Productpagina's module: nieuwe standaard knopteksten per producttype toegevoegd voor simpel, variabel en bundle. Deze defaults gelden voor productpagina en shop/archive afzonderlijk en worden alleen gebruikt wanneer een product geen eigen override heeft.
+
 ### Fixed
 - Abonnement-editor: handmatig opgeslagen status-, schema- en datumvelden houden nu de primaire order-meta en de legacy shadow-meta binnen hetzelfde abonnement direct synchroon. Daardoor kan de volgende betaaldatum na een admin-save niet meer terugvallen door een interne meta-mismatch tussen beide opslaglagen.
 - Abonnementen: handmatig vervroegde next-payment datums krijgen nu tijdelijk een expliciete override op de minimum-normalisatie. Daardoor springt een eerder handmatig ingestelde renewal-datum niet meer terug naar de oude cyclusdatum zodra het due-moment is bereikt, en kan de renewal-order weer normaal worden aangemaakt.

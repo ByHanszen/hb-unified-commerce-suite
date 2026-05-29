@@ -16,6 +16,7 @@ class Settings {
     const OPT_SUBSCRIPTIONS = 'hb_ucs_subscriptions_settings'; // Subscriptions module instellingen
     const OPT_ORDER_OVERVIEW_STATUS = 'hb_ucs_order_overview_status_settings'; // Orderoverzicht status module instellingen
     const OPT_CHECKOUT = 'hb_ucs_checkout_settings'; // Checkout module instellingen
+    const OPT_PRODUCT_PAGES = 'hb_ucs_product_pages_settings'; // Productpagina module instellingen
     const LEGACY_QLS = 'qls_exclude_settings'; // oude plugin optie (migratie)
 
     public function init(): void {
@@ -43,6 +44,7 @@ class Settings {
         add_action('admin_post_hb_ucs_save_customer_order_note', [$this, 'handle_save_customer_order_note']);
         add_action('admin_post_hb_ucs_save_subscriptions', [$this, 'handle_save_subscriptions']);
         add_action('admin_post_hb_ucs_save_checkout', [$this, 'handle_save_checkout']);
+        add_action('admin_post_hb_ucs_save_product_pages', [$this, 'handle_save_product_pages']);
     }
 
     public function seed_default_options(): void {
@@ -52,6 +54,7 @@ class Settings {
         add_option(self::OPT_SUBSCRIPTIONS, $this->defaults_subscriptions());
         add_option(self::OPT_ORDER_OVERVIEW_STATUS, $this->defaults_order_overview_status());
         add_option(self::OPT_CHECKOUT, $this->defaults_checkout());
+        add_option(self::OPT_PRODUCT_PAGES, $this->defaults_product_pages());
     }
 
     public function enqueue_admin_assets(string $hook): void {
@@ -136,6 +139,7 @@ class Settings {
                 'subscriptions' => 0,
                 'order_overview_status' => 0,
                 'checkout'      => 0,
+                'product_pages' => 0,
             ],
         ];
     }
@@ -239,6 +243,17 @@ class Settings {
         return [
             'force_shipping_selection' => 0,
             'delete_data_on_uninstall' => 0,
+        ];
+    }
+
+    private function defaults_product_pages(): array {
+        return [
+            'default_single_text_simple' => '',
+            'default_single_text_variable' => '',
+            'default_single_text_bundle' => '',
+            'default_archive_text_simple' => '',
+            'default_archive_text_variable' => '',
+            'default_archive_text_bundle' => '',
         ];
     }
 
@@ -389,6 +404,15 @@ class Settings {
             'hb-ucs-checkout',
             [$this, 'render_checkout']
         );
+
+        add_submenu_page(
+            'hb-ucs',
+            __('Productpagina\'s', 'hb-ucs'),
+            __('Productpagina\'s', 'hb-ucs'),
+            'manage_options',
+            'hb-ucs-product-pages',
+            [$this, 'render_product_pages']
+        );
     }
 
     public function register(): void {
@@ -459,6 +483,14 @@ class Settings {
             $checked = !empty($mods['checkout']) ? 'checked' : '';
             echo '<label><input type="checkbox" name="'.esc_attr(self::OPT).'[modules][checkout]" value="1" '.$checked.'/> '.esc_html__('Activeren', 'hb-ucs').'</label>';
             echo '<p class="description">'.esc_html__('Extra checkoutgedrag zoals het verplichten van een bewuste verzendmethode-keuze.', 'hb-ucs').'</p>';
+        }, 'hb-ucs', 'hb_ucs_modules');
+
+        add_settings_field('product_pages', __('Productpagina\'s', 'hb-ucs'), function () {
+            $opt = get_option(self::OPT, $this->defaults_main());
+            $mods = $opt['modules'] ?? [];
+            $checked = !empty($mods['product_pages']) ? 'checked' : '';
+            echo '<label><input type="checkbox" name="'.esc_attr(self::OPT).'[modules][product_pages]" value="1" '.$checked.'/> '.esc_html__('Activeren', 'hb-ucs').'</label>';
+            echo '<p class="description">'.esc_html__('Per product extra instellingen voor productpagina\'s, zoals afwijkende add-to-cart knopteksten op product- en shopoverzichten, inclusief standaard Elementor WooCommerce widgets.', 'hb-ucs').'</p>';
         }, 'hb-ucs', 'hb_ucs_modules');
     }
 
@@ -1367,6 +1399,96 @@ class Settings {
         update_option(self::OPT_CHECKOUT, $clean, false);
 
         $redirect = add_query_arg(['page' => 'hb-ucs-checkout', 'updated' => 'true'], admin_url('admin.php'));
+        wp_safe_redirect($redirect);
+        exit;
+    }
+
+    public function render_product_pages(): void {
+        if (!class_exists('WooCommerce')) {
+            echo '<div class="wrap">';
+            echo '<h1>' . esc_html__('Productpagina\'s', 'hb-ucs') . '</h1>';
+            echo '<div class="notice notice-error"><p>' . esc_html__('WooCommerce is vereist voor deze module.', 'hb-ucs') . '</p></div>';
+            echo '</div>';
+            return;
+        }
+
+        $main = get_option(self::OPT, $this->defaults_main());
+        $mods = $main['modules'] ?? [];
+        $enabled = !empty($mods['product_pages']);
+        $opt = get_option(self::OPT_PRODUCT_PAGES, $this->defaults_product_pages());
+
+        echo '<div class="wrap">';
+        echo '<h1>' . esc_html__('Productpagina\'s', 'hb-ucs') . '</h1>';
+
+        if (!empty($_GET['updated'])) {
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Instellingen opgeslagen.', 'hb-ucs') . '</p></div>';
+        }
+
+        if ($enabled) {
+            echo '<div class="notice notice-success"><p>' . esc_html__('Module status: ingeschakeld.', 'hb-ucs') . '</p></div>';
+        } else {
+            $modulesUrl = add_query_arg(['page' => 'hb-ucs'], admin_url('admin.php'));
+            echo '<div class="notice notice-warning"><p>';
+            echo esc_html__('Module status: uitgeschakeld.', 'hb-ucs') . ' ';
+            echo '<a href="' . esc_url($modulesUrl) . '">' . esc_html__('Schakel in via Modules.', 'hb-ucs') . '</a>';
+            echo '</p></div>';
+        }
+
+        echo '<p>' . esc_html__('Stel hier standaard add-to-cart knopteksten in per producttype. Productspecifieke knopteksten in de producteditor blijven altijd leidend.', 'hb-ucs') . '</p>';
+        echo '<p>' . esc_html__('De defaults worden gebruikt op productpagina en shop/archive wanneer een product zelf geen eigen override heeft. Standaard Elementor WooCommerce widgets volgen dezelfde teksten via WooCommerce filters.', 'hb-ucs') . '</p>';
+
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        echo '<input type="hidden" name="action" value="hb_ucs_save_product_pages" />';
+        wp_nonce_field('hb_ucs_save_product_pages', 'hb_ucs_save_product_pages_nonce');
+
+        echo '<h2>' . esc_html__('Standaard knopteksten', 'hb-ucs') . '</h2>';
+        echo '<table class="form-table" role="presentation"><tbody>';
+
+        foreach ([
+            'simple' => __('Simpel product', 'hb-ucs'),
+            'variable' => __('Variabel product', 'hb-ucs'),
+            'bundle' => __('Bundle product', 'hb-ucs'),
+        ] as $typeKey => $label) {
+            echo '<tr>';
+            echo '<th scope="row">' . esc_html($label) . '</th>';
+            echo '<td>';
+
+            echo '<p><label for="hb_ucs_product_pages_default_single_text_' . esc_attr($typeKey) . '"><strong>' . esc_html__('Productpagina', 'hb-ucs') . '</strong></label><br/>';
+            echo '<input type="text" class="regular-text" id="hb_ucs_product_pages_default_single_text_' . esc_attr($typeKey) . '" name="hb_ucs_product_pages[default_single_text_' . esc_attr($typeKey) . ']" value="' . esc_attr((string) ($opt['default_single_text_' . $typeKey] ?? '')) . '" />';
+            echo '</p>';
+
+            echo '<p><label for="hb_ucs_product_pages_default_archive_text_' . esc_attr($typeKey) . '"><strong>' . esc_html__('Shop/archive', 'hb-ucs') . '</strong></label><br/>';
+            echo '<input type="text" class="regular-text" id="hb_ucs_product_pages_default_archive_text_' . esc_attr($typeKey) . '" name="hb_ucs_product_pages[default_archive_text_' . esc_attr($typeKey) . ']" value="' . esc_attr((string) ($opt['default_archive_text_' . $typeKey] ?? '')) . '" />';
+            echo '</p>';
+
+            echo '</td>';
+            echo '</tr>';
+        }
+
+        echo '</tbody></table>';
+
+        submit_button(__('Instellingen opslaan', 'hb-ucs'));
+        echo '</form>';
+        echo '</div>';
+    }
+
+    public function handle_save_product_pages(): void {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Onvoldoende rechten.', 'hb-ucs'));
+        }
+
+        check_admin_referer('hb_ucs_save_product_pages', 'hb_ucs_save_product_pages_nonce');
+
+        $raw = isset($_POST['hb_ucs_product_pages']) ? (array) wp_unslash($_POST['hb_ucs_product_pages']) : [];
+        $clean = $this->defaults_product_pages();
+
+        foreach (array_keys($clean) as $key) {
+            $clean[$key] = isset($raw[$key]) ? sanitize_text_field((string) $raw[$key]) : '';
+        }
+
+        update_option(self::OPT_PRODUCT_PAGES, $clean, false);
+
+        $redirect = add_query_arg(['page' => 'hb-ucs-product-pages', 'updated' => 'true'], admin_url('admin.php'));
         wp_safe_redirect($redirect);
         exit;
     }

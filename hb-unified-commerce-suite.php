@@ -34,6 +34,7 @@ register_activation_hook(__FILE__, function () {
             'customer_order_note' => false,
             'subscriptions' => false,
             'order_overview_status' => false,
+            'product_pages' => false,
         ],
     ];
     $opt = get_option('hb_ucs_settings', []);
