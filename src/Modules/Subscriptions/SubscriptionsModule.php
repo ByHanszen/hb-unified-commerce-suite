@@ -5,6 +5,7 @@
 namespace HB\UCS\Modules\Subscriptions;
 
 use HB\UCS\Core\Settings;
+use HB\UCS\Modules\Subscriptions\Domain\SubscriptionRepository;
 use HB\UCS\Modules\Subscriptions\Support\SubscriptionSyncLogger;
 
 if (!defined('ABSPATH')) exit;
@@ -301,6 +302,7 @@ class SubscriptionsModule {
         if ($nextPayment !== null) {
             $metaMap[self::SUB_META_NEXT_PAYMENT] = (int) $nextPayment;
             $metaMap['_hb_ucs_subscription_next_payment'] = (int) $nextPayment;
+            $metaMap[SubscriptionRepository::MANUAL_NEXT_PAYMENT_OVERRIDE_META] = '';
         }
 
         if (empty($metaMap)) {
@@ -349,6 +351,20 @@ class SubscriptionsModule {
         return $referenceTimestamp + $step;
     }
 
+    private function has_manual_next_payment_override(int $subId): bool {
+        if ($subId <= 0) {
+            return false;
+        }
+
+        foreach ($this->get_subscription_runtime_state_target_ids($subId) as $targetId) {
+            if ((string) get_post_meta($targetId, SubscriptionRepository::MANUAL_NEXT_PAYMENT_OVERRIDE_META, true) === '1') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function normalize_subscription_next_payment(int $subId, int $candidateNextPayment = 0, int $referenceTimestamp = 0): int {
         if ($subId <= 0) {
             return 0;
@@ -358,6 +374,10 @@ class SubscriptionsModule {
 
         if ($candidateNextPayment <= 0) {
             return $minimumNextPayment;
+        }
+
+        if ($this->has_manual_next_payment_override($subId)) {
+            return $candidateNextPayment;
         }
 
         if ($minimumNextPayment > 0 && $candidateNextPayment < $minimumNextPayment) {
@@ -3069,6 +3089,9 @@ class SubscriptionsModule {
                     $subscription->update_meta_data(self::SUB_META_NEXT_PAYMENT, $nextPayment);
                     $subscription->update_meta_data('_hb_ucs_subscription_interval', $interval);
                     $subscription->update_meta_data('_hb_ucs_subscription_period', $period);
+                    if ($nextPayment !== $existingNextPayment) {
+                        $subscription->update_meta_data(SubscriptionRepository::MANUAL_NEXT_PAYMENT_OVERRIDE_META, '1');
+                    }
                 }
                 $shadowMetaUpdates = [
                     '_hb_ucs_subscription_scheme' => $scheme,
@@ -3080,6 +3103,9 @@ class SubscriptionsModule {
                     '_hb_ucs_subscription_next_payment' => $nextPayment,
                     self::SUB_META_NEXT_PAYMENT => $nextPayment,
                 ];
+                if ($nextPayment !== $existingNextPayment) {
+                    $shadowMetaUpdates[SubscriptionRepository::MANUAL_NEXT_PAYMENT_OVERRIDE_META] = '1';
+                }
                 $scheduleNote = $this->build_account_subscription_schedule_update_note($existingScheme, $existingNextPayment, $scheme, $nextPayment);
                 if ($scheduleNote !== '') {
                     $this->add_subscription_admin_note($subId, $scheduleNote);

@@ -8,6 +8,7 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ### Fixed
 - Abonnement-editor: handmatig opgeslagen status-, schema- en datumvelden houden nu de primaire order-meta en de legacy shadow-meta binnen hetzelfde abonnement direct synchroon. Daardoor kan de volgende betaaldatum na een admin-save niet meer terugvallen door een interne meta-mismatch tussen beide opslaglagen.
+- Abonnementen: handmatig vervroegde next-payment datums krijgen nu tijdelijk een expliciete override op de minimum-normalisatie. Daardoor springt een eerder handmatig ingestelde renewal-datum niet meer terug naar de oude cyclusdatum zodra het due-moment is bereikt, en kan de renewal-order weer normaal worden aangemaakt.
 - B2B verzendmethodes: de whitelist kan nu ook specifieke runtime-ratekeys van externe verzendplugins opslaan en tonen, naast standaard WooCommerce methodetypes en zone-instances. Daardoor kun je per klant, rol, profiel, whitelist of standaardkeuze ook aparte checkout-varianten binnen dezelfde verzendmethode-instance sturen.
 - B2B instellingen: er is nu een handmatige lijst voor eigen verzendmethode-keys toegevoegd. Daardoor kun je custom checkout-varianten ook direct in de plugininstellingen registreren en kiezen, zonder eerst een checkout-run nodig te hebben om ze te laten detecteren.
 - B2B instellingen: verzendkeuzes tonen nu eerst de echte WooCommerce verzendtitels van zone-instances, zoals "HB Bezorging" of "Vast tarief standaard". De generieke methodetype-keuzes blijven beschikbaar als bredere fallback, maar zijn duidelijker gelabeld.

@@ -1031,6 +1031,7 @@ class SubscriptionAdmin {
         }
 
         $savedDates = $previousDates;
+        $manualNextPaymentOverride = null;
         foreach ([
             'hb_ucs_sub_next_payment' => [
                 'primary' => '_hb_ucs_subscription_next_payment',
@@ -1056,6 +1057,7 @@ class SubscriptionAdmin {
             }
 
             $timestamp = $this->parse_datetime_local((string) wp_unslash($_POST[$inputKey]));
+            $previousTimestamp = (int) ($previousDates[$metaKey] ?? 0);
             if (
                 $inputKey === 'hb_ucs_sub_next_payment'
                 && $this->is_create_renewal_order_request()
@@ -1080,6 +1082,9 @@ class SubscriptionAdmin {
                     $this->update_subscription_order_meta_pair($order, $orderId, $metaKey, $legacyMetaKey, $timestamp);
                 }
                 $savedDates[$metaKey] = $timestamp;
+                if ($inputKey === 'hb_ucs_sub_next_payment' && $timestamp !== $previousTimestamp) {
+                    $manualNextPaymentOverride = '1';
+                }
             } else {
                 if ($metaKey === '_hb_ucs_subscription_next_payment' && method_exists($order, 'set_next_payment_timestamp')) {
                     $order->set_next_payment_timestamp(0);
@@ -1087,6 +1092,25 @@ class SubscriptionAdmin {
                     $this->update_subscription_order_meta_pair($order, $orderId, $metaKey, $legacyMetaKey, null, true);
                 }
                 $savedDates[$metaKey] = 0;
+                if ($inputKey === 'hb_ucs_sub_next_payment' && $previousTimestamp > 0) {
+                    $manualNextPaymentOverride = '';
+                }
+            }
+        }
+
+        if ($manualNextPaymentOverride !== null) {
+            if ($manualNextPaymentOverride !== '') {
+                if (method_exists($order, 'update_meta_data')) {
+                    $order->update_meta_data(SubscriptionRepository::MANUAL_NEXT_PAYMENT_OVERRIDE_META, '1');
+                } else {
+                    update_post_meta($orderId, SubscriptionRepository::MANUAL_NEXT_PAYMENT_OVERRIDE_META, '1');
+                }
+            } else {
+                if (method_exists($order, 'delete_meta_data')) {
+                    $order->delete_meta_data(SubscriptionRepository::MANUAL_NEXT_PAYMENT_OVERRIDE_META);
+                } else {
+                    delete_post_meta($orderId, SubscriptionRepository::MANUAL_NEXT_PAYMENT_OVERRIDE_META);
+                }
             }
         }
 
@@ -1112,6 +1136,10 @@ class SubscriptionAdmin {
             '_hb_ucs_subscription_end_date' => (int) ($savedDates['_hb_ucs_subscription_end_date'] ?? 0),
             SubscriptionRepository::LEGACY_END_DATE_META => (int) ($savedDates['_hb_ucs_subscription_end_date'] ?? 0),
         ];
+
+        if ($manualNextPaymentOverride !== null) {
+            $shadowMetaUpdates[SubscriptionRepository::MANUAL_NEXT_PAYMENT_OVERRIDE_META] = $manualNextPaymentOverride;
+        }
 
         $this->persist_subscription_shadow_meta($orderId, $shadowMetaUpdates);
 

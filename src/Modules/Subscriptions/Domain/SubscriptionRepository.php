@@ -16,6 +16,7 @@ class SubscriptionRepository {
     public const LEGACY_INTERVAL_META = '_hb_ucs_sub_interval';
     public const LEGACY_PERIOD_META = '_hb_ucs_sub_period';
     public const LEGACY_NEXT_PAYMENT_META = '_hb_ucs_sub_next_payment';
+    public const MANUAL_NEXT_PAYMENT_OVERRIDE_META = '_hb_ucs_sub_manual_next_payment_override';
     public const LEGACY_PAYMENT_METHOD_META = '_hb_ucs_sub_payment_method';
     public const LEGACY_PAYMENT_METHOD_TITLE_META = '_hb_ucs_sub_payment_method_title';
     public const LEGACY_BILLING_META = '_hb_ucs_sub_billing';
