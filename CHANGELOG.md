@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.198] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina: aankooptype-select bleef soms op alleen "Eenmalige aankoop" staan of schakelde niet door. De zichtbare selector deelt nu weer één wrapper met de verborgen native abonnementsvelden, zodat frontend-sync en frequentieweergave correct werken.
+
 ## [0.3.197] — 2026-05-30
 
 ### Fixed

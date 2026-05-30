@@ -110,32 +110,32 @@
   display: none;
 }
 
-.single-product form.cart table.hb-ucs-subscriptions--product,
-.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart table.hb-ucs-subscriptions--product {
+.single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table,
+.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table {
   margin: 0 0 16px;
 }
 
-.single-product form.cart table.hb-ucs-subscriptions--product td,
-.single-product form.cart table.hb-ucs-subscriptions--product th,
-.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart table.hb-ucs-subscriptions--product td,
-.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart table.hb-ucs-subscriptions--product th {
+.single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table td,
+.single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table th,
+.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table td,
+.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table th {
   padding-bottom: 12px;
 }
 
-.single-product form.cart table.hb-ucs-subscriptions--product tr:last-child td,
-.single-product form.cart table.hb-ucs-subscriptions--product tr:last-child th,
-.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart table.hb-ucs-subscriptions--product tr:last-child td,
-.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart table.hb-ucs-subscriptions--product tr:last-child th {
+.single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table tr:last-child td,
+.single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table tr:last-child th,
+.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table tr:last-child td,
+.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table tr:last-child th {
   padding-bottom: 0;
 }
 
-.single-product form.cart table.hb-ucs-subscriptions--product .label label,
-.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart table.hb-ucs-subscriptions--product .label label {
+.single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table .label label,
+.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table .label label {
   font-weight: 600;
 }
 
-.single-product form.cart table.hb-ucs-subscriptions--product .value,
-.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart table.hb-ucs-subscriptions--product .value {
+.single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table .value,
+.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table .value {
   position: relative;
 }
 
@@ -177,7 +177,7 @@
 }
 
 @media (max-width: 640px) {
-  .single-product form.cart table.hb-ucs-subscriptions--product {
+  .single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table {
     flex: 0 0 100% !important;
     min-width: 100%;
     padding: 0;
@@ -195,10 +195,10 @@
     margin: 0;
   }
 
-  .single-product form.cart table.hb-ucs-subscriptions--product td,
-  .single-product form.cart table.hb-ucs-subscriptions--product th,
-  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart table.hb-ucs-subscriptions--product td,
-  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart table.hb-ucs-subscriptions--product th {
+  .single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table td,
+  .single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table th,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table td,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table th {
     display: block;
     width: 100%;
     padding-right: 0;

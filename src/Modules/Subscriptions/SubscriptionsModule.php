@@ -11816,7 +11816,8 @@ JS;
         $modeFieldId = 'hb-ucs-subscription-mode-' . $productId;
         $frequencyFieldId = 'hb-ucs-subscription-frequency-' . $productId;
 
-        echo '<table class="variations hb-ucs-subscriptions hb-ucs-subscriptions--product' . ($subscriptionChosen ? ' is-subscription-selected' : '') . '" data-default-scheme="' . esc_attr($defaultScheme) . '" cellspacing="0" role="presentation">';
+        echo '<div class="hb-ucs-subscriptions hb-ucs-subscriptions--product' . ($subscriptionChosen ? ' is-subscription-selected' : '') . '" data-default-scheme="' . esc_attr($defaultScheme) . '">';
+        echo '<table class="hb-ucs-subscriptions__table" cellspacing="0" role="presentation">';
         echo '<tbody>';
         echo '<tr class="hb-ucs-subscriptions__purchase-row">';
         echo '<th class="label"><label for="' . esc_attr($modeFieldId) . '">' . esc_html__('Kies aankooptype', 'hb-ucs') . '</label></th>';
@@ -11870,6 +11871,8 @@ JS;
         if ($product->is_type('variable')) {
             echo '<p class="description hb-ucs-subscriptions__description">' . esc_html__('Kies eerst een variatie; de abonnementsprijs kan per variatie verschillen.', 'hb-ucs') . '</p>';
         }
+
+        echo '</div>';
     }
 
     private function get_requested_scheme(): string {
