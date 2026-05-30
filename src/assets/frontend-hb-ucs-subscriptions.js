@@ -57,6 +57,8 @@
       }
       $targets.html(html);
     });
+
+    $wrap.trigger('hb_ucs:scheme-prices-updated');
   }
 
   function resetSchemePrices($form) {
@@ -66,6 +68,146 @@
       $wrap = $scope;
     }
     $wrap.find('.hb-ucs-subs-price').html('');
+    $wrap.trigger('hb_ucs:scheme-prices-updated');
+  }
+
+  function getCompactProductSelectedPriceHtml($wrap, scheme) {
+    if (!$wrap || !$wrap.length || !scheme || scheme === '0') {
+      return '';
+    }
+
+    var $radio = $wrap.find('.hb-ucs-subscriptions__native-list input[name="hb_ucs_subs_scheme"]').filter(function () {
+      return String(this.value) === String(scheme);
+    }).first();
+
+    if (!$radio.length) {
+      return '';
+    }
+
+    return String($radio.closest('.hb-ucs-subscriptions__option--native').find('.price').first().html() || '').trim();
+  }
+
+  function syncCompactProductPurchaseUi($wrap) {
+    if (!$wrap || !$wrap.length) {
+      return;
+    }
+
+    var $nativeRadios = $wrap.find('.hb-ucs-subscriptions__native-list input[name="hb_ucs_subs_scheme"]');
+    if (!$nativeRadios.length) {
+      return;
+    }
+
+    var $compact = $wrap.find('.hb-ucs-subscriptions__compact').first();
+    var $modeSingle = $compact.find('input[value="single"]').first();
+    var $modeSubscription = $compact.find('input[value="subscription"]').first();
+    var $frequencyWrap = $compact.find('.hb-ucs-subscriptions__frequency').first();
+    var $select = $compact.find('.hb-ucs-subscriptions__frequency-select').first();
+    var $price = $compact.find('.hb-ucs-subscriptions__selected-price').first();
+    var $checked = $nativeRadios.filter(':checked').first();
+    var selectedScheme = $checked.length ? String($checked.val() || '0') : '0';
+    var isSubscription = selectedScheme !== '0';
+
+    $modeSingle.prop('checked', !isSubscription);
+    $modeSubscription.prop('checked', isSubscription);
+    $frequencyWrap.prop('hidden', !isSubscription);
+
+    if (!isSubscription) {
+      $price.html('').prop('hidden', true);
+      return;
+    }
+
+    if ($select.val() !== selectedScheme) {
+      $select.val(selectedScheme);
+    }
+
+    var priceHtml = getCompactProductSelectedPriceHtml($wrap, selectedScheme);
+    $price.html(priceHtml).prop('hidden', priceHtml === '');
+  }
+
+  function setCompactProductNativeScheme($wrap, scheme) {
+    if (!$wrap || !$wrap.length) {
+      return;
+    }
+
+    var targetScheme = String(scheme || '');
+    var $nativeRadios = $wrap.find('.hb-ucs-subscriptions__native-list input[name="hb_ucs_subs_scheme"]');
+    var $target = $nativeRadios.filter(function () {
+      return String(this.value) === targetScheme;
+    }).first();
+
+    if (!$target.length && targetScheme !== '0') {
+      targetScheme = String($wrap.attr('data-default-scheme') || '');
+      $target = $nativeRadios.filter(function () {
+        return String(this.value) === targetScheme;
+      }).first();
+    }
+
+    if (!$target.length) {
+      $target = $nativeRadios.filter(function () {
+        return String(this.value) === '0';
+      }).first();
+    }
+
+    if (!$target.length) {
+      return;
+    }
+
+    var changed = !$target.prop('checked');
+    $nativeRadios.prop('checked', false);
+    $target.prop('checked', true);
+
+    if (changed) {
+      $target.trigger('change');
+      return;
+    }
+
+    syncCompactProductPurchaseUi($wrap);
+  }
+
+  function initCompactProductPurchaseUi($context) {
+    var $wraps = $context.find('.hb-ucs-subscriptions--product');
+    if ($context.is('.hb-ucs-subscriptions--product')) {
+      $wraps = $wraps.add($context);
+    }
+
+    $wraps.each(function () {
+      var $wrap = $(this);
+      if ($wrap.data('hbUcsCompactProductReady')) {
+        return;
+      }
+
+      $wrap.data('hbUcsCompactProductReady', true);
+      $wrap.addClass('hb-ucs-subscriptions--enhanced');
+
+      $wrap.on('change', '.hb-ucs-subscriptions__compact input[type="radio"]', function () {
+        if (String(this.value) === 'single') {
+          setCompactProductNativeScheme($wrap, '0');
+          return;
+        }
+
+        var $select = $wrap.find('.hb-ucs-subscriptions__frequency-select').first();
+        setCompactProductNativeScheme($wrap, String($select.val() || $wrap.attr('data-default-scheme') || ''));
+      });
+
+      $wrap.on('change', '.hb-ucs-subscriptions__frequency-select', function () {
+        var $subscriptionMode = $wrap.find('.hb-ucs-subscriptions__compact input[value="subscription"]').first();
+        if (!$subscriptionMode.prop('checked')) {
+          $subscriptionMode.prop('checked', true);
+        }
+
+        setCompactProductNativeScheme($wrap, String($(this).val() || ''));
+      });
+
+      $wrap.on('change', '.hb-ucs-subscriptions__native-list input[name="hb_ucs_subs_scheme"]', function () {
+        syncCompactProductPurchaseUi($wrap);
+      });
+
+      $wrap.on('hb_ucs:scheme-prices-updated', function () {
+        syncCompactProductPurchaseUi($wrap);
+      });
+
+      syncCompactProductPurchaseUi($wrap);
+    });
   }
 
   function normalizeText(value) {
@@ -881,6 +1023,7 @@
       resetSchemePrices($(this));
     });
 
+    initCompactProductPurchaseUi($body);
     initAccountProductPickers($body);
     initAccountCompactUi();
   });

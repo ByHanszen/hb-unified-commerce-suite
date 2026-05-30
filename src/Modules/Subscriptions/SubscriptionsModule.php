@@ -11801,10 +11801,55 @@ JS;
             $selected = '0';
         }
 
-        echo '<div class="hb-ucs-subscriptions hb-ucs-subscriptions--product">';
+        $defaultScheme = '';
+        foreach ($freqs as $schemeKey => $_row) {
+            $defaultScheme = (string) $schemeKey;
+            break;
+        }
+        $selectedSubscriptionScheme = ($selected !== '0' && isset($freqs[$selected])) ? $selected : $defaultScheme;
+        $subscriptionChosen = $selectedSubscriptionScheme !== '' && $selected !== '0';
+        $modeFieldName = 'hb_ucs_subs_mode_ui_' . $productId;
+        $frequencyFieldId = 'hb-ucs-subscription-frequency-' . $productId;
+
+        echo '<div class="hb-ucs-subscriptions hb-ucs-subscriptions--product" data-default-scheme="' . esc_attr($defaultScheme) . '">';
         echo '<p class="hb-ucs-subscriptions__title"><strong>' . esc_html__('Kies aankooptype', 'hb-ucs') . '</strong></p>';
 
-        echo '<label class="hb-ucs-subscriptions__option">';
+        echo '<div class="hb-ucs-subscriptions__compact">';
+        echo '<div class="hb-ucs-subscriptions__mode-list">';
+
+        echo '<label class="hb-ucs-subscriptions__mode">';
+        echo '<input type="radio" name="' . esc_attr($modeFieldName) . '" value="single" ' . checked($subscriptionChosen, false, false) . ' />';
+        echo '<span class="hb-ucs-subscriptions__mode-card">';
+        echo '<span class="hb-ucs-subscriptions__mode-title">' . esc_html__('Eenmalige aankoop', 'hb-ucs') . '</span>';
+        echo '<span class="hb-ucs-subscriptions__mode-note">' . esc_html__('Direct bestellen zonder vervolgcyclus.', 'hb-ucs') . '</span>';
+        echo '</span>';
+        echo '</label>';
+
+        echo '<label class="hb-ucs-subscriptions__mode">';
+        echo '<input type="radio" name="' . esc_attr($modeFieldName) . '" value="subscription" ' . checked($subscriptionChosen, true, false) . ' />';
+        echo '<span class="hb-ucs-subscriptions__mode-card">';
+        echo '<span class="hb-ucs-subscriptions__mode-title">' . esc_html__('Abonnement', 'hb-ucs') . '</span>';
+        echo '<span class="hb-ucs-subscriptions__mode-note">' . esc_html__('Kies daarna hoe vaak je wilt ontvangen.', 'hb-ucs') . '</span>';
+        echo '</span>';
+        echo '</label>';
+
+        echo '</div>';
+
+        echo '<div class="hb-ucs-subscriptions__frequency"' . ($subscriptionChosen ? '' : ' hidden') . '>';
+        echo '<label class="hb-ucs-subscriptions__frequency-label" for="' . esc_attr($frequencyFieldId) . '">' . esc_html__('Frequentie', 'hb-ucs') . '</label>';
+        echo '<select id="' . esc_attr($frequencyFieldId) . '" class="hb-ucs-subscriptions__frequency-select">';
+        foreach ($freqs as $scheme => $row) {
+            $label = (string) $row['label'];
+            echo '<option value="' . esc_attr((string) $scheme) . '" ' . selected($selectedSubscriptionScheme, (string) $scheme, false) . '>' . esc_html($label) . '</option>';
+        }
+        echo '</select>';
+        echo '<p class="hb-ucs-subscriptions__selected-price"' . ($subscriptionChosen ? '' : ' hidden') . '></p>';
+        echo '</div>';
+        echo '</div>';
+
+        echo '<div class="hb-ucs-subscriptions__native-list">';
+
+        echo '<label class="hb-ucs-subscriptions__option hb-ucs-subscriptions__option--native">';
         echo '<input type="radio" name="hb_ucs_subs_scheme" value="0" ' . checked($selected, '0', false) . ' /> ';
         echo esc_html__('Eenmalige aankoop', 'hb-ucs');
         echo '</label>';
@@ -11812,7 +11857,7 @@ JS;
         foreach ($freqs as $scheme => $row) {
             $label = (string) $row['label'];
 
-            echo '<label class="hb-ucs-subscriptions__option">';
+            echo '<label class="hb-ucs-subscriptions__option hb-ucs-subscriptions__option--native">';
             echo '<input type="radio" name="hb_ucs_subs_scheme" value="' . esc_attr($scheme) . '" ' . checked($selected, (string) $scheme, false) . ' /> ';
             echo esc_html($label);
             if ($product->is_type('simple')) {
@@ -11824,6 +11869,8 @@ JS;
             }
             echo '</label>';
         }
+
+        echo '</div>';
 
         if ($product->is_type('variable')) {
             echo '<p class="description hb-ucs-subscriptions__description">' . esc_html__('Kies eerst een variatie; de abonnementsprijs kan per variatie verschillen.', 'hb-ucs') . '</p>';
