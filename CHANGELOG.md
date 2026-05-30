@@ -6,6 +6,13 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.190] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina: de frequentie-dropdown blijft nu volledig verborgen tot de klant expliciet voor abonnement kiest. De compacte keuze gebruikt voortaan de bestaande frontend-brandtokens en schaalt leesbaar mee op smalle mobiele sticky containers onderin het scherm.
+
+## [0.3.189] — 2026-05-30
+
 ### Added
 - Productpagina's module: nieuwe module-toggle waarmee je per product de add-to-cart knoptekst kunt overschrijven voor zowel de productpagina als shop/archive-overzichten. De implementatie gebruikt WooCommerce knoptekstfilters zodat standaard WooCommerce en Elementor WooCommerce widgets dezelfde productteksten volgen.
 - Productpagina's module: nieuwe standaard knopteksten per producttype toegevoegd voor simpel, variabel en bundle. Deze defaults gelden voor productpagina en shop/archive afzonderlijk en worden alleen gebruikt wanneer een product geen eigen override heeft.

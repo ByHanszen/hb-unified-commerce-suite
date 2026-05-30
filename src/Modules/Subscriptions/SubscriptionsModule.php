@@ -11815,7 +11815,7 @@ JS;
         $modeFieldName = 'hb_ucs_subs_mode_ui_' . $productId;
         $frequencyFieldId = 'hb-ucs-subscription-frequency-' . $productId;
 
-        echo '<div class="hb-ucs-subscriptions hb-ucs-subscriptions--product" data-default-scheme="' . esc_attr($defaultScheme) . '">';
+        echo '<div class="hb-ucs-subscriptions hb-ucs-subscriptions--product' . ($subscriptionChosen ? ' is-subscription-selected' : '') . '" data-default-scheme="' . esc_attr($defaultScheme) . '">';
         echo '<p class="hb-ucs-subscriptions__title"><strong>' . esc_html__('Kies aankooptype', 'hb-ucs') . '</strong></p>';
 
         echo '<div class="hb-ucs-subscriptions__compact">';

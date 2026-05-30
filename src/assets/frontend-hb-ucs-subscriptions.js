@@ -107,9 +107,10 @@
     var selectedScheme = $checked.length ? String($checked.val() || '0') : '0';
     var isSubscription = selectedScheme !== '0';
 
+    $wrap.toggleClass('is-subscription-selected', isSubscription);
     $modeSingle.prop('checked', !isSubscription);
     $modeSubscription.prop('checked', isSubscription);
-    $frequencyWrap.prop('hidden', !isSubscription);
+    $frequencyWrap.prop('hidden', !isSubscription).attr('aria-hidden', !isSubscription ? 'true' : 'false');
 
     if (!isSubscription) {
       $price.html('').prop('hidden', true);
@@ -121,7 +122,7 @@
     }
 
     var priceHtml = getCompactProductSelectedPriceHtml($wrap, selectedScheme);
-    $price.html(priceHtml).prop('hidden', priceHtml === '');
+    $price.html(priceHtml).prop('hidden', priceHtml === '').attr('aria-hidden', priceHtml === '' ? 'true' : 'false');
   }
 
   function setCompactProductNativeScheme($wrap, scheme) {

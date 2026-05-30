@@ -49,6 +49,15 @@
 }
 
 .single-product form.cart .hb-ucs-subscriptions--product {
+  --hb-ucs-product-bg: var(--sections-background-color, #ffffff);
+  --hb-ucs-product-border: color-mix(in srgb, var(--sections-border-color, rgba(17, 24, 39, 0.12)) 78%, var(--links-normal-color, #295f46) 22%);
+  --hb-ucs-product-text: var(--general-text-color, inherit);
+  --hb-ucs-product-muted: color-mix(in srgb, var(--general-text-color, #1f2937) 74%, #ffffff 26%);
+  --hb-ucs-product-heading: var(--typography-section-titles-color, var(--hb-ucs-product-text));
+  --hb-ucs-product-accent: var(--links-normal-color, #295f46);
+  --hb-ucs-product-accent-strong: var(--links-hover-color, var(--hb-ucs-product-accent));
+  --hb-ucs-product-accent-soft: color-mix(in srgb, var(--hb-ucs-product-accent) 11%, var(--hb-ucs-product-bg));
+  --hb-ucs-product-accent-outline: color-mix(in srgb, var(--hb-ucs-product-accent) 34%, transparent);
   display: block !important;
   float: none !important;
   clear: both;
@@ -58,9 +67,14 @@
   max-width: 100%;
   align-self: stretch;
   margin: 0 0 12px;
-  padding: 12px;
-  border: 1px solid #e5e5e5;
+  padding: 14px;
+  border: 1px solid var(--hb-ucs-product-border);
+  border-radius: var(--sections-border-radius, 18px);
+  background: var(--hb-ucs-product-bg);
+  color: var(--hb-ucs-product-text);
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--hb-ucs-product-accent) 10%, transparent);
   box-sizing: border-box;
+  container-type: inline-size;
 }
 
 .single-product form.cart .hb-ucs-subscriptions--product ~ .quantity,
@@ -73,7 +87,10 @@
 }
 
 .hb-ucs-subscriptions__title {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
+  color: var(--hb-ucs-product-heading);
+  font-size: clamp(14px, 2.4vw, 16px);
+  line-height: 1.3;
 }
 
 .hb-ucs-subscriptions__option {
@@ -94,11 +111,15 @@
 
 .hb-ucs-subscriptions__description {
   margin: 8px 0 0;
+  font-size: clamp(12px, 2vw, 14px);
+  line-height: 1.45;
+  color: var(--hb-ucs-product-muted);
 }
 
 .hb-ucs-subscriptions--product .hb-ucs-subscriptions__compact {
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 
 .hb-ucs-subscriptions--product .hb-ucs-subscriptions__native-list {
@@ -116,6 +137,7 @@
   width: 100%;
   margin: 0;
   cursor: pointer;
+  min-width: 0;
 }
 
 .hb-ucs-subscriptions__mode input[type="radio"] {
@@ -129,57 +151,89 @@
   flex-direction: column;
   gap: 4px;
   min-height: 100%;
-  padding: 12px;
-  border: 1px solid #d6d6d6;
-  border-radius: 12px;
-  background: #ffffff;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--hb-ucs-product-border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--hb-ucs-product-bg) 94%, var(--hb-ucs-product-accent) 6%);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
 .hb-ucs-subscriptions__mode input[type="radio"]:checked + .hb-ucs-subscriptions__mode-card {
-  border-color: #295f46;
-  background: #f3faf6;
-  box-shadow: 0 0 0 1px rgba(41, 95, 70, 0.16);
+  border-color: var(--hb-ucs-product-accent);
+  background: var(--hb-ucs-product-accent-soft);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--hb-ucs-product-accent) 18%, transparent);
 }
 
 .hb-ucs-subscriptions__mode input[type="radio"]:focus-visible + .hb-ucs-subscriptions__mode-card {
-  outline: 2px solid #295f46;
+  outline: 2px solid var(--hb-ucs-product-accent-outline);
   outline-offset: 2px;
+}
+
+.hb-ucs-subscriptions__mode:hover .hb-ucs-subscriptions__mode-card {
+  border-color: color-mix(in srgb, var(--hb-ucs-product-border) 72%, var(--hb-ucs-product-accent) 28%);
 }
 
 .hb-ucs-subscriptions__mode-title {
   font-weight: 600;
   line-height: 1.3;
+  font-size: clamp(13px, 2.1vw, 15px);
+  color: var(--hb-ucs-product-heading);
 }
 
 .hb-ucs-subscriptions__mode-note {
-  font-size: 13px;
+  font-size: clamp(11px, 1.9vw, 13px);
   line-height: 1.45;
-  color: #666666;
+  color: var(--hb-ucs-product-muted);
 }
 
 .hb-ucs-subscriptions__frequency {
-  display: grid;
+  display: none;
   gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--hb-ucs-product-border) 74%, var(--hb-ucs-product-accent) 26%);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--hb-ucs-product-bg) 90%, var(--hb-ucs-product-accent) 10%);
+}
+
+.hb-ucs-subscriptions--product.is-subscription-selected .hb-ucs-subscriptions__frequency {
+  display: grid;
 }
 
 .hb-ucs-subscriptions__frequency-label {
   display: block;
-  font-size: 14px;
+  font-size: clamp(12px, 2vw, 14px);
   font-weight: 600;
+  color: var(--hb-ucs-product-heading);
 }
 
 .hb-ucs-subscriptions__frequency-select {
+  appearance: none;
   width: 100%;
   min-height: 44px;
   padding: 10px 12px;
-  border: 1px solid #d6d6d6;
-  border-radius: 10px;
-  background: #ffffff;
+  border: 1px solid var(--hb-ucs-product-border);
+  border-radius: 12px;
+  background: var(--hb-ucs-product-bg);
+  color: var(--hb-ucs-product-text);
+  font-size: clamp(13px, 2vw, 14px);
+  line-height: 1.35;
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--hb-ucs-product-accent) 8%, transparent);
+}
+
+.hb-ucs-subscriptions__frequency-select:focus-visible {
+  outline: 2px solid var(--hb-ucs-product-accent-outline);
+  outline-offset: 2px;
+  border-color: var(--hb-ucs-product-accent);
 }
 
 .hb-ucs-subscriptions__selected-price {
   margin: 0;
+  min-width: 0;
+  font-size: clamp(12px, 1.9vw, 14px);
+  line-height: 1.45;
+  color: var(--hb-ucs-product-text);
 }
 
 .hb-ucs-subscriptions__selected-price .price {
@@ -193,9 +247,53 @@
   font-weight: 600;
 }
 
+.hb-ucs-subscriptions__frequency[hidden],
+.hb-ucs-subscriptions__selected-price[hidden] {
+  display: none !important;
+}
+
 @media (max-width: 640px) {
+  .single-product form.cart .hb-ucs-subscriptions--product {
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+
   .hb-ucs-subscriptions__mode-list {
     grid-template-columns: 1fr;
+  }
+}
+
+@container (max-width: 360px) {
+  .hb-ucs-subscriptions__title {
+    margin-bottom: 8px;
+  }
+
+  .hb-ucs-subscriptions__compact {
+    gap: 8px;
+  }
+
+  .hb-ucs-subscriptions__mode-list {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .hb-ucs-subscriptions__mode-card {
+    padding: 10px 12px;
+    border-radius: 12px;
+  }
+
+  .hb-ucs-subscriptions__mode-note {
+    font-size: 12px;
+  }
+
+  .hb-ucs-subscriptions__frequency {
+    padding: 8px 10px;
+    border-radius: 12px;
+  }
+
+  .hb-ucs-subscriptions__frequency-select {
+    min-height: 42px;
+    padding: 9px 11px;
   }
 }
 
