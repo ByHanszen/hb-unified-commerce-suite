@@ -97,20 +97,17 @@
       return;
     }
 
-    var $compact = $wrap.find('.hb-ucs-subscriptions__compact').first();
-    var $modeSingle = $compact.find('input[value="single"]').first();
-    var $modeSubscription = $compact.find('input[value="subscription"]').first();
-    var $frequencyWrap = $compact.find('.hb-ucs-subscriptions__frequency').first();
-    var $select = $compact.find('.hb-ucs-subscriptions__frequency-select').first();
-    var $price = $compact.find('.hb-ucs-subscriptions__selected-price').first();
+    var $modeSelect = $wrap.find('.hb-ucs-subscriptions__mode-select').first();
+    var $frequencyRow = $wrap.find('.hb-ucs-subscriptions__frequency-row').first();
+    var $select = $wrap.find('.hb-ucs-subscriptions__frequency-select').first();
+    var $price = $wrap.find('.hb-ucs-subscriptions__selected-price').first();
     var $checked = $nativeRadios.filter(':checked').first();
     var selectedScheme = $checked.length ? String($checked.val() || '0') : '0';
     var isSubscription = selectedScheme !== '0';
 
     $wrap.toggleClass('is-subscription-selected', isSubscription);
-    $modeSingle.prop('checked', !isSubscription);
-    $modeSubscription.prop('checked', isSubscription);
-    $frequencyWrap.prop('hidden', !isSubscription).attr('aria-hidden', !isSubscription ? 'true' : 'false');
+    $modeSelect.val(isSubscription ? 'subscription' : 'single');
+    $frequencyRow.prop('hidden', !isSubscription).attr('aria-hidden', !isSubscription ? 'true' : 'false');
 
     if (!isSubscription) {
       $price.html('').prop('hidden', true);
@@ -180,8 +177,8 @@
       $wrap.data('hbUcsCompactProductReady', true);
       $wrap.addClass('hb-ucs-subscriptions--enhanced');
 
-      $wrap.on('change', '.hb-ucs-subscriptions__compact input[type="radio"]', function () {
-        if (String(this.value) === 'single') {
+      $wrap.on('change', '.hb-ucs-subscriptions__mode-select', function () {
+        if (String($(this).val() || 'single') === 'single') {
           setCompactProductNativeScheme($wrap, '0');
           return;
         }
@@ -191,9 +188,9 @@
       });
 
       $wrap.on('change', '.hb-ucs-subscriptions__frequency-select', function () {
-        var $subscriptionMode = $wrap.find('.hb-ucs-subscriptions__compact input[value="subscription"]').first();
-        if (!$subscriptionMode.prop('checked')) {
-          $subscriptionMode.prop('checked', true);
+        var $modeSelect = $wrap.find('.hb-ucs-subscriptions__mode-select').first();
+        if ($modeSelect.val() !== 'subscription') {
+          $modeSelect.val('subscription');
         }
 
         setCompactProductNativeScheme($wrap, String($(this).val() || ''));

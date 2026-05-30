@@ -6,6 +6,16 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.197] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina: de zichtbare aankoopselector rendert nu als een WooCommerce-achtige variatiesrij met selectvelden in plaats van als een eigen radio-pill component. Daardoor kan de standaard variatie-opmaak en eventuele frontend-enhancers beter op deze selector meeliften.
+
+## [0.3.196] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina: het aankooptype-blok gebruikt nu dezelfde verticale opbouw als de variatiekeuzes, met de veldtitel boven de opties en zonder de afwijkende kaart/grid-positionering. Daardoor sluit de weergave op groot en klein scherm strakker aan op selectors zoals inhoud en maling.
+
 ## [0.3.195] — 2026-05-30
 
 ### Fixed
