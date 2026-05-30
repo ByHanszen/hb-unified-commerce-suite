@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.202] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina mobiel: het aankooptypeblok gebruikt nu echt de volledige beschikbare breedte. De mobiele CSS voor deze rij is opgeschoond en de twee badges krijgen op smalle schermen ieder een halve breedte, zodat ze naast elkaar blijven staan.
+
 ## [0.3.201] — 2026-05-30
 
 ### Fixed

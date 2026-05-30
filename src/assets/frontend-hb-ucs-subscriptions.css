@@ -267,11 +267,21 @@
 }
 
 @media (max-width: 640px) {
+  .single-product form.cart .hb-ucs-subscriptions--product,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+  }
+
   .single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table {
     flex: 0 0 100% !important;
+    width: 100% !important;
     min-width: 100%;
+    max-width: 100%;
     padding: 0;
     margin-bottom: 10px;
+    table-layout: fixed;
   }
 
   .single-product form.cart .hb-ucs-subscriptions--product ~ .quantity,
@@ -291,8 +301,28 @@
   .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table th {
     display: block;
     width: 100%;
+    max-width: 100%;
     padding-right: 0;
     padding-left: 0;
+  }
+
+  .single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__purchase-row .value,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__purchase-row .value {
+    width: 100% !important;
+  }
+
+  .single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__mode-swatches,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__mode-swatches {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__mode-swatch,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__mode-swatch {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+    margin: 0;
   }
 
   .single-product form.cart .hb-ucs-subscriptions--product ~ .single_add_to_cart_button,
@@ -304,14 +334,15 @@
     clear: none;
     order: -8;
     flex: 0 0 auto;
+    margin: 0;
+  }
+
+  .single-product form.cart .woocommerce-variation-add-to-cart,
   .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .woocommerce-variation-add-to-cart {
     display: flex;
     flex-wrap: wrap;
     align-items: stretch;
     gap: 8px;
-  }
-
-    margin: 0;
   }
 
   .single-product form.cart .woocommerce-variation-add-to-cart .single_add_to_cart_button,
