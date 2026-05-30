@@ -11878,10 +11878,6 @@ JS;
 
         echo '</div>';
 
-        if ($product->is_type('variable')) {
-            echo '<p class="description hb-ucs-subscriptions__description">' . esc_html__('Kies eerst een variatie; de abonnementsprijs kan per variatie verschillen.', 'hb-ucs') . '</p>';
-        }
-
         echo '</div>';
     }
 

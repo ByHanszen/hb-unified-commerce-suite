@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.209] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina: de standaard helpertekst over eerst een variatie kiezen is verwijderd uit het aankoopblok, zodat de compacte aankoopkeuze rustiger blijft.
+
 ## [0.3.208] — 2026-05-30
 
 ### Fixed
