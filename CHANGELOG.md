@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.195] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina: de keuzes voor eenmalige aankoop en abonnement volgen nu dezelfde veldopbouw als de variatiekeuzes, met een labelkolom links en compacte pill-opties rechts. Daardoor sluit de positionering en visuele stijl beter aan op keuzes zoals inhoud en maling.
+
 ## [0.3.193] — 2026-05-30
 
 ### Fixed
