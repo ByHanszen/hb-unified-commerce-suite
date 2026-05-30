@@ -261,7 +261,7 @@
   }
 
   .hb-ucs-subscriptions__mode-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     gap: 6px;
   }
 
@@ -288,7 +288,7 @@
   .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product ~ .variations_button {
     clear: none;
     order: -8;
-    flex: 1 1 0;
+    flex: 0 0 auto;
     width: auto !important;
     min-width: 0;
     margin: 0;
@@ -325,10 +325,47 @@
   .single-product form.cart .woocommerce-variation-add-to-cart button.single_add_to_cart_button,
   .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .woocommerce-variation-add-to-cart .single_add_to_cart_button,
   .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .woocommerce-variation-add-to-cart button.single_add_to_cart_button {
-    flex: 1 1 0;
+    flex: 0 0 auto;
     width: auto !important;
     min-width: 0;
     margin: 0;
+  }
+
+  .single-product form.cart .single_add_to_cart_button,
+  .single-product form.cart button.single_add_to_cart_button,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .single_add_to_cart_button,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart button.single_add_to_cart_button {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px !important;
+    min-width: 48px;
+    max-width: 48px;
+    height: 48px;
+    padding: 0 !important;
+    overflow: hidden;
+    white-space: nowrap;
+    text-indent: -9999px;
+    font-size: 0 !important;
+    line-height: 1;
+  }
+
+  .single-product form.cart .single_add_to_cart_button::before,
+  .single-product form.cart button.single_add_to_cart_button::before,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .single_add_to_cart_button::before,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart button.single_add_to_cart_button::before {
+    content: "\e01d";
+    font-family: WooCommerce;
+    font-size: 20px;
+    line-height: 1;
+    text-indent: 0;
+    speak: never;
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 }
 
@@ -342,7 +379,7 @@
   }
 
   .hb-ucs-subscriptions__mode-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     gap: 6px;
   }
 
@@ -353,6 +390,14 @@
 
   .hb-ucs-subscriptions__mode-note {
     display: none;
+  }
+
+  .single-product form.cart .single_add_to_cart_button,
+  .single-product form.cart button.single_add_to_cart_button {
+    width: 44px !important;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
   }
 
   .hb-ucs-subscriptions__frequency {

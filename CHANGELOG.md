@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.192] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina mobiel: de aankoopkeuzes stapelen nu weer onder elkaar en de bestelknop wordt in krappe mobiele layouts als compacte WooCommerce winkelwagen-icoonknop getoond. Daardoor blijft er meer breedte over in kleine sticky add-to-cart containers.
+
 ## [0.3.191] — 2026-05-30
 
 ### Fixed
