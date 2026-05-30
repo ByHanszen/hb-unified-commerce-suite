@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.205] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina mobiel: de bestelknop vertrouwt niet langer op een icon-only pseudo-element met transparante tekst. Daardoor blijft de knop ook in mobiele weergave en disabled toestanden zichtbaar als echte tekstknop.
+
 ## [0.3.204] — 2026-05-30
 
 ### Fixed
