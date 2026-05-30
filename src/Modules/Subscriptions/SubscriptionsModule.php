@@ -11800,8 +11800,9 @@ JS;
         }
 
         // Current selection (if user returned due to validation errors).
+        $requestedMode = $this->get_requested_purchase_mode();
         $selected = $this->get_requested_scheme();
-        if ($selected === '') {
+        if ($selected === '' && $requestedMode !== 'subscription') {
             $selected = '0';
         }
 
@@ -11810,9 +11811,9 @@ JS;
             $defaultScheme = (string) $schemeKey;
             break;
         }
-        $selectedSubscriptionScheme = ($selected !== '0' && isset($freqs[$selected])) ? $selected : $defaultScheme;
-        $subscriptionChosen = $selectedSubscriptionScheme !== '' && $selected !== '0';
-        $modeFieldName = 'hb_ucs_subs_mode_ui_' . $productId;
+        $selectedSubscriptionScheme = ($selected !== '' && $selected !== '0' && isset($freqs[$selected])) ? $selected : '';
+        $subscriptionChosen = $requestedMode === 'subscription' || $selectedSubscriptionScheme !== '';
+        $modeFieldName = 'hb_ucs_subs_mode';
         $modeFieldId = 'hb-ucs-subscription-mode-' . $productId;
         $frequencyFieldId = 'hb-ucs-subscription-frequency-' . $productId;
 
@@ -11840,13 +11841,14 @@ JS;
         echo '<div class="hb-ucs-subscriptions__frequency-wrap"' . ($subscriptionChosen ? '' : ' hidden') . '>';
         echo '<label class="screen-reader-text" for="' . esc_attr($frequencyFieldId) . '">' . esc_html__('Frequentie', 'hb-ucs') . '</label>';
         echo '<select id="' . esc_attr($frequencyFieldId) . '" class="hb-ucs-subscriptions__frequency-select">';
+        echo '<option value="" ' . selected($selectedSubscriptionScheme, '', false) . '>' . esc_html__('Kies frequentie', 'hb-ucs') . '</option>';
         foreach ($freqs as $scheme => $row) {
             $label = (string) $row['label'];
             echo '<option value="' . esc_attr((string) $scheme) . '" ' . selected($selectedSubscriptionScheme, (string) $scheme, false) . '>' . esc_html($label) . '</option>';
         }
         echo '</select>';
         echo '</div>';
-        echo '<p class="hb-ucs-subscriptions__selected-price"' . ($subscriptionChosen ? '' : ' hidden') . '></p>';
+        echo '<p class="hb-ucs-subscriptions__selected-price"' . ($selectedSubscriptionScheme !== '' ? '' : ' hidden') . '></p>';
         echo '</div>';
         echo '</div>';
         echo '</div>';
@@ -11895,12 +11897,30 @@ JS;
         return sanitize_key($raw);
     }
 
+    private function get_requested_purchase_mode(): string {
+        $raw = isset($_REQUEST['hb_ucs_subs_mode']) ? (string) wp_unslash($_REQUEST['hb_ucs_subs_mode']) : '';
+        $raw = sanitize_key(trim($raw));
+
+        if ($raw !== 'subscription') {
+            return 'single';
+        }
+
+        return 'subscription';
+    }
+
     public function validate_add_to_cart(bool $passed, int $productId, int $quantity, int $variationId = 0): bool {
         if (!$passed) {
             return false;
         }
 
+        $mode = $this->get_requested_purchase_mode();
         $scheme = $this->get_requested_scheme();
+
+        if ($mode === 'subscription' && ($scheme === '' || $scheme === '0')) {
+            wc_add_notice(__('Kies een abonnementsfrequentie.', 'hb-ucs'), 'error');
+            return false;
+        }
+
         if ($scheme === '' || $scheme === '0') {
             return true;
         }

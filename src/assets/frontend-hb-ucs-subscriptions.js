@@ -250,8 +250,8 @@
     var $select = $wrap.find('.hb-ucs-subscriptions__frequency-select').first();
     var $price = $wrap.find('.hb-ucs-subscriptions__selected-price').first();
     var $checked = $nativeRadios.filter(':checked').first();
-    var selectedScheme = $checked.length ? String($checked.val() || '0') : '0';
-    var isSubscription = selectedScheme !== '0';
+    var selectedScheme = $checked.length ? String($checked.val() || '') : '';
+    var isSubscription = String($modeSelect.val() || 'single') === 'subscription' || (selectedScheme !== '' && selectedScheme !== '0');
 
     $wrap.toggleClass('is-subscription-selected', isSubscription);
     $modeSelect.val(isSubscription ? 'subscription' : 'single');
@@ -263,12 +263,30 @@
       return;
     }
 
-    if ($select.val() !== selectedScheme) {
+    if (selectedScheme !== '' && selectedScheme !== '0' && $select.val() !== selectedScheme) {
       $select.val(selectedScheme);
+    }
+
+    if (selectedScheme === '' || selectedScheme === '0') {
+      if ($select.val()) {
+        $select.val('');
+      }
+
+      $price.html('').prop('hidden', true).attr('aria-hidden', 'true');
+      return;
     }
 
     var priceHtml = getCompactProductSelectedPriceHtml($wrap, selectedScheme);
     $price.html(priceHtml).prop('hidden', priceHtml === '').attr('aria-hidden', priceHtml === '' ? 'true' : 'false');
+  }
+
+  function clearCompactProductNativeScheme($wrap) {
+    if (!$wrap || !$wrap.length) {
+      return;
+    }
+
+    $wrap.find('.hb-ucs-subscriptions__native-list input[name="hb_ucs_subs_scheme"]').prop('checked', false);
+    syncCompactProductPurchaseUi($wrap);
   }
 
   function setCompactProductNativeScheme($wrap, scheme) {
@@ -334,7 +352,12 @@
         }
 
         var $select = $wrap.find('.hb-ucs-subscriptions__frequency-select').first();
-        setCompactProductNativeScheme($wrap, String($select.val() || $wrap.attr('data-default-scheme') || ''));
+        if (!$select.val()) {
+          clearCompactProductNativeScheme($wrap);
+          return;
+        }
+
+        setCompactProductNativeScheme($wrap, String($select.val() || ''));
       });
 
       $wrap.on('change', '.hb-ucs-subscriptions__frequency-select', function () {
