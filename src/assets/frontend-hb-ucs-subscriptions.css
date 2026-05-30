@@ -96,16 +96,12 @@
   margin: 8px 0 0;
 }
 
-.hb-ucs-subscriptions__compact {
-  display: none;
-}
-
-.hb-ucs-subscriptions--enhanced .hb-ucs-subscriptions__compact {
+.hb-ucs-subscriptions--product .hb-ucs-subscriptions__compact {
   display: grid;
   gap: 10px;
 }
 
-.hb-ucs-subscriptions--enhanced .hb-ucs-subscriptions__native-list {
+.hb-ucs-subscriptions--product .hb-ucs-subscriptions__native-list {
   display: none;
 }
 

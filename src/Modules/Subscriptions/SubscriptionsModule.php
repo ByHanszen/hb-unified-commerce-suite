@@ -10138,6 +10138,10 @@ JS;
         $pluginFile = defined('HB_UCS_PLUGIN_FILE') ? HB_UCS_PLUGIN_FILE : (dirname(__FILE__, 4) . '/hb-unified-commerce-suite.php');
         $base = trailingslashit(plugins_url('src/assets/', $pluginFile));
         $assetVersion = defined('HB_UCS_VERSION') ? HB_UCS_VERSION : '0.0.0';
+        $stylePath = dirname($pluginFile) . '/src/assets/frontend-hb-ucs-subscriptions.css';
+        $scriptPath = dirname($pluginFile) . '/src/assets/frontend-hb-ucs-subscriptions.js';
+        $styleVersion = file_exists($stylePath) ? (string) filemtime($stylePath) : $assetVersion;
+        $scriptVersion = file_exists($scriptPath) ? (string) filemtime($scriptPath) : $assetVersion;
 
         $deps = ['jquery'];
         if ($isProductPage && (wp_script_is('wc-add-to-cart-variation', 'registered') || wp_script_is('wc-add-to-cart-variation', 'enqueued'))) {
@@ -10150,8 +10154,8 @@ JS;
             }
         }
 
-        wp_enqueue_style('hb-ucs-subscriptions-frontend-style', $base . 'frontend-hb-ucs-subscriptions.css', [], $assetVersion);
-        wp_enqueue_script('hb-ucs-subscriptions-frontend', $base . 'frontend-hb-ucs-subscriptions.js', $deps, $assetVersion, true);
+        wp_enqueue_style('hb-ucs-subscriptions-frontend-style', $base . 'frontend-hb-ucs-subscriptions.css', [], $styleVersion);
+        wp_enqueue_script('hb-ucs-subscriptions-frontend', $base . 'frontend-hb-ucs-subscriptions.js', $deps, $scriptVersion, true);
         wp_localize_script('hb-ucs-subscriptions-frontend', 'hbUcsSubscriptionsFrontend', [
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('hb_ucs_subscription_frontend'),

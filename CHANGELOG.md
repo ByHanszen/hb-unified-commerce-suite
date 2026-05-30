@@ -12,6 +12,7 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ### Fixed
 - Abonnementen productpagina: de aankoopkeuze is nu compacter opgebouwd met eerst een snelle keuze tussen eenmalig of abonnement, en pas daarna een aparte frequentie-dropdown voor abonnementen. Daardoor blijft het add-to-cart blok overzichtelijker op producten met veel beschikbare frequenties.
+- Abonnementen productpagina: de subscriptions frontend-CSS en -JS krijgen nu een bestandsgebaseerde cachebuster. Daardoor blijft een nieuwe compacte aankoopkeuze niet hangen achter een oude browsercache van dezelfde pluginversie.
 - Abonnement-editor: handmatig opgeslagen status-, schema- en datumvelden houden nu de primaire order-meta en de legacy shadow-meta binnen hetzelfde abonnement direct synchroon. Daardoor kan de volgende betaaldatum na een admin-save niet meer terugvallen door een interne meta-mismatch tussen beide opslaglagen.
 - Abonnementen: handmatig vervroegde next-payment datums krijgen nu tijdelijk een expliciete override op de minimum-normalisatie. Daardoor springt een eerder handmatig ingestelde renewal-datum niet meer terug naar de oude cyclusdatum zodra het due-moment is bereikt, en kan de renewal-order weer normaal worden aangemaakt.
 - B2B verzendmethodes: de whitelist kan nu ook specifieke runtime-ratekeys van externe verzendplugins opslaan en tonen, naast standaard WooCommerce methodetypes en zone-instances. Daardoor kun je per klant, rol, profiel, whitelist of standaardkeuze ook aparte checkout-varianten binnen dezelfde verzendmethode-instance sturen.
