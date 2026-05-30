@@ -135,11 +135,27 @@
     }
 
     var $modeSelect = $wrap.find('.hb-ucs-subscriptions__mode-select').first();
+    var $existingSwatches = $wrap.find('.hb-ucs-subscriptions__mode-swatches').first();
     if (!$modeSelect.length) {
       return;
     }
 
     var config = getCompactProductModeSwatchConfig($wrap);
+    if ($existingSwatches.length) {
+      $modeSelect
+        .addClass('hb-ucs-subscriptions__mode-select--hidden')
+        .attr('aria-hidden', 'true')
+        .attr('tabindex', '-1');
+
+      if (config) {
+        $existingSwatches.addClass(config.wrapperClass);
+      }
+
+      $wrap.addClass('hb-ucs-subscriptions--swatches');
+      $wrap.data('hbUcsModeSwatchesReady', true);
+      return;
+    }
+
     if (!config) {
       return;
     }

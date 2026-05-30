@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.207] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina: de aankoopkeuze-swatches voor "Eenmalige aankoop" en "Abonnement" worden nu direct server-side gerenderd in plaats van pas na frontend-JavaScript. Daardoor verschijnt niet eerst kort een dropdownlijst voordat de knoppen zichtbaar worden.
+
 ## [0.3.206] — 2026-05-30
 
 ### Fixed
