@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.206] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina: de aankoopkeuze rendert niet meer als een tabel met losse frequentierij, maar als een variatie-achtig label/value-veld. De frequentiedropdown verschijnt nu in dezelfde value-rij als de aankoopbadges zodra "Abonnement" is gekozen.
+
 ## [0.3.205] — 2026-05-30
 
 ### Fixed

@@ -11817,31 +11817,27 @@ JS;
         $frequencyFieldId = 'hb-ucs-subscription-frequency-' . $productId;
 
         echo '<div class="hb-ucs-subscriptions hb-ucs-subscriptions--product' . ($subscriptionChosen ? ' is-subscription-selected' : '') . '" data-default-scheme="' . esc_attr($defaultScheme) . '">';
-        echo '<table class="hb-ucs-subscriptions__table" cellspacing="0" role="presentation">';
-        echo '<tbody>';
-        echo '<tr class="hb-ucs-subscriptions__purchase-row">';
-        echo '<th class="label"><label for="' . esc_attr($modeFieldId) . '">' . esc_html__('Kies aankooptype', 'hb-ucs') . '</label></th>';
-        echo '<td class="value">';
+        echo '<div class="hb-ucs-subscriptions__table">';
+        echo '<div class="hb-ucs-subscriptions__field hb-ucs-subscriptions__purchase-row">';
+        echo '<div class="label"><label for="' . esc_attr($modeFieldId) . '">' . esc_html__('Kies aankooptype', 'hb-ucs') . '</label></div>';
+        echo '<div class="value">';
         echo '<select id="' . esc_attr($modeFieldId) . '" class="hb-ucs-subscriptions__mode-select" name="' . esc_attr($modeFieldName) . '">';
         echo '<option value="single" ' . selected($subscriptionChosen, false, false) . '>' . esc_html__('Eenmalige aankoop', 'hb-ucs') . '</option>';
         echo '<option value="subscription" ' . selected($subscriptionChosen, true, false) . '>' . esc_html__('Abonnement', 'hb-ucs') . '</option>';
         echo '</select>';
-        echo '</td>';
-        echo '</tr>';
-        echo '<tr class="hb-ucs-subscriptions__frequency-row"' . ($subscriptionChosen ? '' : ' hidden') . '>';
-        echo '<th class="label"><label for="' . esc_attr($frequencyFieldId) . '">' . esc_html__('Frequentie', 'hb-ucs') . '</label></th>';
-        echo '<td class="value">';
+        echo '<div class="hb-ucs-subscriptions__frequency-wrap"' . ($subscriptionChosen ? '' : ' hidden') . '>';
+        echo '<label class="screen-reader-text" for="' . esc_attr($frequencyFieldId) . '">' . esc_html__('Frequentie', 'hb-ucs') . '</label>';
         echo '<select id="' . esc_attr($frequencyFieldId) . '" class="hb-ucs-subscriptions__frequency-select">';
         foreach ($freqs as $scheme => $row) {
             $label = (string) $row['label'];
             echo '<option value="' . esc_attr((string) $scheme) . '" ' . selected($selectedSubscriptionScheme, (string) $scheme, false) . '>' . esc_html($label) . '</option>';
         }
         echo '</select>';
+        echo '</div>';
         echo '<p class="hb-ucs-subscriptions__selected-price"' . ($subscriptionChosen ? '' : ' hidden') . '></p>';
-        echo '</td>';
-        echo '</tr>';
-        echo '</tbody>';
-        echo '</table>';
+        echo '</div>';
+        echo '</div>';
+        echo '</div>';
 
         echo '<div class="hb-ucs-subscriptions__native-list">';
 

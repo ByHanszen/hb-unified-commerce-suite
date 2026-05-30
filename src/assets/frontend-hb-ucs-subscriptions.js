@@ -230,7 +230,7 @@
     }
 
     var $modeSelect = $wrap.find('.hb-ucs-subscriptions__mode-select').first();
-    var $frequencyRow = $wrap.find('.hb-ucs-subscriptions__frequency-row').first();
+    var $frequencyRow = $wrap.find('.hb-ucs-subscriptions__frequency-wrap').first();
     var $select = $wrap.find('.hb-ucs-subscriptions__frequency-select').first();
     var $price = $wrap.find('.hb-ucs-subscriptions__selected-price').first();
     var $checked = $nativeRadios.filter(':checked').first();

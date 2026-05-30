@@ -116,6 +116,26 @@
   margin: 0 0 16px;
 }
 
+.hb-ucs-subscriptions__field {
+  display: grid;
+  grid-template-columns: minmax(120px, max-content) minmax(0, 1fr);
+  column-gap: 16px;
+  row-gap: 8px;
+  align-items: start;
+}
+
+.hb-ucs-subscriptions__field .label,
+.hb-ucs-subscriptions__field .value {
+  min-width: 0;
+}
+
+.hb-ucs-subscriptions__field .value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table td,
 .single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table th,
 .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table td,
@@ -140,25 +160,8 @@
   position: relative;
 }
 
-.single-product form.cart .hb-ucs-subscriptions--product.hb-ucs-subscriptions--swatches .hb-ucs-subscriptions__purchase-row,
-.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product.hb-ucs-subscriptions--swatches .hb-ucs-subscriptions__purchase-row,
-.single-product form.cart .hb-ucs-subscriptions--product.hb-ucs-subscriptions--swatches .hb-ucs-subscriptions__purchase-row .label,
-.single-product form.cart .hb-ucs-subscriptions--product.hb-ucs-subscriptions--swatches .hb-ucs-subscriptions__purchase-row .value,
-.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product.hb-ucs-subscriptions--swatches .hb-ucs-subscriptions__purchase-row .label,
-.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product.hb-ucs-subscriptions--swatches .hb-ucs-subscriptions__purchase-row .value {
-  display: block;
-  width: 100% !important;
-}
-
-.single-product form.cart .hb-ucs-subscriptions--product.hb-ucs-subscriptions--swatches .hb-ucs-subscriptions__purchase-row .label,
-.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product.hb-ucs-subscriptions--swatches .hb-ucs-subscriptions__purchase-row .label {
-  padding-right: 0;
-  padding-bottom: 8px;
-}
-
-.single-product form.cart .hb-ucs-subscriptions--product.hb-ucs-subscriptions--swatches .hb-ucs-subscriptions__purchase-row .value,
-.single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product.hb-ucs-subscriptions--swatches .hb-ucs-subscriptions__purchase-row .value {
-  max-width: 100%;
+.hb-ucs-subscriptions__purchase-row .label {
+  padding-top: 6px;
 }
 
 .hb-ucs-subscriptions__mode-select,
@@ -184,8 +187,7 @@
 .hb-ucs-subscriptions__mode-swatches {
   display: flex;
   flex-wrap: wrap;
-  width: 100%;
-  justify-content: space-between;
+  flex: 0 1 auto;
   gap: 8px;
   margin: 0;
   padding: 0;
@@ -197,10 +199,10 @@
 
 .hb-ucs-subscriptions__mode-swatch {
   display: flex;
-  flex: 1 1 calc(50% - 4px);
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: calc(50% - 4px);
+  width: auto;
   min-height: var(--wvs-single-product-item-height, 30px);
   min-width: 0;
   margin: 0;
@@ -261,8 +263,19 @@
   outline-offset: 2px;
 }
 
+.hb-ucs-subscriptions__frequency-wrap {
+  flex: 0 1 220px;
+  min-width: 180px;
+  max-width: min(100%, 260px);
+}
+
+.hb-ucs-subscriptions__frequency-wrap[hidden] {
+  display: none !important;
+}
+
 .hb-ucs-subscriptions__frequency-select {
   appearance: none;
+  width: 100%;
   min-height: 44px;
   padding: 10px 12px;
   border: 1px solid var(--hb-ucs-product-border);
@@ -288,7 +301,6 @@
   color: var(--hb-ucs-product-text);
 }
 
-.hb-ucs-subscriptions__frequency-row[hidden],
 .hb-ucs-subscriptions__selected-price[hidden] {
   display: none !important;
 }
@@ -322,20 +334,19 @@
     margin: 0;
   }
 
-  .single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table td,
-  .single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table th,
-  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table td,
-  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__table th {
-    display: block;
-    width: 100%;
-    max-width: 100%;
-    padding-right: 0;
-    padding-left: 0;
+  .hb-ucs-subscriptions__field {
+    grid-template-columns: 1fr;
+    row-gap: 8px;
   }
 
-  .single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__purchase-row .value,
-  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__purchase-row .value {
-    width: 100% !important;
+  .hb-ucs-subscriptions__field .label,
+  .hb-ucs-subscriptions__field .value {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .hb-ucs-subscriptions__purchase-row .label {
+    padding-top: 0;
   }
 
   .single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__mode-swatches,
@@ -348,8 +359,16 @@
   .single-product form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__mode-swatch,
   .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product .hb-ucs-subscriptions__mode-swatch {
     flex: 1 1 calc(50% - 4px);
+    width: calc(50% - 4px);
     min-width: 0;
     margin: 0;
+  }
+
+  .hb-ucs-subscriptions__frequency-wrap {
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
   }
 
   .single-product form.cart .hb-ucs-subscriptions--product ~ .single_add_to_cart_button,
@@ -431,27 +450,8 @@
 }
 
 @container (max-width: 520px) {
-  .hb-ucs-subscriptions__table,
-  .hb-ucs-subscriptions__table tbody,
-  .hb-ucs-subscriptions__table tr,
-  .hb-ucs-subscriptions__table th,
-  .hb-ucs-subscriptions__table td {
-    display: block;
-    width: 100% !important;
-    max-width: 100%;
-  }
-
-  .hb-ucs-subscriptions__table {
-    table-layout: fixed;
-  }
-
-  .hb-ucs-subscriptions__table .label {
-    padding-right: 0;
-    padding-bottom: 8px;
-  }
-
-  .hb-ucs-subscriptions__table .value {
-    width: 100% !important;
+  .hb-ucs-subscriptions__field {
+    grid-template-columns: 1fr;
   }
 
   .hb-ucs-subscriptions__mode-swatches {
