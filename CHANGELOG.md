@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.208] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina: de frequentiedropdown kiest niet langer automatisch de eerste abonnementsoptie zodra "Abonnement" wordt gekozen. De lijst start nu met een lege placeholder, zodat klanten bewust een frequentie moeten selecteren voordat een abonnement kan worden toegevoegd.
+
 ## [0.3.207] — 2026-05-30
 
 ### Fixed
