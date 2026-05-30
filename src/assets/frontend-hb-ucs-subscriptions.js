@@ -110,6 +110,9 @@
     var $sourceItem = $form.find('.variable-items-wrapper .button-variable-item').first();
     var $sourceWrapper = $sourceItem.closest('.variable-items-wrapper');
     var $sourceLabel = $sourceItem.find('.variable-item-span').first();
+    var styleClass = String($sourceWrapper.attr('class') || '').split(/\s+/).filter(function (token) {
+      return /^wvs-style-/.test(String(token || ''));
+    }).shift() || 'wvs-style-rounded';
     var hasSwatchAssets = $('link[href*="swatches"], script[src*="swatches"]').length > 0;
 
     if (!$sourceItem.length && !hasSwatchAssets) {
@@ -117,8 +120,9 @@
     }
 
     return {
-      wrapperClass: joinCompactSwatchClasses(['hb-ucs-subscriptions__mode-swatches', 'variable-items-wrapper', 'button-variable-wrapper']),
-      itemClass: joinCompactSwatchClasses(['hb-ucs-subscriptions__mode-swatch', 'variable-item', 'button-variable-item']),
+      wrapperClass: joinCompactSwatchClasses(['hb-ucs-subscriptions__mode-swatches', styleClass]),
+      itemClass: joinCompactSwatchClasses(['hb-ucs-subscriptions__mode-swatch']),
+      contentsClass: joinCompactSwatchClasses(['hb-ucs-subscriptions__mode-swatch-contents', 'variable-item-contents']),
       labelClass: joinCompactSwatchClasses(['hb-ucs-subscriptions__mode-swatch-label', 'variable-item-span', 'variable-item-span-button']),
       itemTag: $sourceItem.length ? String($sourceItem.prop('tagName') || 'li').toLowerCase() : 'li',
       labelTag: $sourceLabel.length ? String($sourceLabel.prop('tagName') || 'span').toLowerCase() : 'span'
@@ -151,6 +155,7 @@
       var value = String(this.value || '').trim();
       var text = String($(this).text() || '').trim();
       var $item;
+      var $contents;
       var $label;
 
       if (!value || !text) {
@@ -161,10 +166,15 @@
         'class': config.itemClass,
         'data-mode-value': value,
         title: text,
+        'data-title': text,
         role: 'radio',
         tabindex: '-1',
         'aria-checked': 'false',
         'aria-disabled': 'false'
+      });
+
+      $contents = $('<div/>', {
+        'class': config.contentsClass
       });
 
       $label = $('<' + config.labelTag + '/>', {
@@ -172,7 +182,8 @@
         text: text
       });
 
-      $item.append($label);
+      $contents.append($label);
+      $item.append($contents);
       $swatches.append($item);
     });
 

@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.201] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina met `woo-variation-swatches`: de aankoopbadges gebruiken nu een passieve badge-opmaak die dezelfde WVS-stijlvariabelen en vorm overneemt, maar niet meer door de swatch-plugin-JS als echte variatie-items wordt verwerkt. Daardoor verdwijnen de onterechte `disabled` states en de extra plugin-wrapper rond de aankoopopties.
+
 ## [0.3.200] — 2026-05-30
 
 ### Fixed
