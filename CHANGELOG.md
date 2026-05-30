@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.191] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina mobiel: de twee aankoopkeuzes blijven nu naast elkaar staan, terwijl aantal en koopknop onder het keuzevak uitlijnen. Daardoor blijft de sticky mobiele add-to-cart layout compacter en logischer opgebouwd.
+
 ## [0.3.190] — 2026-05-30
 
 ### Fixed

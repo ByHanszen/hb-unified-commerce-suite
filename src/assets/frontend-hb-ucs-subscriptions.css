@@ -254,12 +254,81 @@
 
 @media (max-width: 640px) {
   .single-product form.cart .hb-ucs-subscriptions--product {
+    flex: 0 0 100% !important;
+    min-width: 100%;
     padding: 12px;
     margin-bottom: 10px;
   }
 
   .hb-ucs-subscriptions__mode-list {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .hb-ucs-subscriptions__mode-card {
+    padding: 10px 12px;
+  }
+
+  .single-product form.cart .hb-ucs-subscriptions--product ~ .quantity,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product ~ .quantity {
+    clear: none;
+    order: -9;
+    flex: 0 0 auto;
+    width: auto !important;
+    min-width: 88px;
+    max-width: 34%;
+    margin: 0;
+  }
+
+  .single-product form.cart .hb-ucs-subscriptions--product ~ .single_add_to_cart_button,
+  .single-product form.cart .hb-ucs-subscriptions--product ~ button.single_add_to_cart_button,
+  .single-product form.cart .hb-ucs-subscriptions--product ~ .variations_button,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product ~ .single_add_to_cart_button,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product ~ button.single_add_to_cart_button,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product ~ .variations_button {
+    clear: none;
+    order: -8;
+    flex: 1 1 0;
+    width: auto !important;
+    min-width: 0;
+    margin: 0;
+  }
+
+  .single-product form.cart .hb-ucs-subscriptions--product ~ .single_variation_wrap,
+  .single-product form.cart .hb-ucs-subscriptions--product ~ .woocommerce-variation-add-to-cart,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product ~ .single_variation_wrap,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .hb-ucs-subscriptions--product ~ .woocommerce-variation-add-to-cart {
+    clear: none;
+    order: -8;
+    flex: 0 0 100%;
+    width: 100% !important;
+    min-width: 100%;
+  }
+
+  .single-product form.cart .woocommerce-variation-add-to-cart,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .woocommerce-variation-add-to-cart {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .single-product form.cart .woocommerce-variation-add-to-cart .quantity,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .woocommerce-variation-add-to-cart .quantity {
+    flex: 0 0 auto;
+    width: auto !important;
+    min-width: 88px;
+    margin: 0;
+  }
+
+  .single-product form.cart .woocommerce-variation-add-to-cart .single_add_to_cart_button,
+  .single-product form.cart .woocommerce-variation-add-to-cart button.single_add_to_cart_button,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .woocommerce-variation-add-to-cart .single_add_to_cart_button,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .woocommerce-variation-add-to-cart button.single_add_to_cart_button {
+    flex: 1 1 0;
+    width: auto !important;
+    min-width: 0;
+    margin: 0;
   }
 }
 
@@ -273,17 +342,17 @@
   }
 
   .hb-ucs-subscriptions__mode-list {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
   }
 
   .hb-ucs-subscriptions__mode-card {
-    padding: 10px 12px;
+    padding: 9px 10px;
     border-radius: 12px;
   }
 
   .hb-ucs-subscriptions__mode-note {
-    font-size: 12px;
+    display: none;
   }
 
   .hb-ucs-subscriptions__frequency {
