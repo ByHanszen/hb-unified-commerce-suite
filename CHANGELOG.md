@@ -6,6 +6,16 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.204] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina met swatches: de rij "Kies aankooptype" gebruikt nu structureel een full-width opbouw met het label boven de badges. Daardoor blijft de aankoopkeuze niet meer opgesloten in een smalle tabelcel en kunnen de twee badges naast elkaar de volledige rij benutten.
+
+## [0.3.203] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina: de aankoopkeuze schakelt nu op basis van de echte breedte van het productblok om naar een full-width layout. Daardoor worden op smalle kolommen en mobiele weergaven de labelcel en badges niet meer in een te klein tabelvak gedrukt.
+
 ## [0.3.202] — 2026-05-30
 
 ### Fixed
