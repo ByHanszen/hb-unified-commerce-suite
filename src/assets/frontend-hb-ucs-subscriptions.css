@@ -166,10 +166,24 @@
   margin: 0;
   padding: 0;
   list-style: none;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .hb-ucs-subscriptions__mode-swatch {
   cursor: pointer;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+.hb-ucs-subscriptions__mode-swatch[aria-disabled='false'] {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+.hb-ucs-subscriptions__mode-swatch-label {
+  pointer-events: none;
 }
 
 .hb-ucs-subscriptions__mode-swatch:focus-visible {

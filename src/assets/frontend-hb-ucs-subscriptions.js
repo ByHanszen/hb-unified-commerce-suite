@@ -87,22 +87,12 @@
     return String($radio.closest('.hb-ucs-subscriptions__option--native').find('.price').first().html() || '').trim();
   }
 
-  function sanitizeCompactSwatchClasses(className, fallbackClasses) {
-    var blocked = {
-      selected: true,
-      disabled: true,
-      'no-stock': true,
-      'out-of-stock': true,
-      'not-selected': true,
-      hover: true,
-      active: true
-    };
+  function joinCompactSwatchClasses(parts) {
     var seen = {};
-    var tokens = String(className || '').split(/\s+/).concat(fallbackClasses || []);
 
-    return tokens.filter(function (token) {
+    return (parts || []).filter(function (token) {
       token = String(token || '').trim();
-      if (!token || blocked[token] || seen[token]) {
+      if (!token || seen[token]) {
         return false;
       }
 
@@ -127,9 +117,10 @@
     }
 
     return {
-      wrapperClass: sanitizeCompactSwatchClasses($sourceWrapper.attr('class'), ['variable-items-wrapper', 'button-variable-wrapper', 'hb-ucs-subscriptions__mode-swatches']),
-      itemClass: sanitizeCompactSwatchClasses($sourceItem.attr('class'), ['variable-item', 'button-variable-item', 'hb-ucs-subscriptions__mode-swatch']),
-      labelClass: sanitizeCompactSwatchClasses($sourceLabel.attr('class'), ['variable-item-span', 'variable-item-span-button']),
+      wrapperClass: joinCompactSwatchClasses(['hb-ucs-subscriptions__mode-swatches', 'variable-items-wrapper', 'button-variable-wrapper']),
+      itemClass: joinCompactSwatchClasses(['hb-ucs-subscriptions__mode-swatch', 'variable-item', 'button-variable-item']),
+      labelClass: joinCompactSwatchClasses(['hb-ucs-subscriptions__mode-swatch-label', 'variable-item-span', 'variable-item-span-button']),
+      itemTag: $sourceItem.length ? String($sourceItem.prop('tagName') || 'li').toLowerCase() : 'li',
       labelTag: $sourceLabel.length ? String($sourceLabel.prop('tagName') || 'span').toLowerCase() : 'span'
     };
   }
@@ -166,13 +157,14 @@
         return;
       }
 
-      $item = $('<li/>', {
+      $item = $('<' + config.itemTag + '/>', {
         'class': config.itemClass,
         'data-mode-value': value,
         title: text,
         role: 'radio',
         tabindex: '-1',
-        'aria-checked': 'false'
+        'aria-checked': 'false',
+        'aria-disabled': 'false'
       });
 
       $label = $('<' + config.labelTag + '/>', {
@@ -208,7 +200,9 @@
       var isSelected = String($item.attr('data-mode-value') || '') === String(selectedValue || 'single');
 
       $item
+        .removeClass('disabled disable not-selected no-stock out-of-stock unavailable sold-out')
         .toggleClass('selected', isSelected)
+        .attr('aria-disabled', 'false')
         .attr('aria-checked', isSelected ? 'true' : 'false')
         .attr('tabindex', isSelected ? '0' : '-1');
     });
@@ -234,7 +228,7 @@
 
     $wrap.toggleClass('is-subscription-selected', isSubscription);
     $modeSelect.val(isSubscription ? 'subscription' : 'single');
-  syncCompactProductModeSwatches($wrap, isSubscription ? 'subscription' : 'single');
+    syncCompactProductModeSwatches($wrap, isSubscription ? 'subscription' : 'single');
     $frequencyRow.prop('hidden', !isSubscription).attr('aria-hidden', !isSubscription ? 'true' : 'false');
 
     if (!isSubscription) {

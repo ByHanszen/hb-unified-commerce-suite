@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.200] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina: de swatch-compatibiliteitslaag kopieert nu alleen stabiele badge-classes in plaats van complete plugin-state classes. Daardoor worden aankoopbadges niet meer onterecht disabled en komt er geen extra overgenomen wrapperstyling om de opties heen.
+
 ## [0.3.199] — 2026-05-30
 
 ### Fixed
