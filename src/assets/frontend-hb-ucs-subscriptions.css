@@ -144,6 +144,39 @@
   width: 100%;
 }
 
+.hb-ucs-subscriptions--swatches .hb-ucs-subscriptions__mode-select--hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  opacity: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+  pointer-events: none;
+}
+
+.hb-ucs-subscriptions__mode-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hb-ucs-subscriptions__mode-swatch {
+  cursor: pointer;
+}
+
+.hb-ucs-subscriptions__mode-swatch:focus-visible {
+  outline: 2px solid var(--hb-ucs-product-accent-outline);
+  outline-offset: 2px;
+}
+
 .hb-ucs-subscriptions__frequency-select {
   appearance: none;
   min-height: 44px;

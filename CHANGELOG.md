@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.199] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina: als een WooCommerce swatches-plugin badge-classes of swatch-assets op de pagina laadt, neemt de aankoopkeuze nu automatisch dezelfde badge-achtige wrapper en item-classes over. Zonder swatches-plugin blijft de bestaande select-fallback actief.
+
 ## [0.3.198] — 2026-05-30
 
 ### Fixed

@@ -87,6 +87,133 @@
     return String($radio.closest('.hb-ucs-subscriptions__option--native').find('.price').first().html() || '').trim();
   }
 
+  function sanitizeCompactSwatchClasses(className, fallbackClasses) {
+    var blocked = {
+      selected: true,
+      disabled: true,
+      'no-stock': true,
+      'out-of-stock': true,
+      'not-selected': true,
+      hover: true,
+      active: true
+    };
+    var seen = {};
+    var tokens = String(className || '').split(/\s+/).concat(fallbackClasses || []);
+
+    return tokens.filter(function (token) {
+      token = String(token || '').trim();
+      if (!token || blocked[token] || seen[token]) {
+        return false;
+      }
+
+      seen[token] = true;
+      return true;
+    }).join(' ');
+  }
+
+  function getCompactProductModeSwatchConfig($wrap) {
+    if (!$wrap || !$wrap.length) {
+      return null;
+    }
+
+    var $form = $wrap.closest('form.cart');
+    var $sourceItem = $form.find('.variable-items-wrapper .button-variable-item').first();
+    var $sourceWrapper = $sourceItem.closest('.variable-items-wrapper');
+    var $sourceLabel = $sourceItem.find('.variable-item-span').first();
+    var hasSwatchAssets = $('link[href*="swatches"], script[src*="swatches"]').length > 0;
+
+    if (!$sourceItem.length && !hasSwatchAssets) {
+      return null;
+    }
+
+    return {
+      wrapperClass: sanitizeCompactSwatchClasses($sourceWrapper.attr('class'), ['variable-items-wrapper', 'button-variable-wrapper', 'hb-ucs-subscriptions__mode-swatches']),
+      itemClass: sanitizeCompactSwatchClasses($sourceItem.attr('class'), ['variable-item', 'button-variable-item', 'hb-ucs-subscriptions__mode-swatch']),
+      labelClass: sanitizeCompactSwatchClasses($sourceLabel.attr('class'), ['variable-item-span', 'variable-item-span-button']),
+      labelTag: $sourceLabel.length ? String($sourceLabel.prop('tagName') || 'span').toLowerCase() : 'span'
+    };
+  }
+
+  function ensureCompactProductModeSwatches($wrap) {
+    if (!$wrap || !$wrap.length || $wrap.data('hbUcsModeSwatchesReady')) {
+      return;
+    }
+
+    var $modeSelect = $wrap.find('.hb-ucs-subscriptions__mode-select').first();
+    if (!$modeSelect.length) {
+      return;
+    }
+
+    var config = getCompactProductModeSwatchConfig($wrap);
+    if (!config) {
+      return;
+    }
+
+    var labelText = String($wrap.find('label[for="' + $modeSelect.attr('id') + '"]').first().text() || '').trim() || 'Kies aankooptype';
+    var $swatches = $('<ul/>', {
+      'class': config.wrapperClass,
+      role: 'radiogroup',
+      'aria-label': labelText
+    });
+
+    $modeSelect.find('option').each(function () {
+      var value = String(this.value || '').trim();
+      var text = String($(this).text() || '').trim();
+      var $item;
+      var $label;
+
+      if (!value || !text) {
+        return;
+      }
+
+      $item = $('<li/>', {
+        'class': config.itemClass,
+        'data-mode-value': value,
+        title: text,
+        role: 'radio',
+        tabindex: '-1',
+        'aria-checked': 'false'
+      });
+
+      $label = $('<' + config.labelTag + '/>', {
+        'class': config.labelClass,
+        text: text
+      });
+
+      $item.append($label);
+      $swatches.append($item);
+    });
+
+    if ($swatches.children().length < 2) {
+      return;
+    }
+
+    $modeSelect
+      .addClass('hb-ucs-subscriptions__mode-select--hidden')
+      .attr('aria-hidden', 'true')
+      .attr('tabindex', '-1');
+
+    $modeSelect.after($swatches);
+    $wrap.addClass('hb-ucs-subscriptions--swatches');
+    $wrap.data('hbUcsModeSwatchesReady', true);
+  }
+
+  function syncCompactProductModeSwatches($wrap, selectedValue) {
+    if (!$wrap || !$wrap.length) {
+      return;
+    }
+
+    $wrap.find('.hb-ucs-subscriptions__mode-swatch').each(function () {
+      var $item = $(this);
+      var isSelected = String($item.attr('data-mode-value') || '') === String(selectedValue || 'single');
+
+      $item
+        .toggleClass('selected', isSelected)
+        .attr('aria-checked', isSelected ? 'true' : 'false')
+        .attr('tabindex', isSelected ? '0' : '-1');
+    });
+  }
+
   function syncCompactProductPurchaseUi($wrap) {
     if (!$wrap || !$wrap.length) {
       return;
@@ -107,6 +234,7 @@
 
     $wrap.toggleClass('is-subscription-selected', isSubscription);
     $modeSelect.val(isSubscription ? 'subscription' : 'single');
+  syncCompactProductModeSwatches($wrap, isSubscription ? 'subscription' : 'single');
     $frequencyRow.prop('hidden', !isSubscription).attr('aria-hidden', !isSubscription ? 'true' : 'false');
 
     if (!isSubscription) {
@@ -174,6 +302,7 @@
         return;
       }
 
+      ensureCompactProductModeSwatches($wrap);
       $wrap.data('hbUcsCompactProductReady', true);
       $wrap.addClass('hb-ucs-subscriptions--enhanced');
 
@@ -194,6 +323,28 @@
         }
 
         setCompactProductNativeScheme($wrap, String($(this).val() || ''));
+      });
+
+      $wrap.on('click', '.hb-ucs-subscriptions__mode-swatch', function (event) {
+        var value = String($(this).attr('data-mode-value') || 'single');
+        var $modeSelect = $wrap.find('.hb-ucs-subscriptions__mode-select').first();
+
+        event.preventDefault();
+        if ($modeSelect.val() !== value) {
+          $modeSelect.val(value).trigger('change');
+          return;
+        }
+
+        syncCompactProductPurchaseUi($wrap);
+      });
+
+      $wrap.on('keydown', '.hb-ucs-subscriptions__mode-swatch', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+          return;
+        }
+
+        event.preventDefault();
+        $(this).trigger('click');
       });
 
       $wrap.on('change', '.hb-ucs-subscriptions__native-list input[name="hb_ucs_subs_scheme"]', function () {
