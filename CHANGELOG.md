@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.193] — 2026-05-30
+
+### Fixed
+- Abonnementen productpagina mobiel: de compacte icon-only bestelknop krijgt nu expliciete knopkleuren en een zichtbare cart-fallback, zodat de knop niet meer onzichtbaar kan wegvallen in smalle mobiele sticky layouts.
+
 ## [0.3.192] — 2026-05-30
 
 ### Fixed

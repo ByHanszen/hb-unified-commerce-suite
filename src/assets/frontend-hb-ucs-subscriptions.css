@@ -346,8 +346,12 @@
     padding: 0 !important;
     overflow: hidden;
     white-space: nowrap;
-    text-indent: -9999px;
-    font-size: 0 !important;
+    text-indent: 0;
+    color: transparent !important;
+    background: var(--forms-buttons-normal-background-color, var(--hb-ucs-product-accent)) !important;
+    border: 1px solid var(--forms-buttons-normal-border-color, var(--forms-buttons-border-color, var(--hb-ucs-product-accent))) !important;
+    border-radius: var(--forms-buttons-border-radius, 999px);
+    box-shadow: none;
     line-height: 1;
   }
 
@@ -355,9 +359,10 @@
   .single-product form.cart button.single_add_to_cart_button::before,
   .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .single_add_to_cart_button::before,
   .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart button.single_add_to_cart_button::before {
-    content: "\e01d";
-    font-family: WooCommerce;
-    font-size: 20px;
+    content: "🛒";
+    font-family: "WooCommerce", "Segoe UI Emoji", sans-serif;
+    color: var(--forms-buttons-normal-text-color, var(--hb-ucs-accent-contrast));
+    font-size: 18px;
     line-height: 1;
     text-indent: 0;
     speak: never;
@@ -366,6 +371,14 @@
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .single-product form.cart .single_add_to_cart_button:hover,
+  .single-product form.cart button.single_add_to_cart_button:hover,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart .single_add_to_cart_button:hover,
+  .single-product .elementor-widget-woocommerce-product-add-to-cart form.cart button.single_add_to_cart_button:hover {
+    background: var(--forms-buttons-hover-background-color, var(--hb-ucs-product-accent-strong)) !important;
+    border-color: var(--forms-buttons-hover-border-color, var(--forms-buttons-border-color, var(--hb-ucs-product-accent-strong))) !important;
   }
 }
 
