@@ -6,6 +6,9 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+### Changed
+- QLS: de plugin forceert de styling van de checkoutknop voor het openen van de servicepunt-locator niet langer. Daardoor kan die knop direct vanuit WooCommerce of themecode worden gestyled.
+
 ## [0.3.209] — 2026-05-30
 
 ### Fixed
