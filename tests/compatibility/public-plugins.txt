@@ -1,0 +1,25 @@
+# Display name|WordPress.org slug|comma-separated prerequisite slugs
+Advanced Custom Fields|advanced-custom-fields|
+All In One Login|change-wp-admin-login|
+Cloudflare|cloudflare|
+CookieYes GDPR Cookie Consent|cookie-law-info|
+Deployer for Git|deployer-for-git|
+GTM4WP - Google Tag Manager for WordPress|duracelltomi-google-tag-manager|
+Elementor|elementor|
+Google for WooCommerce|google-listings-and-ads|woocommerce
+Imagify|imagify|
+Limit Login Attempts Reloaded|limit-login-attempts-reloaded|
+LiteSpeed Cache|litespeed-cache|
+Loco Translate|loco-translate|
+Mollie Payments for WooCommerce|mollie-payments-for-woocommerce|woocommerce
+reCAPTCHA for WooCommerce|recaptcha-woo|woocommerce
+Redirection|redirection|
+Redis Object Cache|redis-cache|
+Trustpilot Reviews|trustpilot-reviews|woocommerce
+WPC Product Bundles for WooCommerce|woo-product-bundle|woocommerce
+Variation Swatches for WooCommerce|variation-swatches-for-woocommerce|woocommerce
+PDF Invoices & Packing Slips for WooCommerce|woocommerce-pdf-invoices-packing-slips|woocommerce
+WooCommerce|woocommerce|
+Yoast SEO|wordpress-seo|
+WP 2FA - Two-factor Authentication|wp-2fa|
+WP Consent API|wp-consent-api|
