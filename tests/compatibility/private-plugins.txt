@@ -1,0 +1,8 @@
+# Display name|environment variable containing a ZIP URL|comma-separated WordPress.org prerequisite slugs
+Elementor Pro|ELEMENTOR_PRO_ZIP_URL|elementor
+Leat|LEAT_ZIP_URL|woocommerce
+Pakketdienst QLS Servicepoint Locator|QLS_SERVICEPOINT_ZIP_URL|woocommerce
+WooCommerce.com Update Manager|WOO_UPDATE_MANAGER_ZIP_URL|woocommerce
+WPC Product Bundles for WooCommerce Premium|WPC_PRODUCT_BUNDLES_PREMIUM_ZIP_URL|woocommerce
+PDF Invoices & Packing Slips Premium Templates|PDF_INVOICES_PREMIUM_TEMPLATES_ZIP_URL|woocommerce,woocommerce-pdf-invoices-packing-slips
+WP Mail SMTP Pro|WP_MAIL_SMTP_PRO_ZIP_URL|
