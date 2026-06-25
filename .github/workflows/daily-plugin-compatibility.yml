@@ -160,6 +160,61 @@ jobs:
       issues: write
 
     steps:
+      - name: Download compatibility logs
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: plugin-compatibility-logs
+          path: /tmp/hb-compatibility
+
+      - name: Build daily email report
+        if: always()
+        env:
+          PHP_RESULT: ${{ needs.php-compatibility.result }}
+          PLUGIN_RESULT: ${{ needs.plugin-compatibility.result }}
+        run: |
+          mkdir -p /tmp/hb-compatibility
+          export TZ=Europe/Amsterdam
+          report_date="$(date '+%d-%m-%Y')"
+          report_time="$(date '+%d-%m-%Y %H:%M:%S %Z')"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          if [[ "$PHP_RESULT" == "success" && "$PLUGIN_RESULT" == "success" ]]; then
+            overall="GESLAAGD"
+            conclusion="Alle uitgevoerde compatibiliteitscontroles zijn geslaagd."
+          else
+            overall="PROBLEMEN GEVONDEN"
+            conclusion="Een of meer compatibiliteitscontroles zijn mislukt. Bekijk de details en het workflowlog."
+          fi
+
+          {
+            echo "Dagelijks compatibiliteitsrapport HB Unified Commerce Suite"
+            echo
+            echo "Datum en tijd: ${report_time}"
+            echo "Algemene status: ${overall}"
+            echo "WordPress/PHP-basistests: ${PHP_RESULT}"
+            echo "Externe plugintests: ${PLUGIN_RESULT}"
+            echo
+            echo "${conclusion}"
+            echo
+            if [[ -f /tmp/hb-compatibility/summary.md ]]; then
+              echo "Resultaten per plugin:"
+              echo
+              cat /tmp/hb-compatibility/summary.md
+              echo
+            else
+              echo "Er was geen gedetailleerde plugin-samenvatting beschikbaar."
+              echo
+            fi
+            echo "Workflow: ${run_url}"
+            echo
+            echo "Premium- en maatwerkplugins zonder geconfigureerde ZIP-URL worden als SKIPPED vermeld en zijn niet runtime-getest."
+          } > /tmp/hb-compatibility/email-report.txt
+
+          echo "REPORT_DATE=${report_date}" >> "$GITHUB_ENV"
+          cat /tmp/hb-compatibility/email-report.txt >> "$GITHUB_STEP_SUMMARY"
+
       - name: Open, update, or close the compatibility issue
         uses: actions/github-script@v7
         env:
@@ -221,3 +276,63 @@ jobs:
                 state_reason: 'completed'
               });
             }
+
+      - name: Send daily compatibility email
+        if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_SECURITY: ${{ secrets.SMTP_SECURITY }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          REPORT_TO: stefan@hoekschebranders.nl
+        run: |
+          python3 <<'PYTHON'
+          import os
+          import smtplib
+          import ssl
+          import sys
+          from email.message import EmailMessage
+          from pathlib import Path
+
+          required = ["SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD"]
+          missing = [name for name in required if not os.getenv(name)]
+          if missing:
+              print(f"::error title=SMTP configuration missing::Missing repository secrets: {', '.join(missing)}")
+              sys.exit(1)
+
+          host = os.environ["SMTP_HOST"]
+          port = int(os.environ["SMTP_PORT"])
+          username = os.environ["SMTP_USERNAME"]
+          password = os.environ["SMTP_PASSWORD"]
+          security = os.getenv("SMTP_SECURITY", "starttls").strip().lower()
+          sender = os.getenv("SMTP_FROM") or username
+          recipient = os.environ["REPORT_TO"]
+          report_date = os.getenv("REPORT_DATE", "onbekende datum")
+          body = Path("/tmp/hb-compatibility/email-report.txt").read_text(encoding="utf-8")
+
+          message = EmailMessage()
+          message["Subject"] = f"Dagelijks compatibiliteitsrapport HB Unified Commerce Suite - {report_date}"
+          message["From"] = sender
+          message["To"] = recipient
+          message.set_content(body)
+
+          tls_context = ssl.create_default_context()
+          if security == "ssl":
+              with smtplib.SMTP_SSL(host, port, context=tls_context, timeout=30) as smtp:
+                  smtp.login(username, password)
+                  smtp.send_message(message)
+          else:
+              with smtplib.SMTP(host, port, timeout=30) as smtp:
+                  smtp.ehlo()
+                  if security == "starttls":
+                      smtp.starttls(context=tls_context)
+                      smtp.ehlo()
+                  elif security != "none":
+                      raise ValueError("SMTP_SECURITY must be ssl, starttls, or none")
+                  smtp.login(username, password)
+                  smtp.send_message(message)
+
+          print(f"Compatibility report sent to {recipient}")
+          PYTHON
