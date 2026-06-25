@@ -4,6 +4,8 @@ if (!defined('WP_UNINSTALL_PLUGIN')) {
     exit;
 }
 
+delete_option('hb_ucs_checkout_settings');
+
 // Only remove data if user opted in (via QLS settings)
 $opts = get_option('hb_ucs_qls');
 $b2b = get_option('hb_ucs_b2b_settings');

@@ -40,10 +40,6 @@ class Kernel {
             (new \HB\UCS\Modules\CustomerOrderNote\CustomerOrderNoteModule())->init();
         }
 
-        if (!empty($mods['checkout']) && class_exists('HB\\UCS\\Modules\\Checkout\\CheckoutModule')) {
-            (new \HB\UCS\Modules\Checkout\CheckoutModule())->init();
-        }
-
         if (!empty($mods['product_pages']) && class_exists('HB\\UCS\\Modules\\ProductPages\\ProductPagesModule')) {
             (new \HB\UCS\Modules\ProductPages\ProductPagesModule())->init();
         }
