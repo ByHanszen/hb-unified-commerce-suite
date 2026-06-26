@@ -1,0 +1,165 @@
+name: SMTP email diagnostic
+
+on:
+  push:
+    paths:
+      - ".github/workflows/smtp-email-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  smtp-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send SMTP test email
+        id: smtp
+        continue-on-error: true
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_SECURITY: ${{ secrets.SMTP_SECURITY }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          REPORT_TO: stefan@hoekschebranders.nl
+        run: |
+          python3 <<'PYTHON'
+          import os
+          import smtplib
+          import ssl
+          import sys
+          from email.message import EmailMessage
+          from pathlib import Path
+
+          error_file = Path('/tmp/smtp-error.txt')
+
+          try:
+              required = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USERNAME', 'SMTP_PASSWORD']
+              missing = [name for name in required if not os.getenv(name)]
+              if missing:
+                  raise RuntimeError('Ontbrekende GitHub Secrets: ' + ', '.join(missing))
+
+              host = os.environ['SMTP_HOST'].strip()
+              port = int(os.environ['SMTP_PORT'].strip())
+              username = os.environ['SMTP_USERNAME'].strip()
+              password = os.environ['SMTP_PASSWORD']
+              security = os.getenv('SMTP_SECURITY', 'starttls').strip().lower()
+              sender = (os.getenv('SMTP_FROM') or username).strip()
+              recipient = os.environ['REPORT_TO'].strip()
+
+              message = EmailMessage()
+              message['Subject'] = 'Test e-mail GitHub compatibiliteitsrapport'
+              message['From'] = sender
+              message['To'] = recipient
+              message.set_content(
+                  'Deze testmail bevestigt dat GitHub Actions via SMTP e-mail kan versturen.\n\n'
+                  'Repository: ' + os.getenv('GITHUB_REPOSITORY', '') + '\n'
+                  'Workflowrun: ' + os.getenv('GITHUB_SERVER_URL', '') + '/' +
+                  os.getenv('GITHUB_REPOSITORY', '') + '/actions/runs/' +
+                  os.getenv('GITHUB_RUN_ID', '') + '\n'
+              )
+
+              context = ssl.create_default_context()
+              if security == 'ssl':
+                  with smtplib.SMTP_SSL(host, port, context=context, timeout=30) as smtp:
+                      smtp.login(username, password)
+                      smtp.send_message(message)
+              elif security in ('starttls', 'none'):
+                  with smtplib.SMTP(host, port, timeout=30) as smtp:
+                      smtp.ehlo()
+                      if security == 'starttls':
+                          smtp.starttls(context=context)
+                          smtp.ehlo()
+                      smtp.login(username, password)
+                      smtp.send_message(message)
+              else:
+                  raise ValueError('SMTP_SECURITY moet ssl, starttls of none zijn')
+
+              print(f'Testmail verstuurd naar {recipient}')
+          except Exception as exc:
+              safe_error = f'{type(exc).__name__}: {exc}'
+              error_file.write_text(safe_error, encoding='utf-8')
+              print(f'::error title=SMTP test mislukt::{safe_error}')
+              raise
+          PYTHON
+
+      - name: Update SMTP diagnostic issue after failure
+        if: steps.smtp.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const title = '[SMTP] Compatibiliteitsrapport kon niet worden verzonden';
+            const error = fs.existsSync('/tmp/smtp-error.txt')
+              ? fs.readFileSync('/tmp/smtp-error.txt', 'utf8')
+              : 'Onbekende SMTP-fout';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              'De SMTP-test vanuit GitHub Actions is mislukt.',
+              '',
+              `**Fout:** \`${error}\``,
+              '',
+              `Workflowrun: ${runUrl}`,
+              '',
+              'Controleer SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_SECURITY en SMTP_FROM.'
+            ].join('\n');
+
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+            const existing = issues.find(issue => !issue.pull_request && issue.title === title);
+
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body
+              });
+            }
+
+      - name: Close resolved SMTP diagnostic issue
+        if: steps.smtp.outcome == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '[SMTP] Compatibiliteitsrapport kon niet worden verzonden';
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+            const existing = issues.find(issue => !issue.pull_request && issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: 'De SMTP-test is nu geslaagd. Het e-mailprobleem is opgelost.'
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                state: 'closed',
+                state_reason: 'completed'
+              });
+            }
+
+      - name: Fail workflow when SMTP test failed
+        if: steps.smtp.outcome == 'failure'
+        run: exit 1
