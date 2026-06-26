@@ -27,6 +27,7 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ### Added
 - Nieuwe retourmeldingenmodule: klanten kunnen via een frontend retourwidget een retourmelding starten op basis van ordernummer en factuurpostcode, artikelen en aantallen kiezen, optioneel een retourreden opgeven en direct bevestigingsmails naar klant en webshop ontvangen. De module bevat backendbeheer voor uitsluitingen, styling, klantmail-inhoud, statusbeheer en een Elementor-widget.
+- Retourmeldingen: de detailpagina toont nu een activiteitenlog met wie welke acties heeft uitgevoerd (zoals aanmaak, statuswijzigingen en verstuurde e-mails), vergelijkbaar met orderhistorie in WooCommerce.
 
 ## [0.3.209] — 2026-05-30
 

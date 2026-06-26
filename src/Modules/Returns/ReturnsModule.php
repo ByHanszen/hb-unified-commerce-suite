@@ -25,6 +25,7 @@ class ReturnsModule {
     public const META_SUBMITTED_AT = '_hb_ucs_return_submitted_at';
     public const META_ESTIMATED_DELIVERY = '_hb_ucs_return_estimated_delivery';
     public const META_RETURN_DEADLINE = '_hb_ucs_return_deadline';
+    public const META_ACTIVITY_LOG = '_hb_ucs_return_activity_log';
 
     public function init(): void {
         if (!class_exists('WooCommerce')) {
@@ -569,7 +570,20 @@ class ReturnsModule {
             return false;
         }
 
+        $previousStatus = (string) get_post_meta($requestId, self::META_STATUS, true);
+
         update_post_meta($requestId, self::META_STATUS, $status);
+
+        if ($previousStatus !== $status) {
+            $labels = self::status_labels();
+            $previousLabel = $labels[$previousStatus] ?? $previousStatus;
+            $newLabel = $labels[$status] ?? $status;
+            $this->add_return_activity_log(
+                $requestId,
+                'status_changed',
+                sprintf(__('Status gewijzigd van %1$s naar %2$s.', 'hb-ucs'), (string) $previousLabel, (string) $newLabel)
+            );
+        }
 
         return true;
     }
@@ -1113,6 +1127,17 @@ class ReturnsModule {
         update_post_meta($requestId, self::META_RETURN_DEADLINE, gmdate('c', (int) ($dates['deadline_ts'] ?? 0)));
         update_post_meta($requestId, self::META_ESTIMATED_DELIVERY, gmdate('c', (int) ($dates['delivery_ts'] ?? 0)));
 
+        $this->add_return_activity_log(
+            $requestId,
+            'created',
+            __('Retourmelding aangemaakt.', 'hb-ucs'),
+            [
+                'actor_name' => __('Klant', 'hb-ucs'),
+                'actor_type' => 'customer',
+                'timestamp' => $submittedAt,
+            ]
+        );
+
         $settings = self::get_settings();
         if (!empty($settings['add_order_note']) && method_exists($order, 'add_order_note')) {
             $lines = [];
@@ -1166,7 +1191,15 @@ class ReturnsModule {
             $body .= '<p><strong>' . esc_html__('Retourreden:', 'hb-ucs') . '</strong><br/>' . nl2br(esc_html((string) $request['reason'])) . '</p>';
         }
 
-        $this->send_wrapped_email((string) $request['billing_email'], $subject, $heading, $body);
+        $sent = $this->send_wrapped_email((string) $request['billing_email'], $subject, $heading, $body);
+        $this->add_return_activity_log(
+            $requestId,
+            $sent ? 'customer_email_sent' : 'customer_email_failed',
+            $sent
+                ? sprintf(__('Bevestigingsmail verstuurd naar klant (%s).', 'hb-ucs'), (string) $request['billing_email'])
+                : sprintf(__('Bevestigingsmail naar klant mislukt (%s).', 'hb-ucs'), (string) $request['billing_email']),
+            ['actor_name' => __('Systeem', 'hb-ucs'), 'actor_type' => 'system']
+        );
     }
 
     protected function send_admin_email(int $requestId): void {
@@ -1190,7 +1223,15 @@ class ReturnsModule {
             $body .= '<p><strong>' . esc_html__('Retourreden:', 'hb-ucs') . '</strong><br/>' . nl2br(esc_html((string) $request['reason'])) . '</p>';
         }
 
-        $this->send_wrapped_email($adminEmail, $subject, $heading, $body);
+        $sent = $this->send_wrapped_email($adminEmail, $subject, $heading, $body);
+        $this->add_return_activity_log(
+            $requestId,
+            $sent ? 'admin_email_sent' : 'admin_email_failed',
+            $sent
+                ? sprintf(__('Melding verstuurd naar shopbeheer (%s).', 'hb-ucs'), (string) $adminEmail)
+                : sprintf(__('Melding naar shopbeheer mislukt (%s).', 'hb-ucs'), (string) $adminEmail),
+            ['actor_name' => __('Systeem', 'hb-ucs'), 'actor_type' => 'system']
+        );
     }
 
     public function send_return_label_email(int $requestId, string $message, array $attachments = []): bool {
@@ -1207,7 +1248,16 @@ class ReturnsModule {
         $body .= '<h3>' . esc_html__('Aangemelde artikelen', 'hb-ucs') . '</h3>';
         $body .= $this->build_email_items_html((array) $request['items']);
 
-        return $this->send_wrapped_email((string) $request['billing_email'], $subject, $heading, $body, $attachments);
+        $sent = $this->send_wrapped_email((string) $request['billing_email'], $subject, $heading, $body, $attachments);
+        $this->add_return_activity_log(
+            $requestId,
+            $sent ? 'label_email_sent' : 'label_email_failed',
+            $sent
+                ? sprintf(__('Retourlabel per e-mail verstuurd naar klant (%s).', 'hb-ucs'), (string) $request['billing_email'])
+                : sprintf(__('Versturen van retourlabel per e-mail mislukt (%s).', 'hb-ucs'), (string) $request['billing_email'])
+        );
+
+        return $sent;
     }
 
     public function get_request_context(int $requestId): array {
@@ -1233,6 +1283,127 @@ class ReturnsModule {
             'estimated_delivery_display' => $this->format_datetime_for_display($estimatedDelivery),
             'return_deadline' => $returnDeadline,
             'return_deadline_display' => $this->format_datetime_for_display($returnDeadline),
+        ];
+    }
+
+    public function add_return_activity_log(int $requestId, string $event, string $message, array $data = []): void {
+        if ($requestId <= 0) {
+            return;
+        }
+
+        $message = trim(wp_strip_all_tags($message));
+        if ($message === '') {
+            return;
+        }
+
+        $entries = get_post_meta($requestId, self::META_ACTIVITY_LOG, true);
+        if (!is_array($entries)) {
+            $entries = [];
+        }
+
+        $actor = $this->resolve_activity_actor($data);
+        $timestamp = isset($data['timestamp']) ? (string) $data['timestamp'] : gmdate('c');
+        if ($timestamp === '' || strtotime($timestamp) === false) {
+            $timestamp = gmdate('c');
+        }
+
+        $entries[] = [
+            'event' => sanitize_key($event),
+            'message' => $message,
+            'timestamp' => $timestamp,
+            'actor_id' => (int) ($actor['id'] ?? 0),
+            'actor_name' => (string) ($actor['name'] ?? ''),
+            'actor_type' => (string) ($actor['type'] ?? 'system'),
+        ];
+
+        if (count($entries) > 200) {
+            $entries = array_slice($entries, -200);
+        }
+
+        update_post_meta($requestId, self::META_ACTIVITY_LOG, array_values($entries));
+    }
+
+    public function get_return_activity_log(int $requestId): array {
+        if ($requestId <= 0) {
+            return [];
+        }
+
+        $entries = get_post_meta($requestId, self::META_ACTIVITY_LOG, true);
+        $normalized = [];
+
+        if (is_array($entries)) {
+            foreach ($entries as $entry) {
+                if (!is_array($entry)) {
+                    continue;
+                }
+
+                $message = trim((string) ($entry['message'] ?? ''));
+                $timestamp = (string) ($entry['timestamp'] ?? '');
+                if ($message === '' || $timestamp === '') {
+                    continue;
+                }
+
+                $normalized[] = [
+                    'event' => sanitize_key((string) ($entry['event'] ?? '')),
+                    'message' => $message,
+                    'timestamp' => $timestamp,
+                    'actor_id' => (int) ($entry['actor_id'] ?? 0),
+                    'actor_name' => (string) ($entry['actor_name'] ?? ''),
+                    'actor_type' => sanitize_key((string) ($entry['actor_type'] ?? 'system')),
+                ];
+            }
+        }
+
+        if (empty($normalized)) {
+            $submittedAt = (string) get_post_meta($requestId, self::META_SUBMITTED_AT, true);
+            if ($submittedAt !== '') {
+                $normalized[] = [
+                    'event' => 'created',
+                    'message' => __('Retourmelding aangemaakt.', 'hb-ucs'),
+                    'timestamp' => $submittedAt,
+                    'actor_id' => 0,
+                    'actor_name' => __('Historisch', 'hb-ucs'),
+                    'actor_type' => 'system',
+                ];
+            }
+        }
+
+        usort($normalized, static function (array $a, array $b): int {
+            $ta = strtotime((string) ($a['timestamp'] ?? '')) ?: 0;
+            $tb = strtotime((string) ($b['timestamp'] ?? '')) ?: 0;
+            return $tb <=> $ta;
+        });
+
+        return $normalized;
+    }
+
+    protected function resolve_activity_actor(array $data = []): array {
+        $actorName = isset($data['actor_name']) ? trim((string) $data['actor_name']) : '';
+        $actorType = isset($data['actor_type']) ? sanitize_key((string) $data['actor_type']) : '';
+        $actorId = isset($data['actor_id']) ? (int) $data['actor_id'] : 0;
+
+        if ($actorName === '' && function_exists('wp_get_current_user')) {
+            $currentUser = wp_get_current_user();
+            if ($currentUser instanceof \WP_User && $currentUser->exists()) {
+                $actorId = (int) $currentUser->ID;
+                $actorName = (string) ($currentUser->display_name ?: $currentUser->user_login);
+                if ($actorType === '') {
+                    $actorType = 'user';
+                }
+            }
+        }
+
+        if ($actorName === '') {
+            $actorName = __('Systeem', 'hb-ucs');
+        }
+        if ($actorType === '') {
+            $actorType = 'system';
+        }
+
+        return [
+            'id' => $actorId,
+            'name' => $actorName,
+            'type' => $actorType,
         ];
     }
 

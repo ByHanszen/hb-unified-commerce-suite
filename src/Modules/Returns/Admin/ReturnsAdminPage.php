@@ -465,6 +465,9 @@ class ReturnsAdminPage {
         }
         $this->render_detail_box(__('Bestellingsgegevens', 'hb-ucs'), $orderHtml);
 
+        $activityHtml = $this->render_activity_log((array) $this->module->get_return_activity_log($requestId));
+        $this->render_detail_box(__('Activiteitenlog', 'hb-ucs'), $activityHtml);
+
         echo '</div>';
         echo '</div>';
         echo '</div>';
@@ -840,6 +843,54 @@ class ReturnsAdminPage {
             $html .= '<td>' . esc_html($orderedQty > 0 ? (string) $orderedQty : '—') . '</td>';
             $html .= '<td>' . esc_html((string) ((int) ($item['quantity'] ?? 0))) . '</td>';
             $html .= '<td>' . (is_string($lineTotal) ? wp_kses_post($lineTotal) : '—') . '</td>';
+            $html .= '</tr>';
+        }
+
+        $html .= '</tbody></table>';
+
+        return $html;
+    }
+
+    private function render_activity_log(array $entries): string {
+        if (empty($entries)) {
+            return '<p class="description">' . esc_html__('Nog geen activiteiten gelogd.', 'hb-ucs') . '</p>';
+        }
+
+        $html = '<table class="widefat striped" style="margin-top:4px;">';
+        $html .= '<thead><tr>';
+        $html .= '<th style="width:190px;">' . esc_html__('Datum/tijd', 'hb-ucs') . '</th>';
+        $html .= '<th>' . esc_html__('Actie', 'hb-ucs') . '</th>';
+        $html .= '<th style="width:190px;">' . esc_html__('Uitgevoerd door', 'hb-ucs') . '</th>';
+        $html .= '</tr></thead><tbody>';
+
+        foreach ($entries as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $timestamp = (string) ($entry['timestamp'] ?? '');
+            $dateDisplay = __('Onbekend', 'hb-ucs');
+            if ($timestamp !== '') {
+                $ts = strtotime($timestamp);
+                if ($ts) {
+                    $dateDisplay = wp_date(get_option('date_format') . ' ' . get_option('time_format'), $ts);
+                }
+            }
+
+            $message = trim((string) ($entry['message'] ?? ''));
+            if ($message === '') {
+                $message = __('Onbekende actie', 'hb-ucs');
+            }
+
+            $actorName = trim((string) ($entry['actor_name'] ?? ''));
+            if ($actorName === '') {
+                $actorName = __('Systeem', 'hb-ucs');
+            }
+
+            $html .= '<tr>';
+            $html .= '<td>' . esc_html($dateDisplay) . '</td>';
+            $html .= '<td>' . esc_html($message) . '</td>';
+            $html .= '<td>' . esc_html($actorName) . '</td>';
             $html .= '</tr>';
         }
 
