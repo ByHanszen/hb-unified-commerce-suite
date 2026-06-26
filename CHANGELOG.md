@@ -8,6 +8,7 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ### Fixed
 - Retourmeldingen: het opslaan van een retourmelding gebruikte een custom post type slug die te lang was voor WordPress/MySQL. De opslag gebruikt nu een geldige slug, waardoor retourmeldingen weer correct aangemaakt worden.
+- Retourmeldingen frontend: het opzoeken van bestellingen gebruikt nu een veel gerichtere orderquery op recente completed orders en postcodevarianten, zodat productieomgevingen niet meer op brede orderscans hoeven vast te lopen.
 
 ### Changed
 - QLS: de plugin forceert de styling van de checkoutknop voor het openen van de servicepunt-locator niet langer. Daardoor kan die knop direct vanuit WooCommerce of themecode worden gestyled.

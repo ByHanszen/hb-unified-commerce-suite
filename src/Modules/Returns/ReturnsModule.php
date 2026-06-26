@@ -732,7 +732,7 @@ class ReturnsModule {
             return null;
         }
 
-        foreach ($this->find_candidate_orders_by_number($orderNumber) as $order) {
+        foreach ($this->find_candidate_orders_by_number($orderNumber, $postcode) as $order) {
             if (!$order || !is_object($order)) {
                 continue;
             }
@@ -755,11 +755,12 @@ class ReturnsModule {
         return null;
     }
 
-    protected function find_candidate_orders_by_number(string $orderNumber): array {
+    protected function find_candidate_orders_by_number(string $orderNumber, string $postcode = ''): array {
         $candidates = [];
         $seen = [];
 
         $normalized = $this->normalize_order_number($orderNumber);
+        $normalizedPostcode = $this->normalize_postcode($postcode);
         if ($normalized === '') {
             return [];
         }
@@ -773,30 +774,20 @@ class ReturnsModule {
         }
 
         $statusFilter = ['wc-completed'];
-        $querySets = [
-            [
-                'limit' => 20,
-                'status' => $statusFilter,
-                'orderby' => 'date',
-                'order' => 'DESC',
-                'search' => $orderNumber,
-            ],
-            [
-                'limit' => 20,
-                'status' => $statusFilter,
-                'orderby' => 'date',
-                'order' => 'DESC',
-                'meta_query' => [
-                    'relation' => 'OR',
-                    ['key' => '_order_number', 'value' => $orderNumber, 'compare' => '='],
-                    ['key' => '_order_number_formatted', 'value' => $orderNumber, 'compare' => '='],
-                    ['key' => '_custom_order_number', 'value' => $orderNumber, 'compare' => '='],
-                    ['key' => '_alg_wc_custom_order_number', 'value' => $orderNumber, 'compare' => '='],
-                ],
-            ],
+        $completedAfter = $this->get_lookup_completed_after_date();
+        $postcodeCandidates = $this->get_lookup_postcode_candidates($normalizedPostcode);
+        $baseQueryArgs = [
+            'limit' => 20,
+            'status' => $statusFilter,
+            'orderby' => 'date',
+            'order' => 'DESC',
         ];
 
-        foreach ($querySets as $queryArgs) {
+        if ($completedAfter !== '') {
+            $baseQueryArgs['date_completed'] = '>' . $completedAfter;
+        }
+
+        foreach ($this->build_exact_order_lookup_queries($orderNumber, $postcodeCandidates, $baseQueryArgs) as $queryArgs) {
             $orders = wc_get_orders($queryArgs);
             foreach ((array) $orders as $order) {
                 if (!$order || !is_object($order)) {
@@ -813,33 +804,81 @@ class ReturnsModule {
             }
         }
 
-        $recentOrders = wc_get_orders([
-            'limit' => 250,
-            'status' => $statusFilter,
-            'orderby' => 'date',
-            'order' => 'DESC',
-            'date_completed' => '>' . gmdate('Y-m-d H:i:s', current_time('timestamp', true) - (730 * DAY_IN_SECONDS)),
-        ]);
+        foreach ($postcodeCandidates as $postcodeCandidate) {
+            $recentOrders = wc_get_orders(array_merge($baseQueryArgs, [
+                'limit' => 30,
+                'billing_postcode' => $postcodeCandidate,
+            ]));
 
-        foreach ((array) $recentOrders as $order) {
-            if (!$order || !is_object($order)) {
-                continue;
+            foreach ((array) $recentOrders as $order) {
+                if (!$order || !is_object($order)) {
+                    continue;
+                }
+
+                $orderId = (int) $order->get_id();
+                if (isset($seen[$orderId])) {
+                    continue;
+                }
+
+                if ($this->normalize_order_number((string) $order->get_order_number()) !== $normalized) {
+                    continue;
+                }
+
+                $seen[$orderId] = true;
+                $candidates[] = $order;
             }
-
-            $orderId = (int) $order->get_id();
-            if (isset($seen[$orderId])) {
-                continue;
-            }
-
-            if ($this->normalize_order_number((string) $order->get_order_number()) !== $normalized) {
-                continue;
-            }
-
-            $seen[$orderId] = true;
-            $candidates[] = $order;
         }
 
         return $candidates;
+    }
+
+    protected function build_exact_order_lookup_queries(string $orderNumber, array $postcodeCandidates, array $baseQueryArgs): array {
+        $queries = [];
+        $metaQuery = [
+            'relation' => 'OR',
+            ['key' => '_order_number', 'value' => $orderNumber, 'compare' => '='],
+            ['key' => '_order_number_formatted', 'value' => $orderNumber, 'compare' => '='],
+            ['key' => '_custom_order_number', 'value' => $orderNumber, 'compare' => '='],
+            ['key' => '_alg_wc_custom_order_number', 'value' => $orderNumber, 'compare' => '='],
+        ];
+
+        if (empty($postcodeCandidates)) {
+            $queries[] = array_merge($baseQueryArgs, [
+                'meta_query' => $metaQuery,
+            ]);
+
+            return $queries;
+        }
+
+        foreach ($postcodeCandidates as $postcodeCandidate) {
+            $queries[] = array_merge($baseQueryArgs, [
+                'billing_postcode' => $postcodeCandidate,
+                'meta_query' => $metaQuery,
+            ]);
+        }
+
+        return $queries;
+    }
+
+    protected function get_lookup_postcode_candidates(string $normalizedPostcode): array {
+        if ($normalizedPostcode === '') {
+            return [];
+        }
+
+        $candidates = [$normalizedPostcode];
+
+        if (preg_match('/^(\d{4})([A-Z]{2})$/', $normalizedPostcode, $matches)) {
+            $candidates[] = $matches[1] . ' ' . $matches[2];
+        }
+
+        return array_values(array_unique(array_filter(array_map('strval', $candidates))));
+    }
+
+    protected function get_lookup_completed_after_date(): string {
+        $settings = self::get_settings();
+        $lookbackDays = max(30, (int) ($settings['return_window_days'] ?? 14) + (int) ($settings['delivery_offset_days'] ?? 2) + 7);
+
+        return gmdate('Y-m-d H:i:s', current_time('timestamp', true) - ($lookbackDays * DAY_IN_SECONDS));
     }
 
     protected function is_allowed_lookup_order($order): bool {
