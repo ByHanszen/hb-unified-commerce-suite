@@ -19,8 +19,9 @@ class B2BModule {
             return;
         }
 
-        // Allow admin-ajax (order edit) to price for selected customer.
-        add_action('init', [$this, 'maybe_force_user_from_admin_order_ajax'], 1);
+        // Allow admin-ajax (order edit) to price for selected customer
+        // after WooCommerce has registered the order post types.
+        add_action('woocommerce_after_register_post_type', [$this, 'maybe_force_user_from_admin_order_ajax'], 1);
 
         $settings = new SettingsStore();
         $methodVisibility = new MethodVisibility($settings);
@@ -49,6 +50,8 @@ class B2BModule {
 
     public function maybe_force_user_from_admin_order_ajax(): void {
         if (!is_admin() || !wp_doing_ajax()) return;
+
+        if (!did_action('woocommerce_after_register_post_type')) return;
 
         $action = isset($_REQUEST['action']) ? (string) wp_unslash($_REQUEST['action']) : '';
         $orderAjaxActions = [
