@@ -14,6 +14,7 @@ $invoice = get_option('hb_ucs_invoice_email_settings');
 $cust_note = get_option('hb_ucs_customer_order_note_settings');
 $subs = get_option('hb_ucs_subscriptions_settings');
 $order_overview_status = get_option('hb_ucs_order_overview_status_settings');
+$returns = get_option('hb_ucs_returns_settings');
 
 $delete_qls = !empty($opts['delete_data_on_uninstall']);
 $delete_b2b = is_array($b2b) && !empty($b2b['delete_data_on_uninstall']);
@@ -22,8 +23,9 @@ $delete_invoice = is_array($invoice) && !empty($invoice['delete_data_on_uninstal
 $delete_cust_note = is_array($cust_note) && !empty($cust_note['delete_data_on_uninstall']);
 $delete_subs = is_array($subs) && !empty($subs['delete_data_on_uninstall']);
 $delete_order_overview_status = is_array($order_overview_status) && !empty($order_overview_status['delete_data_on_uninstall']);
+$delete_returns = is_array($returns) && !empty($returns['delete_data_on_uninstall']);
 
-$delete_any = $delete_qls || $delete_b2b || $delete_roles || $delete_invoice || $delete_cust_note || $delete_subs || $delete_order_overview_status;
+$delete_any = $delete_qls || $delete_b2b || $delete_roles || $delete_invoice || $delete_cust_note || $delete_subs || $delete_order_overview_status || $delete_returns;
 
 if ($delete_any) {
     // Global plugin settings (module toggles).
@@ -122,6 +124,26 @@ if ($delete_order_overview_status) {
 
     // Best-effort cleanup for legacy post-based order meta.
     delete_metadata('post', 0, '_hb_ucs_order_overview_status', '', true);
+}
+
+if ($delete_returns) {
+    delete_option('hb_ucs_returns_settings');
+
+    $returnRequestIds = get_posts([
+        'post_type' => ['hb_ucs_return_req', 'hb_ucs_return_request'],
+        'post_status' => 'any',
+        'numberposts' => -1,
+        'fields' => 'ids',
+    ]);
+
+    if (is_array($returnRequestIds)) {
+        foreach ($returnRequestIds as $requestId) {
+            $requestId = (int) $requestId;
+            if ($requestId > 0) {
+                wp_delete_post($requestId, true);
+            }
+        }
+    }
 }
 
 // Drop custom tables if you add them later (examples):

@@ -6,11 +6,25 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+### Fixed
+- Retourmeldingen: het opslaan van een retourmelding gebruikte een custom post type slug die te lang was voor WordPress/MySQL. De opslag gebruikt nu een geldige slug, waardoor retourmeldingen weer correct aangemaakt worden.
+
 ### Changed
 - QLS: de plugin forceert de styling van de checkoutknop voor het openen van de servicepunt-locator niet langer. Daardoor kan die knop direct vanuit WooCommerce of themecode worden gestyled.
+- Retourwidget: de standaardteksten van het retourformulier, de staplabels, succesmelding en frontend statusmeldingen zijn nu via het backend te beheren.
+- Retourwidget: de globale stijlinstellingen ondersteunen nu ook hoverkleuren voor primary en secondary knoppen, inclusief Elementor-overschrijvingen per widget.
+- Retourwidget: in de artikelselectie gebruikt de productnaam nu de volledige breedte van de naamkolom, zodat lange producttitels minder snel onnodig afbreken.
+- Retourwidget: de artikelregels volgen nu een stabiele cart-achtige opbouw met een vaste thumbnail-kolom en WooCommerce-placeholder voor producten zonder afbeelding, zodat productnamen niet meer in een te smalle kolom terechtkomen.
+- Retourmeldingen: alleen het backendoverzicht hangt nu onder het WooCommerce-menu. De retourinstellingen en widgetconfiguratie blijven onder het HB UCS-menu staan.
+- Retourmeldingen: het WooCommerce-overzicht ondersteunt nu zoeken, status- en datumfilters, sorteerbare kolommen en paginering zoals je ook van het normale orderoverzicht verwacht.
+- Retourmeldingen: iedere melding heeft nu een eigen detailpagina in WooCommerce met een order-achtige layout voor status, klantgegevens, bestelgegevens, artikelen en retourreden.
+- Retourmeldingen: op de detailpagina kun je nu een extern retourlabel uploaden en direct met een standaard begeleidende klanttekst als bijlage versturen naar het e-mailadres van de bestelling.
 
 ### Removed
 - De losse checkout-module is volledig uit de plugin verwijderd, inclusief module-toggle, adminpagina en de aparte instelling voor verplichte verzendmethode-keuze.
+
+### Added
+- Nieuwe retourmeldingenmodule: klanten kunnen via een frontend retourwidget een retourmelding starten op basis van ordernummer en factuurpostcode, artikelen en aantallen kiezen, optioneel een retourreden opgeven en direct bevestigingsmails naar klant en webshop ontvangen. De module bevat backendbeheer voor uitsluitingen, styling, klantmail-inhoud, statusbeheer en een Elementor-widget.
 
 ## [0.3.209] — 2026-05-30
 

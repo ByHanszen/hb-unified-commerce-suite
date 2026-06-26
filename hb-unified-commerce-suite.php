@@ -34,6 +34,7 @@ register_activation_hook(__FILE__, function () {
             'customer_order_note' => false,
             'subscriptions' => false,
             'order_overview_status' => false,
+            'returns'       => false,
             'product_pages' => false,
         ],
     ];

@@ -15,6 +15,7 @@ class Settings {
     const OPT_CUSTOMER_ORDER_NOTE = 'hb_ucs_customer_order_note_settings'; // Klantnotitie module instellingen
     const OPT_SUBSCRIPTIONS = 'hb_ucs_subscriptions_settings'; // Subscriptions module instellingen
     const OPT_ORDER_OVERVIEW_STATUS = 'hb_ucs_order_overview_status_settings'; // Orderoverzicht status module instellingen
+    const OPT_RETURNS = 'hb_ucs_returns_settings'; // Retourmodule instellingen
     const OPT_PRODUCT_PAGES = 'hb_ucs_product_pages_settings'; // Productpagina module instellingen
     const LEGACY_QLS = 'qls_exclude_settings'; // oude plugin optie (migratie)
 
@@ -38,6 +39,9 @@ class Settings {
         // Besteloverzicht statussen handlers
         add_action('admin_init', [$this, 'init_order_overview_status_admin']);
 
+        // Retourmodule handlers
+        add_action('admin_init', [$this, 'init_returns_admin']);
+
         // Form handlers (fix voor “De link is verlopen”)
         add_action('admin_post_hb_ucs_save_qls', [$this, 'handle_save_qls']);
         add_action('admin_post_hb_ucs_qls_recalc', [$this, 'handle_recalc_qls']);
@@ -53,6 +57,7 @@ class Settings {
         add_option(self::OPT_CUSTOMER_ORDER_NOTE, $this->defaults_customer_order_note());
         add_option(self::OPT_SUBSCRIPTIONS, $this->defaults_subscriptions());
         add_option(self::OPT_ORDER_OVERVIEW_STATUS, $this->defaults_order_overview_status());
+        add_option(self::OPT_RETURNS, $this->defaults_returns());
         add_option(self::OPT_PRODUCT_PAGES, $this->defaults_product_pages());
     }
 
@@ -127,6 +132,11 @@ class Settings {
         (new \HB\UCS\Modules\OrderOverviewStatus\Admin\OrderOverviewStatusAdminPage())->register_handlers();
     }
 
+    public function init_returns_admin(): void {
+        if (!class_exists('HB\\UCS\\Modules\\Returns\\Admin\\ReturnsAdminPage')) return;
+        (new \HB\UCS\Modules\Returns\Admin\ReturnsAdminPage())->register_handlers();
+    }
+
     private function defaults_main(): array {
         return [
             'modules' => [
@@ -137,6 +147,7 @@ class Settings {
                 'customer_order_note' => 0,
                 'subscriptions' => 0,
                 'order_overview_status' => 0,
+                'returns'       => 0,
                 'product_pages' => 0,
             ],
         ];
@@ -233,6 +244,39 @@ class Settings {
         return [
             'delete_data_on_uninstall' => 0,
             'statuses' => [],
+        ];
+    }
+
+    private function defaults_returns(): array {
+        if (class_exists('HB\\UCS\\Modules\\Returns\\ReturnsModule')) {
+            return \HB\UCS\Modules\Returns\ReturnsModule::default_settings();
+        }
+
+        return [
+            'return_window_days' => 14,
+            'delivery_offset_days' => 2,
+            'excluded_product_ids' => [],
+            'excluded_category_ids' => [],
+            'customer_email_intro' => '',
+            'admin_email' => '',
+            'style_accent_color' => '#245c4f',
+            'style_accent_text_color' => '#ffffff',
+            'style_background_color' => '#f6f1e8',
+            'style_panel_color' => '#ffffff',
+            'style_border_color' => '#d9cfbf',
+            'style_text_color' => '#2a251f',
+            'style_muted_text_color' => '#6b6459',
+            'style_success_color' => '#e6f2ea',
+            'style_error_color' => '#f6e5e1',
+            'style_button_primary_hover_color' => '#1d4b41',
+            'style_button_primary_hover_text_color' => '#ffffff',
+            'style_button_primary_hover_border_color' => '#1d4b41',
+            'style_button_secondary_hover_color' => '#edf3f1',
+            'style_button_secondary_hover_text_color' => '#245c4f',
+            'style_button_secondary_hover_border_color' => '#245c4f',
+            'style_radius' => 18,
+            'delete_data_on_uninstall' => 0,
+            'add_order_note' => 1,
         ];
     }
 
@@ -401,6 +445,38 @@ class Settings {
 
         add_submenu_page(
             'hb-ucs',
+            __('Retourinstellingen', 'hb-ucs'),
+            __('Retourinstellingen', 'hb-ucs'),
+            'manage_options',
+            'hb-ucs-returns',
+            function () {
+                if (class_exists('HB\\UCS\\Modules\\Returns\\Admin\\ReturnsAdminPage')) {
+                    (new \HB\UCS\Modules\Returns\Admin\ReturnsAdminPage())->render_settings();
+                    return;
+                }
+                echo '<div class="wrap"><h1>' . esc_html__('Retourinstellingen', 'hb-ucs') . '</h1>';
+                echo '<div class="notice notice-error"><p>' . esc_html__('Retourmodule is niet geladen.', 'hb-ucs') . '</p></div></div>';
+            }
+        );
+
+        add_submenu_page(
+            'woocommerce',
+            __('Retourmeldingen', 'hb-ucs'),
+            __('Retourmeldingen', 'hb-ucs'),
+            'manage_woocommerce',
+            'hb-ucs-return-requests',
+            function () {
+                if (class_exists('HB\\UCS\\Modules\\Returns\\Admin\\ReturnsAdminPage')) {
+                    (new \HB\UCS\Modules\Returns\Admin\ReturnsAdminPage())->render_overview();
+                    return;
+                }
+                echo '<div class="wrap"><h1>' . esc_html__('Retourmeldingen', 'hb-ucs') . '</h1>';
+                echo '<div class="notice notice-error"><p>' . esc_html__('Retourmodule is niet geladen.', 'hb-ucs') . '</p></div></div>';
+            }
+        );
+
+        add_submenu_page(
+            'hb-ucs',
             __('Productpagina\'s', 'hb-ucs'),
             __('Productpagina\'s', 'hb-ucs'),
             'manage_options',
@@ -469,6 +545,14 @@ class Settings {
             $checked = !empty($mods['order_overview_status']) ? 'checked' : '';
             echo '<label><input type="checkbox" name="'.esc_attr(self::OPT).'[modules][order_overview_status]" value="1" '.$checked.'/> '.esc_html__('Activeren', 'hb-ucs').'</label>';
             echo '<p class="description">'.esc_html__('Voegt een extra beheerbare statuskolom toe aan het WooCommerce bestellingenoverzicht met direct opslaan via dropdown.', 'hb-ucs').'</p>';
+        }, 'hb-ucs', 'hb_ucs_modules');
+
+        add_settings_field('returns', __('Retourmeldingen', 'hb-ucs'), function () {
+            $opt = get_option(self::OPT, $this->defaults_main());
+            $mods = $opt['modules'] ?? [];
+            $checked = !empty($mods['returns']) ? 'checked' : '';
+            echo '<label><input type="checkbox" name="'.esc_attr(self::OPT).'[modules][returns]" value="1" '.$checked.'/> '.esc_html__('Activeren', 'hb-ucs').'</label>';
+            echo '<p class="description">'.esc_html__('Frontend retourformulier op basis van ordernummer en postcode, inclusief klant- en adminmails, backendbeheer en Elementor-widget.', 'hb-ucs').'</p>';
         }, 'hb-ucs', 'hb_ucs_modules');
 
         add_settings_field('product_pages', __('Productpagina\'s', 'hb-ucs'), function () {
