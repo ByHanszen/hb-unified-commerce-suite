@@ -6,6 +6,12 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.211] — 2026-06-28
+
+### Fixed
+- Abonnementen backend: expliciet leeg opgeslagen artikel-, kosten- en verzendregels worden niet langer opnieuw gevuld vanuit oude orderitems tijdens order-type syncs, zodat verwijderde verzendregels echt verwijderd blijven.
+- Abonnementen backend: order-type syncs schrijven nu ook terug naar een gekoppelde legacy subscription, zodat handmatige backend-wijzigingen zoals statusaanpassingen niet later door verouderde legacy data worden overschreven.
+
 ## [0.3.210] — 2026-06-28
 
 ### Fixed
