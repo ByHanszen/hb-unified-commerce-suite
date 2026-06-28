@@ -7,6 +7,7 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 ## [Unreleased]
 
 ### Fixed
+- Abonnementen backend: aangepaste verzendregels en handmatige kostenregels op de abonnementseditor worden nu weer echt opgeslagen voordat de deferred sync draait, zodat een gewijzigde verzendmethode niet meteen door de oude waarde wordt overschreven.
 - B2B: het forceren van de klantcontext tijdens WooCommerce admin-ajax voor orderbewerking draait nu pas nadat WooCommerce zijn order post types heeft geregistreerd, zodat `wc_get_order()` geen `doing_it_wrong`-melding meer veroorzaakt.
 - Retourmeldingen: het opslaan van een retourmelding gebruikte een custom post type slug die te lang was voor WordPress/MySQL. De opslag gebruikt nu een geldige slug, waardoor retourmeldingen weer correct aangemaakt worden.
 - Retourmeldingen frontend: het opzoeken van bestellingen gebruikt nu een veel gerichtere orderquery op recente completed orders en postcodevarianten, zodat productieomgevingen niet meer op brede orderscans hoeven vast te lopen.

@@ -901,6 +901,7 @@ class SubscriptionAdmin {
         $previousUserId = method_exists($order, 'get_customer_id') ? (int) $order->get_customer_id() : 0;
         $previousPaymentMethod = method_exists($order, 'get_payment_method') ? (string) $order->get_payment_method() : '';
         $previousPaymentMethodTitle = method_exists($order, 'get_payment_method_title') ? (string) $order->get_payment_method_title() : '';
+        $previousShippingLabel = $this->get_primary_shipping_line_label($this->get_subscription_shipping_lines_for_order($orderId, $order));
         $previousDates = [
             '_hb_ucs_subscription_next_payment' => $this->get_subscription_timestamp_for_order($order, '_hb_ucs_subscription_next_payment', SubscriptionRepository::LEGACY_NEXT_PAYMENT_META),
             '_hb_ucs_subscription_trial_end' => $this->get_subscription_timestamp_for_order($order, '_hb_ucs_subscription_trial_end', SubscriptionRepository::LEGACY_TRIAL_END_META),
@@ -979,6 +980,15 @@ class SubscriptionAdmin {
             if (method_exists($order, 'set_payment_method_title')) {
                 $order->set_payment_method_title($paymentMethodTitle);
             }
+        }
+
+        if (isset($_POST['hb_ucs_fees_present'])) {
+            $this->persist_posted_subscription_fee_lines($orderId);
+        }
+
+        $savedShippingLines = null;
+        if (isset($_POST['hb_ucs_shipping_lines_present'])) {
+            $savedShippingLines = $this->persist_posted_subscription_shipping_lines($orderId, $order);
         }
 
         foreach ([
@@ -1210,6 +1220,17 @@ class SubscriptionAdmin {
                 $previousPaymentLabel !== '' ? $previousPaymentLabel : '—',
                 $newPaymentLabel !== '' ? $newPaymentLabel : '—'
             );
+        }
+
+        if ($savedShippingLines !== null) {
+            $newShippingLabel = $this->get_primary_shipping_line_label($savedShippingLines);
+            if ($previousShippingLabel !== $newShippingLabel) {
+                $changes[] = sprintf(
+                    __('Verzendmethode: %1$s → %2$s.', 'hb-ucs'),
+                    $previousShippingLabel !== '' ? $previousShippingLabel : '—',
+                    $newShippingLabel !== '' ? $newShippingLabel : '—'
+                );
+            }
         }
 
         if (!empty($changes) && method_exists($order, 'add_order_note')) {
@@ -1589,6 +1610,199 @@ class SubscriptionAdmin {
         }
 
         return $snapshot;
+    }
+
+    private function persist_posted_subscription_fee_lines(int $orderId): array {
+        $rawLines = isset($_POST['hb_ucs_fees']) && is_array($_POST['hb_ucs_fees'])
+            ? (array) wp_unslash($_POST['hb_ucs_fees'])
+            : [];
+        $normalized = [];
+
+        foreach (array_values($rawLines) as $rawLine) {
+            if (!is_array($rawLine) || !empty($rawLine['remove'])) {
+                continue;
+            }
+
+            $line = $this->normalize_subscription_fee_line_for_admin($rawLine);
+            if ($line !== null) {
+                $normalized[] = $line;
+            }
+        }
+
+        update_post_meta($orderId, SubscriptionRepository::LEGACY_FEE_LINES_META, $normalized);
+
+        return $normalized;
+    }
+
+    private function persist_posted_subscription_shipping_lines(int $orderId, $order): array {
+        $rawLines = isset($_POST['hb_ucs_shipping_lines']) && is_array($_POST['hb_ucs_shipping_lines'])
+            ? (array) wp_unslash($_POST['hb_ucs_shipping_lines'])
+            : [];
+        $existingLines = $this->get_subscription_shipping_lines_for_order($orderId, $order);
+        $normalized = [];
+
+        foreach (array_values($rawLines) as $index => $rawLine) {
+            if (!is_array($rawLine) || !empty($rawLine['remove'])) {
+                continue;
+            }
+
+            $fallback = isset($existingLines[$index]) && is_array($existingLines[$index]) ? $existingLines[$index] : [];
+            $line = $this->normalize_subscription_shipping_line_for_admin($rawLine, $fallback);
+            if ($line !== null) {
+                $normalized[] = $line;
+            }
+        }
+
+        update_post_meta($orderId, SubscriptionRepository::LEGACY_SHIPPING_LINES_META, $normalized);
+
+        return $normalized;
+    }
+
+    private function get_subscription_shipping_lines_for_order(int $orderId, $order): array {
+        $stored = get_post_meta($orderId, SubscriptionRepository::LEGACY_SHIPPING_LINES_META, true);
+        $lines = [];
+
+        if (is_array($stored)) {
+            foreach (array_values($stored) as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+
+                $line = $this->normalize_subscription_shipping_line_for_admin($row);
+                if ($line !== null) {
+                    $lines[] = $line;
+                }
+            }
+
+            if (!empty($lines)) {
+                return $lines;
+            }
+        }
+
+        if (!$order || !is_object($order) || !method_exists($order, 'get_items')) {
+            return [];
+        }
+
+        foreach ((array) $order->get_items('shipping') as $item) {
+            if (!$item || !is_object($item)) {
+                continue;
+            }
+
+            $line = $this->normalize_subscription_shipping_line_for_admin([
+                'rate_key' => method_exists($item, 'get_meta') ? (string) $item->get_meta('_hb_ucs_shipping_rate_key', true) : '',
+                'method_title' => method_exists($item, 'get_method_title') ? (string) $item->get_method_title() : '',
+                'method_id' => method_exists($item, 'get_method_id') ? (string) $item->get_method_id() : '',
+                'instance_id' => method_exists($item, 'get_instance_id') ? (int) $item->get_instance_id() : 0,
+                'total' => method_exists($item, 'get_total') ? $item->get_total() : 0,
+                'taxes' => method_exists($item, 'get_taxes') ? (array) $item->get_taxes() : [],
+            ]);
+
+            if ($line !== null) {
+                $lines[] = $line;
+            }
+        }
+
+        return $lines;
+    }
+
+    private function get_primary_shipping_line_label(array $shippingLines): string {
+        if (empty($shippingLines)) {
+            return '';
+        }
+
+        $firstLine = reset($shippingLines);
+        if (!is_array($firstLine)) {
+            return '';
+        }
+
+        $methodTitle = trim((string) ($firstLine['method_title'] ?? ''));
+        if ($methodTitle !== '') {
+            return $methodTitle;
+        }
+
+        return trim((string) ($firstLine['method_id'] ?? ''));
+    }
+
+    private function normalize_subscription_fee_line_for_admin(array $line): ?array {
+        $name = sanitize_text_field((string) ($line['name'] ?? ''));
+        $total = isset($line['total']) ? (float) wc_format_decimal((string) $line['total']) : 0.0;
+        $taxes = isset($line['taxes']) && is_array($line['taxes'])
+            ? $this->normalize_subscription_tax_groups_for_admin($line['taxes'])
+            : [];
+
+        if ($name === '' && abs($total) < 0.0001 && empty($taxes)) {
+            return null;
+        }
+
+        return [
+            'name' => $name !== '' ? $name : __('Kosten', 'hb-ucs'),
+            'total' => $total,
+            'taxes' => $taxes,
+        ];
+    }
+
+    private function normalize_subscription_shipping_line_for_admin(array $line, array $fallback = []): ?array {
+        $methodId = sanitize_text_field((string) ($line['method_id'] ?? ($fallback['method_id'] ?? '')));
+        $methodTitle = sanitize_text_field((string) ($line['method_title'] ?? ($fallback['method_title'] ?? '')));
+        $instanceId = isset($line['instance_id'])
+            ? (int) absint((string) $line['instance_id'])
+            : (int) ($fallback['instance_id'] ?? 0);
+        $rateKey = sanitize_text_field((string) ($line['rate_key'] ?? ($fallback['rate_key'] ?? '')));
+        $total = isset($line['total'])
+            ? (float) wc_format_decimal((string) $line['total'])
+            : (isset($fallback['total']) ? (float) wc_format_decimal((string) $fallback['total']) : 0.0);
+        $taxes = isset($line['taxes']) && is_array($line['taxes'])
+            ? $this->normalize_subscription_tax_groups_for_admin($line['taxes'])
+            : (isset($fallback['taxes']) && is_array($fallback['taxes']) ? $this->normalize_subscription_tax_groups_for_admin($fallback['taxes']) : []);
+
+        if ($methodId === '' && $methodTitle === '' && abs($total) < 0.0001 && empty($taxes)) {
+            return null;
+        }
+
+        if ($rateKey === '' && $methodId !== '') {
+            $rateKey = $methodId . ':' . max(0, $instanceId);
+        }
+
+        return [
+            'rate_key' => $rateKey,
+            'method_id' => $methodId,
+            'method_title' => $methodTitle !== '' ? $methodTitle : __('Verzending', 'hb-ucs'),
+            'instance_id' => max(0, $instanceId),
+            'total' => $total,
+            'taxes' => $taxes,
+        ];
+    }
+
+    private function normalize_subscription_tax_groups_for_admin(array $taxes): array {
+        $normalized = [];
+
+        foreach ($taxes as $taxGroupKey => $taxGroupValues) {
+            if (!is_array($taxGroupValues)) {
+                continue;
+            }
+
+            $groupKey = sanitize_key((string) $taxGroupKey);
+            if ($groupKey === '') {
+                continue;
+            }
+
+            foreach ($taxGroupValues as $taxRateId => $taxAmount) {
+                $rateKey = is_numeric($taxRateId)
+                    ? (string) absint((string) $taxRateId)
+                    : sanitize_key((string) $taxRateId);
+                if ($rateKey === '') {
+                    continue;
+                }
+
+                if (!isset($normalized[$groupKey])) {
+                    $normalized[$groupKey] = [];
+                }
+
+                $normalized[$groupKey][$rateKey] = wc_format_decimal((string) $taxAmount, wc_get_price_decimals());
+            }
+        }
+
+        return $normalized;
     }
 
     private function get_schedule_options(): array {
