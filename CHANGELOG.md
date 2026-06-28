@@ -6,6 +6,8 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.210] — 2026-06-28
+
 ### Fixed
 - Abonnementen backend: aangepaste verzendregels en handmatige kostenregels op de abonnementseditor worden nu weer echt opgeslagen voordat de deferred sync draait, zodat een gewijzigde verzendmethode niet meteen door de oude waarde wordt overschreven.
 - B2B: het forceren van de klantcontext tijdens WooCommerce admin-ajax voor orderbewerking draait nu pas nadat WooCommerce zijn order post types heeft geregistreerd, zodat `wc_get_order()` geen `doing_it_wrong`-melding meer veroorzaakt.
