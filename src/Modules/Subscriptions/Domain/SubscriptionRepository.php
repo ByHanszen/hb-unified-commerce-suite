@@ -241,46 +241,7 @@ class SubscriptionRepository {
     }
 
     public function ensure_legacy_record_for_order($order): int {
-        if (is_numeric($order)) {
-            $order = function_exists('wc_get_order') ? wc_get_order((int) $order) : null;
-        }
-
-        if (!$order || !is_object($order) || !method_exists($order, 'get_type') || (string) $order->get_type() !== $this->get_order_type()) {
-            return 0;
-        }
-
-        $legacyPostId = $this->get_linked_legacy_post_id($order);
-        if ($legacyPostId > 0) {
-            return $legacyPostId;
-        }
-
-        $createdTimestamp = method_exists($order, 'get_date_created') && $order->get_date_created()
-            ? (int) $order->get_date_created()->getTimestamp()
-            : 0;
-        $legacyPostId = wp_insert_post([
-            'post_type' => self::LEGACY_POST_TYPE,
-            'post_status' => 'publish',
-            'post_title' => $this->build_legacy_post_title_from_order($order),
-            'post_excerpt' => method_exists($order, 'get_customer_note') ? (string) $order->get_customer_note() : '',
-            'post_date' => $createdTimestamp > 0 ? wp_date('Y-m-d H:i:s', $createdTimestamp) : current_time('mysql'),
-            'post_date_gmt' => $createdTimestamp > 0 ? gmdate('Y-m-d H:i:s', $createdTimestamp) : current_time('mysql', 1),
-        ], true);
-
-        if (is_wp_error($legacyPostId) || (int) $legacyPostId <= 0) {
-            return 0;
-        }
-
-        $legacyPostId = (int) $legacyPostId;
-
-        if (method_exists($order, 'update_meta_data')) {
-            $order->update_meta_data(SubscriptionOrderType::LEGACY_POST_ID_META, $legacyPostId);
-        }
-
-        if (method_exists($order, 'get_id')) {
-            update_post_meta((int) $order->get_id(), SubscriptionOrderType::LEGACY_POST_ID_META, $legacyPostId);
-        }
-
-        return $legacyPostId;
+        return $this->get_linked_legacy_post_id($order);
     }
 
     public function sync_legacy_from_order($order, bool $createIfMissing = false): ?array {
@@ -292,55 +253,9 @@ class SubscriptionRepository {
             return null;
         }
 
-        $legacyPostId = $this->get_linked_legacy_post_id($order);
-        if ($legacyPostId <= 0 && $createIfMissing) {
-            $legacyPostId = $this->ensure_legacy_record_for_order($order);
-        }
-
-        if ($legacyPostId <= 0) {
-            $this->log_sync_debug('repository.sync_legacy_from_order.skipped_missing_legacy', [
-                'order' => $this->build_order_debug_snapshot($order),
-                'create_if_missing' => $createIfMissing,
-            ]);
-
-            return $this->find((int) $order->get_id());
-        }
-
-        $legacyPost = get_post($legacyPostId);
-        if (!$legacyPost instanceof \WP_Post || (string) $legacyPost->post_type !== self::LEGACY_POST_TYPE) {
-            $this->log_sync_debug('repository.sync_legacy_from_order.skipped_invalid_legacy', [
-                'order' => $this->build_order_debug_snapshot($order),
-                'legacy_post_id' => $legacyPostId,
-            ]);
-
-            return $this->find((int) $order->get_id());
-        }
-
-        $legacy = $this->build_legacy_data_from_order($order, $legacyPostId);
-        $legacy['id'] = $legacyPostId;
-        $legacy['legacy_post_id'] = $legacyPostId;
-        $legacy['post'] = $legacyPost;
-        $legacy['totals'] = $this->calculate_legacy_totals(
-            is_array($legacy['items'] ?? null) ? $legacy['items'] : [],
-            is_array($legacy['fee_lines'] ?? null) ? $legacy['fee_lines'] : [],
-            is_array($legacy['shipping_lines'] ?? null) ? $legacy['shipping_lines'] : []
-        );
-
-        $this->log_sync_debug('repository.sync_legacy_from_order.start', [
+        $this->log_sync_debug('repository.sync_legacy_from_order.skipped_single_source_of_truth', [
             'order' => $this->build_order_debug_snapshot($order),
-            'legacy_before' => $this->build_legacy_debug_snapshot($legacyPostId),
-        ]);
-
-        wp_update_post([
-            'ID' => $legacyPostId,
-            'post_title' => $this->build_legacy_post_title_from_order($order),
-            'post_excerpt' => (string) ($legacy['customer_note'] ?? ''),
-        ]);
-        $this->sync_legacy_post_meta($legacyPostId, $legacy);
-
-        $this->log_sync_debug('repository.sync_legacy_from_order.end', [
-            'order' => $this->build_order_debug_snapshot($order),
-            'legacy_after' => $this->build_legacy_debug_snapshot($legacyPostId),
+            'create_if_missing' => $createIfMissing,
         ]);
 
         return $this->find((int) $order->get_id());
@@ -456,7 +371,6 @@ class SubscriptionRepository {
         $this->sync_shadow_order_items($orderId, $data);
 
         $result = $this->find($orderId);
-        $this->sync_legacy_from_order($order, false);
 
         $this->log_sync_debug('repository.sync_order_type_self.end', [
             'order' => $this->build_order_debug_snapshot($order),
@@ -484,6 +398,11 @@ class SubscriptionRepository {
 
         $post = get_post($subscriptionId);
         if ($post instanceof \WP_Post && (string) $post->post_type === self::LEGACY_POST_TYPE) {
+            $orderTypeRecord = $this->find_by_legacy_post_id($subscriptionId);
+            if (is_array($orderTypeRecord) && (($orderTypeRecord['storage'] ?? '') === 'order_type')) {
+                return $orderTypeRecord;
+            }
+
             return $this->normalize_legacy_record($post);
         }
 

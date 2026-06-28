@@ -6,6 +6,12 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.212] — 2026-06-28
+
+### Fixed
+- Abonnementen: het order-type abonnement is nu de enige actieve runtime-bron voor status, volgende betaaldatum en backend-mutaties. Gekoppelde legacy subscription-posts worden niet langer tijdens normale runtime-syncs teruggeschreven, waardoor backend-wijzigingen niet meer door verouderde legacy data kunnen terugveren.
+- Abonnementen: oude legacy subscription-ID's worden nu eerst naar het gekoppelde order-type record vertaald voordat account- en sync-logica draait, terwijl historische lookup op gekoppelde legacy IDs behouden blijft voor bestaande verlengorders en redirects.
+
 ## [0.3.211] — 2026-06-28
 
 ### Fixed

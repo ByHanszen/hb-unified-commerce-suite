@@ -231,13 +231,44 @@ class SubscriptionsModule {
             return;
         }
 
-        $record = $this->get_subscription_repository()->find($subId);
-        if (is_array($record) && (($record['storage'] ?? '') === 'order_type')) {
-            $this->get_subscription_repository()->sync_order_type_self($subId, false);
-            return;
+        $canonicalId = $this->get_canonical_subscription_id($subId, true);
+        if ($canonicalId > 0) {
+            $this->get_subscription_repository()->sync_order_type_self($canonicalId, false);
+        }
+    }
+
+    private function get_canonical_subscription_id(int $subId, bool $createMissingOrderType = false): int {
+        if ($subId <= 0) {
+            return 0;
         }
 
-        $this->get_subscription_repository()->ensure_order_type_record($subId, true);
+        if (function_exists('wc_get_order')) {
+            $order = wc_get_order($subId);
+            if ($order && is_object($order) && method_exists($order, 'get_type') && (string) $order->get_type() === $this->get_subscription_order_type()->get_type()) {
+                return $subId;
+            }
+        }
+
+        $repository = $this->get_subscription_repository();
+        $record = $repository->find($subId);
+        if (is_array($record) && (($record['storage'] ?? '') === 'order_type')) {
+            return (int) ($record['id'] ?? 0);
+        }
+
+        $orderTypeRecord = $repository->find_by_legacy_post_id($subId);
+        if (is_array($orderTypeRecord) && (($orderTypeRecord['storage'] ?? '') === 'order_type')) {
+            return (int) ($orderTypeRecord['id'] ?? 0);
+        }
+
+        if (!$createMissingOrderType || !is_array($record) || (($record['storage'] ?? '') !== 'legacy_post')) {
+            return 0;
+        }
+
+        $createdRecord = $repository->ensure_order_type_record($subId, true);
+
+        return is_array($createdRecord) && (($createdRecord['storage'] ?? '') === 'order_type')
+            ? (int) ($createdRecord['id'] ?? 0)
+            : 0;
     }
 
     private function apply_account_subscription_status_to_order($subscription, string $status): void {
@@ -468,44 +499,30 @@ class SubscriptionsModule {
      * @return int[]
      */
     private function get_subscription_runtime_state_target_ids(int $subId): array {
-        if ($subId <= 0) {
+        $canonicalId = $this->get_canonical_subscription_id($subId, true);
+        if ($canonicalId <= 0) {
             return [];
         }
 
-        $targetIds = [$subId];
-        $record = $this->get_subscription_repository()->find($subId);
-
-        if (is_array($record) && (($record['storage'] ?? '') === 'order_type')) {
-            $legacyPostId = $this->get_subscription_repository()->get_linked_legacy_post_id($subId);
-            if ($legacyPostId > 0) {
-                $targetIds[] = $legacyPostId;
-            }
-        }
-
-        return array_values(array_unique(array_filter(array_map('intval', $targetIds))));
+        return [$canonicalId];
     }
 
     /**
      * @return int[]
      */
     private function get_related_subscription_ids(int $subId): array {
-        if ($subId <= 0) {
+        $canonicalId = $this->get_canonical_subscription_id($subId, true);
+        if ($canonicalId <= 0) {
             return [];
         }
 
-        $ids = [$subId];
-        $record = $this->get_subscription_repository()->find($subId);
-
-        if (is_array($record) && (($record['storage'] ?? '') === 'order_type')) {
-            $legacyPostId = $this->get_subscription_repository()->get_linked_legacy_post_id($subId);
-            if ($legacyPostId > 0) {
-                $ids[] = $legacyPostId;
-            }
-        } else {
-            $orderTypeRecord = $this->get_subscription_repository()->find_by_legacy_post_id($subId);
-            if (is_array($orderTypeRecord) && (int) ($orderTypeRecord['id'] ?? 0) > 0) {
-                $ids[] = (int) $orderTypeRecord['id'];
-            }
+        $ids = [$canonicalId];
+        $legacyPostId = $this->get_subscription_repository()->get_linked_legacy_post_id($canonicalId);
+        if ($legacyPostId > 0) {
+            $ids[] = $legacyPostId;
+        }
+        if ($subId > 0 && $subId !== $canonicalId) {
+            $ids[] = $subId;
         }
 
         return array_values(array_unique(array_filter(array_map('intval', $ids))));
@@ -1012,7 +1029,7 @@ class SubscriptionsModule {
             '_hb_ucs_subscription_period' => (string) $resolved['period'],
         ];
 
-        foreach ($this->get_related_subscription_ids($subId) as $targetId) {
+        foreach ($this->get_subscription_runtime_state_target_ids($subId) as $targetId) {
             foreach ($scheduleMeta as $metaKey => $metaValue) {
                 $this->update_subscription_post_meta_if_changed($targetId, $metaKey, $metaValue);
             }
@@ -2464,7 +2481,8 @@ class SubscriptionsModule {
     private function get_account_subscription_url(int $subId = 0): string {
         $url = function_exists('wc_get_account_endpoint_url') ? wc_get_account_endpoint_url(self::ACCOUNT_ENDPOINT) : home_url('/');
         if ($subId > 0) {
-            $url = add_query_arg('subscription_id', $subId, $url);
+            $canonicalId = $this->get_canonical_subscription_id($subId, false);
+            $url = add_query_arg('subscription_id', $canonicalId > 0 ? $canonicalId : $subId, $url);
         }
         return $url;
     }
@@ -3293,6 +3311,11 @@ class SubscriptionsModule {
 
     private function get_account_subscription_for_user(int $subId, int $userId) {
         if ($subId <= 0 || $userId <= 0) {
+            return null;
+        }
+
+        $subId = $this->get_canonical_subscription_id($subId, true);
+        if ($subId <= 0) {
             return null;
         }
 
