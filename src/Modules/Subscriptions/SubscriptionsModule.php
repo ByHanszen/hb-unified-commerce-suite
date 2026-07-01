@@ -1383,13 +1383,9 @@ class SubscriptionsModule {
                     break;
                 }
             }
-
-            if (!$requiresSelection && $resolvedSelectionId <= 0) {
-                $resolvedSelectionId = $selectedId;
-            }
         }
 
-        $attributeConfig = $this->get_variable_product_attribute_config($attributeProduct, true);
+        $attributeConfig = $this->get_variable_product_attribute_config($attributeProduct);
         $previewItem = null;
         if (!$requiresSelection && $resolvedSelectionId > 0) {
             $previewItem = $this->build_subscription_item_from_selection($resolvedSelectionId, $scheme, $qty, null, $normalizedAttributes);
@@ -3708,7 +3704,7 @@ class SubscriptionsModule {
                 : (method_exists($product, 'get_price_html') ? (string) wp_strip_all_tags($product->get_price_html(), true) : '');
 
             if (method_exists($product, 'is_type') && $product->is_type('variable') && method_exists($product, 'get_children')) {
-                $variableConfig = $this->get_variable_product_attribute_config($product, true);
+                $variableConfig = $this->get_variable_product_attribute_config($product);
                 if (!empty($variableConfig)) {
                     $options['variable_configs'][$productId] = $variableConfig;
                 }
@@ -4086,7 +4082,7 @@ class SubscriptionsModule {
             return '';
         }
 
-        $config = $this->get_variable_product_attribute_config($product, true);
+        $config = $this->get_variable_product_attribute_config($product);
         if (empty($config)) {
             return '';
         }
@@ -6881,7 +6877,6 @@ class SubscriptionsModule {
         }
 
         $selectedAttributes = $this->sanitize_selected_attributes_map($selectedAttributes);
-        $attributeSnapshot = $selectedAttributes;
         $product = wc_get_product($selectedId);
         if (!$product || !is_object($product)) {
             return null;
@@ -6915,11 +6910,17 @@ class SubscriptionsModule {
                     array_merge($this->get_selected_attributes_from_variation($variationProduct), $selectedAttributes)
                 );
             }
+
+            if ($baseVariationId <= 0) {
+                return null;
+            }
         }
 
         if ($baseProductId <= 0 || get_post_meta($baseProductId, self::META_ENABLED, true) !== 'yes') {
             return null;
         }
+
+        $attributeSnapshot = $selectedAttributes;
 
         $unitPrice = null;
         $pricingProductId = $baseVariationId > 0 ? $baseVariationId : $baseProductId;

@@ -6,6 +6,12 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.214] — 2026-07-01
+
+### Fixed
+- Abonnementen accountpagina: variabele producten kunnen nu alleen nog worden opgeslagen als een echte WooCommerce-variatie is resolved. Daardoor komt altijd de juiste variatie-SKU in het abonnement terecht en kan een parent-SKU niet meer per ongeluk als fallback worden opgeslagen.
+- Abonnementen accountpagina: de productpicker toont nu naast verplichte variatie-opties ook optionele productattributen, terwijl alleen de echte variatie-attributen de SKU-resolutie afdwingen.
+
 ## [0.3.213] — 2026-07-01
 
 ### Fixed

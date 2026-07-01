@@ -679,6 +679,70 @@
     return values;
   }
 
+  function getRequiredVariationAttributeConfig(productId) {
+    var config = getProductPickerConfig();
+    var variationAttributeConfigs = config && config.variationAttributeConfigs ? config.variationAttributeConfigs : {};
+
+    return variationAttributeConfigs[String(productId)] || variationAttributeConfigs[productId] || [];
+  }
+
+  function setAccountRowVariationValidity($field) {
+    if (!$field || !$field.length) {
+      return true;
+    }
+
+    var productId = String($field.find('.hb-ucs-product-picker-value').val() || '');
+    var requiredAttributeConfig = getRequiredVariationAttributeConfig(productId);
+    var $selects = $field.find('.hb-ucs-product-picker-attributes select');
+
+    $selects.each(function () {
+      if (typeof this.setCustomValidity === 'function') {
+        this.setCustomValidity('');
+      }
+    });
+
+    if (!productId || !$selects.length || !requiredAttributeConfig.length) {
+      return true;
+    }
+
+    var selectedAttributes = collectSelectedAttributeValues($field);
+    var missingLabels = [];
+    var firstInvalidSelect = null;
+
+    requiredAttributeConfig.forEach(function (attribute) {
+      var key = String(attribute && attribute.key ? attribute.key : '');
+      if (!key || String(selectedAttributes[key] || '')) {
+        return;
+      }
+
+      missingLabels.push(String(attribute && attribute.label ? attribute.label : key));
+      if (firstInvalidSelect) {
+        return;
+      }
+
+      firstInvalidSelect = $selects.filter(function () {
+        return String($(this).attr('name') || '').indexOf('[' + key + ']') !== -1;
+      }).first();
+    });
+
+    if (missingLabels.length) {
+      if (firstInvalidSelect.length && typeof firstInvalidSelect[0].setCustomValidity === 'function') {
+        firstInvalidSelect[0].setCustomValidity('Kies eerst: ' + missingLabels.join(', ') + '.');
+      }
+      return false;
+    }
+
+    if (!findMatchingVariationData(productId, selectedAttributes)) {
+      firstInvalidSelect = $selects.first();
+      if (firstInvalidSelect.length && typeof firstInvalidSelect[0].setCustomValidity === 'function') {
+        firstInvalidSelect[0].setCustomValidity('Kies een geldige combinatie van productopties.');
+      }
+      return false;
+    }
+
+    return true;
+  }
+
   function setSubscriptionRowEditing($row, expanded) {
     if (!$row || !$row.length) {
       return;
@@ -816,6 +880,7 @@
       var variationSummary = String(selectedSummary || variation.summary || '');
       $row.find('.hb-ucs-product-card__variation-summary').first().text(variationSummary);
       updateProductPickerLabel($field, variationSummary);
+      setAccountRowVariationValidity($field);
       return;
     }
 
@@ -824,6 +889,8 @@
       $row.find('.hb-ucs-product-card__variation-summary').first().text(selectedSummary);
       updateProductPickerLabel($field, selectedSummary);
     }
+
+    setAccountRowVariationValidity($field);
   }
 
   function updateSubscriptionRowPreview($row, $item) {
@@ -890,8 +957,11 @@
 
     if (!attributes.length) {
       $container.empty();
+      $container.prop('hidden', true).attr('aria-hidden', 'true');
       return;
     }
+
+    $container.prop('hidden', false).attr('aria-hidden', 'false');
 
     selectedAttributes = selectedAttributes || {};
     var chooseOptionLabel = String((config && config.chooseOptionLabel) || 'Kies een optie…');
@@ -1005,6 +1075,7 @@
       updateSubscriptionRowPreview($row, $item);
       setSubscriptionRowEditing($row, $field.find('.hb-ucs-product-picker-attributes select').length > 0);
       updateRowVariationPreview($field);
+      setAccountRowVariationValidity($field);
       cleanupPendingSubscriptionRow($modal);
       closeProductModal($modal);
     });
@@ -1024,6 +1095,59 @@
       var $field = $(this).closest('.hb-ucs-product-picker-field');
       updateRowVariationPreview($field);
       setSubscriptionRowEditing($(this).closest('.hb-ucs-subscription-item-card'), true);
+    });
+
+    $(document).off('submit.hbUcsSubscriptionItemsForm', '.hb-ucs-subscription-items-form');
+    $(document).on('submit.hbUcsSubscriptionItemsForm', '.hb-ucs-subscription-items-form', function (event) {
+      var $form = $(this);
+      var $firstInvalid = $();
+
+      $form.find('.hb-ucs-subscription-item-card').each(function () {
+        var $row = $(this);
+        var $removeInput = $row.find('.hb-ucs-remove-input').first();
+        if ($removeInput.length && String($removeInput.val() || '0') === '1') {
+          return;
+        }
+
+        var $field = $row.find('.hb-ucs-product-picker-field').first();
+        if (!$field.length) {
+          return;
+        }
+
+        var productId = String($field.find('.hb-ucs-product-picker-value').val() || '');
+        if (!productId) {
+          return;
+        }
+
+        if (setAccountRowVariationValidity($field)) {
+          return;
+        }
+
+        setSubscriptionRowEditing($row, true);
+        if ($firstInvalid.length) {
+          return;
+        }
+
+        $firstInvalid = $field.find('.hb-ucs-product-picker-attributes select').filter(function () {
+          return typeof this.checkValidity === 'function' ? !this.checkValidity() : false;
+        }).first();
+
+        if (!$firstInvalid.length) {
+          $firstInvalid = $field.find('.hb-ucs-product-picker-attributes select').first();
+        }
+      });
+
+      if (!$firstInvalid.length) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      if (typeof $firstInvalid[0].reportValidity === 'function') {
+        $firstInvalid[0].reportValidity();
+      }
+      $firstInvalid.trigger('focus');
     });
 
     $(document).off('keydown.hbUcsProductModalEsc');
