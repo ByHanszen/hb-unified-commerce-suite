@@ -467,8 +467,11 @@ class SubscriptionRepository {
             self::$resolvingOrderTypeData = true;
 
             try {
-                if (!$hasItemsMeta) {
-                    $items = $this->extract_legacy_items_from_order($order);
+                $liveItems = $this->extract_legacy_items_from_order($order);
+                if (!empty($liveItems)) {
+                    $items = $liveItems;
+                } elseif (!$hasItemsMeta) {
+                    $items = [];
                 }
 
                 if (!$hasFeeLinesMeta) {

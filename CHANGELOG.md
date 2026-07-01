@@ -6,6 +6,9 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+### Fixed
+- Abonnementen backend/frontend: orderregels van het canonical subscription order-type record gelden nu weer als primaire bron tijdens self-syncs. Daardoor kunnen gewijzigde producten en prijzen niet meer later door verouderde `_hb_ucs_sub_items` snapshots worden teruggezet.
+
 ## [0.3.212] — 2026-06-28
 
 ### Fixed
