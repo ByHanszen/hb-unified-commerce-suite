@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.215] — 2026-07-01
+
+### Fixed
+- Abonnementen accountpagina: de productpicker en attribuutsamenvatting tonen weer alleen de echte variatie-attributen. De strikte validatie op een resolved variatie-SKU blijft actief, zodat parent-producten nog steeds niet als fallback in het abonnement kunnen worden opgeslagen.
+
 ## [0.3.214] — 2026-07-01
 
 ### Fixed

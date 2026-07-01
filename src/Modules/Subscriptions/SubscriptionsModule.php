@@ -3704,7 +3704,7 @@ class SubscriptionsModule {
                 : (method_exists($product, 'get_price_html') ? (string) wp_strip_all_tags($product->get_price_html(), true) : '');
 
             if (method_exists($product, 'is_type') && $product->is_type('variable') && method_exists($product, 'get_children')) {
-                $variableConfig = $this->get_variable_product_attribute_config($product);
+                $variableConfig = $this->get_variable_product_attribute_config($product, true);
                 if (!empty($variableConfig)) {
                     $options['variable_configs'][$productId] = $variableConfig;
                 }
@@ -4082,7 +4082,7 @@ class SubscriptionsModule {
             return '';
         }
 
-        $config = $this->get_variable_product_attribute_config($product);
+        $config = $this->get_variable_product_attribute_config($product, true);
         if (empty($config)) {
             return '';
         }
