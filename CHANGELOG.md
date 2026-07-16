@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.220] — 2026-07-16
+
+### Fixed
+- Abonnementen backend: de custom WooCommerce order-type sync en datastore lezen verzendregels nu vanaf de live orderobject-meta, zodat oude shipping-items aangepaste verzendregels niet opnieuw kunnen overschrijven na Update.
+
 ## [0.3.219] — 2026-07-16
 
 ### Fixed

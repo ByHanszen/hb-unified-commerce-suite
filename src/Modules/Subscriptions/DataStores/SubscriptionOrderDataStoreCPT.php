@@ -51,9 +51,9 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
             return [];
         }
 
-        $items = get_post_meta($orderId, '_hb_ucs_sub_items', true);
-        $feeLines = get_post_meta($orderId, '_hb_ucs_sub_fee_lines', true);
-        $shippingLines = get_post_meta($orderId, '_hb_ucs_sub_shipping_lines', true);
+        $items = $order->get_meta('_hb_ucs_sub_items', true);
+        $feeLines = $order->get_meta('_hb_ucs_sub_fee_lines', true);
+        $shippingLines = $order->get_meta('_hb_ucs_sub_shipping_lines', true);
 
         return [
             'scheme' => (string) $order->get_meta('_hb_ucs_subscription_scheme', true),

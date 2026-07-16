@@ -448,10 +448,11 @@ class SubscriptionRepository {
         $shipping = $this->extract_order_address($order, 'shipping');
         $items = get_post_meta($orderId, self::LEGACY_ITEMS_META, true);
         $feeLines = get_post_meta($orderId, self::LEGACY_FEE_LINES_META, true);
-        $shippingLines = get_post_meta($orderId, self::LEGACY_SHIPPING_LINES_META, true);
+        $shippingLines = method_exists($order, 'get_meta') ? $order->get_meta(self::LEGACY_SHIPPING_LINES_META, true) : get_post_meta($orderId, self::LEGACY_SHIPPING_LINES_META, true);
         $hasItemsMeta = metadata_exists('post', $orderId, self::LEGACY_ITEMS_META);
         $hasFeeLinesMeta = metadata_exists('post', $orderId, self::LEGACY_FEE_LINES_META);
-        $hasShippingLinesMeta = metadata_exists('post', $orderId, self::LEGACY_SHIPPING_LINES_META);
+        $hasShippingLinesMeta = (method_exists($order, 'meta_exists') && $order->meta_exists(self::LEGACY_SHIPPING_LINES_META))
+            || metadata_exists('post', $orderId, self::LEGACY_SHIPPING_LINES_META);
         $status = method_exists($order, 'get_meta') ? (string) $order->get_meta('_hb_ucs_subscription_status', true) : '';
         if ($status === '') {
             $status = (string) get_post_meta($orderId, self::LEGACY_STATUS_META, true);
