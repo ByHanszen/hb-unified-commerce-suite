@@ -10,6 +10,7 @@ class SubscriptionOrderType {
     public const LEGACY_POST_ID_META = '_hb_ucs_legacy_subscription_post_id';
     public const STORAGE_VERSION_META = '_hb_ucs_subscription_storage_version';
     public const PHASE2_STORAGE_VERSION = 'phase2-cpt-adapter';
+    public const PHASE3_STORAGE_VERSION = 'phase3-real-items';
 
     /** @var \HB\UCS\Modules\Subscriptions\Domain\SubscriptionRepository */
     private $repository;

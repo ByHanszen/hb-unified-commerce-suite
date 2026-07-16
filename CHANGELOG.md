@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.225] — 2026-07-16
+
+### Fixed
+- Abonnementen backend: bestaande meta-array orderregels worden bij het openen van het abonnement eenmalig gematerialiseerd naar echte WooCommerce orderregels, en self-sync werkt voortaan live orderregels naar snapshots bij zonder orderregels uit oude snapshots te herbouwen.
+
 ## [0.3.224] — 2026-07-16
 
 ### Fixed

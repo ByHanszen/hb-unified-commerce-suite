@@ -368,7 +368,6 @@ class SubscriptionRepository {
 
         wp_update_post($this->build_shadow_order_postarr($data, $orderId));
         $this->sync_shadow_order_meta($orderId, $data);
-        $this->sync_shadow_order_items($orderId, $data);
 
         $result = $this->find($orderId);
 
@@ -378,6 +377,43 @@ class SubscriptionRepository {
         ]);
 
         return $result;
+    }
+
+    public function materialize_order_type_items_from_meta(int $orderId): bool {
+        if ($orderId <= 0 || !function_exists('wc_get_order')) {
+            return false;
+        }
+
+        $order = wc_get_order($orderId);
+        if (!$order || !is_object($order) || !method_exists($order, 'get_type') || (string) $order->get_type() !== $this->get_order_type()) {
+            return false;
+        }
+
+        $storageVersion = method_exists($order, 'get_meta') ? (string) $order->get_meta(SubscriptionOrderType::STORAGE_VERSION_META, true) : '';
+        if ($this->order_has_real_order_items($orderId) || $storageVersion === SubscriptionOrderType::PHASE3_STORAGE_VERSION) {
+            return false;
+        }
+
+        $data = $this->get_order_type_subscription_data($order);
+        if (empty($data)) {
+            return false;
+        }
+
+        $hasRows = !empty($data['items']) || !empty($data['fee_lines']) || !empty($data['shipping_lines']);
+        if (!$hasRows) {
+            return false;
+        }
+
+        $this->sync_shadow_order_items($orderId, $data);
+        update_post_meta($orderId, SubscriptionOrderType::STORAGE_VERSION_META, SubscriptionOrderType::PHASE3_STORAGE_VERSION);
+        if (method_exists($order, 'update_meta_data')) {
+            $order->update_meta_data(SubscriptionOrderType::STORAGE_VERSION_META, SubscriptionOrderType::PHASE3_STORAGE_VERSION);
+            if (method_exists($order, 'save')) {
+                $order->save();
+            }
+        }
+
+        return true;
     }
 
     public function exists(int $subscriptionId): bool {
@@ -455,6 +491,8 @@ class SubscriptionRepository {
             || metadata_exists('post', $orderId, self::LEGACY_FEE_LINES_META);
         $hasShippingLinesMeta = (method_exists($order, 'meta_exists') && $order->meta_exists(self::LEGACY_SHIPPING_LINES_META))
             || metadata_exists('post', $orderId, self::LEGACY_SHIPPING_LINES_META);
+        $storageVersion = method_exists($order, 'get_meta') ? (string) $order->get_meta(SubscriptionOrderType::STORAGE_VERSION_META, true) : '';
+        $hasRealOrderItems = $this->order_has_real_order_items($orderId) || $storageVersion === SubscriptionOrderType::PHASE3_STORAGE_VERSION;
         $status = method_exists($order, 'get_meta') ? (string) $order->get_meta('_hb_ucs_subscription_status', true) : '';
         if ($status === '') {
             $status = (string) get_post_meta($orderId, self::LEGACY_STATUS_META, true);
@@ -471,18 +509,24 @@ class SubscriptionRepository {
 
             try {
                 $liveItems = $this->extract_legacy_items_from_order($order);
-                if (!empty($liveItems)) {
+                if ($hasRealOrderItems || !empty($liveItems)) {
                     $items = $liveItems;
                 } elseif (!$hasItemsMeta) {
                     $items = [];
                 }
 
-                if (!$hasFeeLinesMeta) {
-                    $feeLines = $this->extract_legacy_fee_lines_from_order($order);
+                $liveFeeLines = $this->extract_legacy_fee_lines_from_order($order);
+                if ($hasRealOrderItems || !empty($liveFeeLines)) {
+                    $feeLines = $liveFeeLines;
+                } elseif (!$hasFeeLinesMeta) {
+                    $feeLines = [];
                 }
 
-                if (!$hasShippingLinesMeta) {
-                    $shippingLines = $this->extract_legacy_shipping_lines_from_order($order);
+                $liveShippingLines = $this->extract_legacy_shipping_lines_from_order($order);
+                if ($hasRealOrderItems || !empty($liveShippingLines)) {
+                    $shippingLines = $liveShippingLines;
+                } elseif (!$hasShippingLinesMeta) {
+                    $shippingLines = [];
                 }
             } finally {
                 self::$resolvingOrderTypeData = false;
@@ -1470,6 +1514,25 @@ class SubscriptionRepository {
         if (method_exists($order, 'save')) {
             $order->save();
         }
+    }
+
+    private function order_has_real_order_items(int $orderId): bool {
+        if ($orderId <= 0) {
+            return false;
+        }
+
+        global $wpdb;
+        if (!$wpdb || !isset($wpdb->prefix)) {
+            return false;
+        }
+
+        $table = $wpdb->prefix . 'woocommerce_order_items';
+        $count = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$table} WHERE order_id = %d",
+            $orderId
+        ));
+
+        return $count > 0;
     }
 
     private function normalize_selected_attribute_key(string $key): string {

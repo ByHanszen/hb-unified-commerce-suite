@@ -79,8 +79,26 @@ class SubscriptionAdmin {
         }
 
         if ($this->is_subscription_order_type_screen()) {
+            $this->maybe_materialize_current_subscription_order_items();
             do_action('hb_ucs_subscription_admin_order_type_screen', $screen, $this->service, $this->orderType);
         }
+    }
+
+    private function maybe_materialize_current_subscription_order_items(): void {
+        $orderId = isset($_GET['id']) ? (int) absint((string) wp_unslash($_GET['id'])) : 0;
+        if ($orderId <= 0) {
+            $orderId = isset($_GET['post']) ? (int) absint((string) wp_unslash($_GET['post'])) : 0;
+        }
+        if ($orderId <= 0) {
+            return;
+        }
+
+        $order = $this->get_subscription_order($orderId);
+        if (!$order) {
+            return;
+        }
+
+        $this->service->get_repository()->materialize_order_type_items_from_meta($orderId);
     }
 
     public function is_legacy_subscription_screen(?\WP_Screen $screen = null): bool {
