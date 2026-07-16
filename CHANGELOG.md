@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.221] — 2026-07-16
+
+### Fixed
+- Abonnementen backend: de order-type save-handler herkent nu ook klassieke `WP_Post` save-callbacks, zodat verzendregelwijzigingen bij Update daadwerkelijk worden opgeslagen in plaats van terug te vallen op oude orderitems.
+
 ## [0.3.220] — 2026-07-16
 
 ### Fixed

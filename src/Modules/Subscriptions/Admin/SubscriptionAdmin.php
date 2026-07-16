@@ -1383,6 +1383,10 @@ class SubscriptionAdmin {
             return $postOrOrder;
         }
 
+        if ($postOrOrder && is_object($postOrOrder) && isset($postOrOrder->ID)) {
+            $postOrOrder = (int) $postOrOrder->ID;
+        }
+
         if (is_numeric($postOrOrder) && function_exists('wc_get_order')) {
             $order = wc_get_order((int) $postOrOrder);
             if ($order && is_object($order) && method_exists($order, 'get_type') && (string) $order->get_type() === $this->orderType->get_type()) {
