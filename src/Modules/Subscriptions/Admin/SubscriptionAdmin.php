@@ -1654,6 +1654,9 @@ class SubscriptionAdmin {
         }
 
         update_post_meta($orderId, SubscriptionRepository::LEGACY_SHIPPING_LINES_META, $normalized);
+        if ($order && is_object($order) && method_exists($order, 'update_meta_data')) {
+            $order->update_meta_data(SubscriptionRepository::LEGACY_SHIPPING_LINES_META, $normalized);
+        }
 
         return $normalized;
     }

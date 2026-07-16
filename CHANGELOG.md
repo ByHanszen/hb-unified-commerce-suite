@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.218] — 2026-07-16
+
+### Fixed
+- Abonnementen backend: verzendregels worden bij het opslaan nu ook op het WooCommerce orderobject bijgewerkt, zodat toevoegen of verwijderen niet door stale ordermeta wordt teruggedraaid bij abonnementen die wachten op een mandate.
+
 ## [0.3.217] — 2026-07-16
 
 ### Fixed
