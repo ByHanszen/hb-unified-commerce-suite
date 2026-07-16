@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.216] — 2026-07-16
+
+### Fixed
+- Abonnementen: bij betaalde verlengorders blijft de vooraf berekende volgende verlengingsdatum leidend, zodat de datum niet telkens opnieuw vanaf de betaal-/orderdatum wordt doorgeschoven.
+
 ## [0.3.215] — 2026-07-01
 
 ### Fixed

@@ -8998,10 +8998,7 @@ class SubscriptionsModule {
         }
 
         $now = time();
-        $currentNext = $this->normalize_subscription_next_payment(
-            $subId,
-            (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true)
-        );
+        $currentNext = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
 
         if ($currentNext > 0) {
             $next = $currentNext;
@@ -9025,17 +9022,11 @@ class SubscriptionsModule {
             $recordedNextPayment = (int) $order->get_meta(self::ORDER_META_RENEWAL_NEXT_PAYMENT, true);
         }
 
-        $recordedNextPayment = $this->normalize_subscription_next_payment($subId, $recordedNextPayment, $referenceTimestamp);
-
         if ($recordedNextPayment > time()) {
             return $recordedNextPayment;
         }
 
-        $currentNextPayment = $this->normalize_subscription_next_payment(
-            $subId,
-            (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true),
-            $referenceTimestamp
-        );
+        $currentNextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
 
         if ($currentNextPayment > time()) {
             return $currentNextPayment;
@@ -11044,7 +11035,9 @@ JS;
         }
 
         $storedNextPayment = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
-        $nextPayment = $this->normalize_subscription_next_payment($subId, $storedNextPayment);
+        $nextPayment = $storedNextPayment > 0
+            ? $storedNextPayment
+            : $this->normalize_subscription_next_payment($subId, $storedNextPayment);
 
         if ($nextPayment > 0 && $nextPayment !== $storedNextPayment) {
             $this->persist_subscription_runtime_state($subId, '', $nextPayment);
