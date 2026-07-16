@@ -44,6 +44,7 @@ $rowClass = $editing ? 'item editing hb-ucs-sub-item-row' : 'item hb-ucs-sub-ite
 
             <?php $this->render_admin_subscription_item_attribute_fields($rowIndex, $currentEditProductId, $selectedAttributes); ?>
             <?php $this->render_admin_template('subscription-order-item-meta.php', ['editing' => true, 'namePrefix' => 'hb_ucs_items[' . $rowIndex . '][meta]', 'rows' => $displayMetaRows]); ?>
+            <input type="hidden" class="hb-ucs-item-variation-id" name="hb_ucs_items[<?php echo esc_attr((string) $rowIndex); ?>][variation_id]" value="<?php echo esc_attr((string) $currentVariationId); ?>" />
             <input type="hidden" class="hb-ucs-item-remove" name="hb_ucs_items[<?php echo esc_attr((string) $rowIndex); ?>][remove]" value="0" />
         </div>
     </td>

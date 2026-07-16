@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.223] — 2026-07-16
+
+### Fixed
+- Abonnementen backend: productregels worden bij Update nu expliciet opgeslagen en als WooCommerce line-items herbouwd, inclusief resolved variatie-ID's voor variabele producten.
+
 ## [0.3.222] — 2026-07-16
 
 ### Fixed

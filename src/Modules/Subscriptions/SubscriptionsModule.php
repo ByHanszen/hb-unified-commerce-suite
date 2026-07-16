@@ -9449,6 +9449,7 @@ jQuery(function($){
         row.find('.hb-ucs-item-line-subtotal-input').val(data.line_subtotal || '0');
         row.find('.hb-ucs-item-line-total-input').val(data.line_total || '0');
         row.find('.hb-ucs-item-qty-view').text(row.find('.hb-ucs-item-qty').val() || '1');
+        row.find('.hb-ucs-item-variation-id').val(data.preview_item && data.preview_item.base_variation_id ? data.preview_item.base_variation_id : '0');
 
         if (syncPriceField !== false && typeof data.unit_price !== 'undefined') {
             row.find('.hb-ucs-item-price').val(data.unit_price || '0');
