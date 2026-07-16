@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.222] — 2026-07-16
+
+### Fixed
+- Abonnementen backend: bij het opslaan worden de echte WooCommerce shipping-items nu direct vervangen door de genormaliseerde verzendregels, zodat verwijderde regels niet als lege oude verzendregel in het abonnement blijven staan.
+
 ## [0.3.221] — 2026-07-16
 
 ### Fixed

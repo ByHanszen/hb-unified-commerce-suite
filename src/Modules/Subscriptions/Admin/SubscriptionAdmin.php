@@ -1661,8 +1661,52 @@ class SubscriptionAdmin {
         if ($order && is_object($order) && method_exists($order, 'update_meta_data')) {
             $order->update_meta_data(SubscriptionRepository::LEGACY_SHIPPING_LINES_META, $normalized);
         }
+        $this->replace_subscription_order_shipping_items($order, $normalized);
 
         return $normalized;
+    }
+
+    private function replace_subscription_order_shipping_items($order, array $shippingLines): void {
+        if (!$order || !is_object($order) || !method_exists($order, 'get_items') || !method_exists($order, 'remove_item') || !method_exists($order, 'add_item')) {
+            return;
+        }
+
+        foreach ((array) $order->get_items('shipping') as $itemId => $existingItem) {
+            $order->remove_item($itemId);
+        }
+
+        foreach ($shippingLines as $shippingLine) {
+            if (!is_array($shippingLine)) {
+                continue;
+            }
+
+            $item = new \WC_Order_Item_Shipping();
+            if (method_exists($item, 'set_method_title')) {
+                $item->set_method_title((string) ($shippingLine['method_title'] ?? __('Verzending', 'hb-ucs')));
+            }
+            if (method_exists($item, 'set_method_id')) {
+                $item->set_method_id((string) ($shippingLine['method_id'] ?? ''));
+            }
+            if (method_exists($item, 'set_instance_id')) {
+                $item->set_instance_id((int) ($shippingLine['instance_id'] ?? 0));
+            }
+            if (!empty($shippingLine['rate_key'])) {
+                $item->add_meta_data('_hb_ucs_shipping_rate_key', sanitize_text_field((string) $shippingLine['rate_key']), true);
+            }
+            $item->set_total((float) ($shippingLine['total'] ?? 0.0));
+            if (method_exists($item, 'set_taxes')) {
+                $item->set_taxes(isset($shippingLine['taxes']) && is_array($shippingLine['taxes']) ? (array) $shippingLine['taxes'] : []);
+            }
+
+            $order->add_item($item);
+        }
+
+        if (method_exists($order, 'update_taxes')) {
+            $order->update_taxes();
+        }
+        if (method_exists($order, 'calculate_totals')) {
+            $order->calculate_totals(false);
+        }
     }
 
     private function get_subscription_shipping_lines_for_order(int $orderId, $order): array {
