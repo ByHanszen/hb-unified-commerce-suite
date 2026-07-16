@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.217] — 2026-07-16
+
+### Fixed
+- Abonnementen accountpagina: bij productwissels wordt de gekozen variatie nu expliciet meegestuurd en server-side gevalideerd tegen parentproduct en attributen, zodat variabele producten niet als hoofartikel in het abonnement terechtkomen.
+
 ## [0.3.216] — 2026-07-16
 
 ### Fixed

@@ -679,6 +679,14 @@
     return values;
   }
 
+  function setProductPickerVariationValue($field, variationId) {
+    if (!$field || !$field.length) {
+      return;
+    }
+
+    $field.find('.hb-ucs-product-picker-variation-value').first().val(variationId ? String(variationId) : '');
+  }
+
   function getRequiredVariationAttributeConfig(productId) {
     var config = getProductPickerConfig();
     var variationAttributeConfigs = config && config.variationAttributeConfigs ? config.variationAttributeConfigs : {};
@@ -866,6 +874,7 @@
     var $row = $field.closest('.hb-ucs-subscription-item-card');
     var productId = String($field.find('.hb-ucs-product-picker-value').val() || '');
     if (!productId) {
+      setProductPickerVariationValue($field, '');
       return;
     }
 
@@ -873,6 +882,7 @@
     var selectedSummary = buildSelectedAttributesSummary(productId, selectedAttributes);
     var variation = findMatchingVariationData(productId, selectedAttributes);
     if (variation) {
+      setProductPickerVariationValue($field, variation.id || '');
       setSubscriptionRowPrice($row, String(variation.price_html || ''));
       if (variation.image_html) {
         $row.find('.hb-ucs-subscription-item-card__media').first().html(String(variation.image_html));
@@ -885,6 +895,7 @@
     }
 
     if ($field.find('.hb-ucs-product-picker-attributes select').length) {
+      setProductPickerVariationValue($field, '');
       setSubscriptionRowPrice($row, '');
       $row.find('.hb-ucs-product-card__variation-summary').first().text(selectedSummary);
       updateProductPickerLabel($field, selectedSummary);
@@ -1070,6 +1081,7 @@
 
       var $row = ($pendingRow && $pendingRow.length) ? $pendingRow : $field.closest('.hb-ucs-subscription-item-card');
       $input.val(targetProductId);
+      setProductPickerVariationValue($field, '');
       $field.find('.hb-ucs-product-picker-label').attr('data-base-label', String($item.data('productLabel') || '')).text(String($item.data('productLabel') || ''));
       renderAttributeSelectors($field, targetProductId, selectedAttributes);
       updateSubscriptionRowPreview($row, $item);

@@ -3156,6 +3156,7 @@ class SubscriptionsModule {
                     }
 
                     $selectedId = isset($row['product_id']) ? (int) absint((string) $row['product_id']) : 0;
+                    $selectedVariationId = isset($row['variation_id']) ? (int) absint((string) $row['variation_id']) : 0;
                     $selectedAttributes = isset($row['selected_attributes']) && is_array($row['selected_attributes']) ? $row['selected_attributes'] : [];
                     $postedDisplayMeta = isset($row['meta']) && is_array($row['meta']) ? $row['meta'] : [];
                     $qty = isset($row['qty']) ? (int) absint((string) $row['qty']) : 1;
@@ -3166,6 +3167,32 @@ class SubscriptionsModule {
 
                     if ($existingItem && $existingSelectedId === $selectedId && empty($selectedAttributes)) {
                         $selectedAttributes = $this->get_subscription_item_attribute_snapshot($existingItem);
+                    }
+
+                    if ($selectedVariationId > 0) {
+                        $variationProduct = function_exists('wc_get_product') ? wc_get_product($selectedVariationId) : false;
+                        $variationParentId = $variationProduct && is_object($variationProduct) && method_exists($variationProduct, 'get_parent_id')
+                            ? (int) $variationProduct->get_parent_id()
+                            : 0;
+                        $parentProduct = $selectedId > 0 && function_exists('wc_get_product') ? wc_get_product($selectedId) : false;
+                        $resolvedVariationId = $parentProduct && is_object($parentProduct)
+                            ? $this->resolve_variation_id_from_attributes($parentProduct, is_array($selectedAttributes) ? $selectedAttributes : [])
+                            : 0;
+
+                        if (
+                            !$variationProduct
+                            || !is_object($variationProduct)
+                            || !method_exists($variationProduct, 'is_type')
+                            || !$variationProduct->is_type('variation')
+                            || $variationParentId <= 0
+                            || $variationParentId !== $selectedId
+                            || $resolvedVariationId !== $selectedVariationId
+                        ) {
+                            $hasInvalidSelection = true;
+                            break;
+                        }
+
+                        $selectedId = $selectedVariationId;
                     }
 
                     $item = $this->build_subscription_item_from_selection(
@@ -4029,7 +4056,7 @@ class SubscriptionsModule {
         return count($filters) > 1 ? $filters : [];
     }
 
-    private function render_manageable_product_select(string $name, int $selectedId, bool $disabled, array $productOptions, string $placeholder = '', string $selectedLabel = '', string $attributesName = '', array $selectedAttributes = []): void {
+    private function render_manageable_product_select(string $name, int $selectedId, bool $disabled, array $productOptions, string $placeholder = '', string $selectedLabel = '', string $attributesName = '', array $selectedAttributes = [], string $variationName = '', int $selectedVariationId = 0): void {
         $fieldId = 'hb_ucs_product_picker_' . trim((string) preg_replace('/[^a-zA-Z0-9_]+/', '_', $name), '_');
         $emptyLabel = $placeholder !== '' ? $placeholder : __('Nog geen product gekozen', 'hb-ucs');
         $baseLabel = $selectedId > 0 ? $this->get_manageable_product_base_label($selectedId, $productOptions) : $emptyLabel;
@@ -4043,6 +4070,9 @@ class SubscriptionsModule {
 
         echo '<div class="hb-ucs-product-picker-field">';
         echo '<input type="hidden" name="' . esc_attr($name) . '" id="' . esc_attr($fieldId) . '" class="hb-ucs-product-picker-value" value="' . esc_attr((string) $selectedId) . '" />';
+        if ($variationName !== '') {
+            echo '<input type="hidden" name="' . esc_attr($variationName) . '" class="hb-ucs-product-picker-variation-value" value="' . esc_attr((string) max(0, $selectedVariationId)) . '" />';
+        }
         echo '<div class="hb-ucs-product-picker-summary" hidden aria-hidden="true">';
         echo '<span class="hb-ucs-product-picker-label" data-empty-label="' . esc_attr($emptyLabel) . '" data-base-label="' . esc_attr($selectedId > 0 ? $baseLabel : $emptyLabel) . '">' . esc_html($displayLabel) . '</span>';
         echo '</div>';
@@ -4132,6 +4162,7 @@ class SubscriptionsModule {
 
     private function render_account_subscription_item_editor_row(string $rowKey, array $item, bool $manageDisabled, array $productOptions, int $subId = 0): void {
         $selectedId = (int) ($item['base_product_id'] ?? 0);
+        $selectedVariationId = (int) ($item['base_variation_id'] ?? 0);
         $selectedAttributes = $this->get_subscription_item_attribute_snapshot($item);
         $variationSummary = $this->get_subscription_item_variation_summary($item);
         $qty = max(1, (int) ($item['qty'] ?? 1));
@@ -4187,7 +4218,9 @@ class SubscriptionsModule {
             __('Zoek product of variatie…', 'hb-ucs'),
             $selectedId > 0 ? $this->get_subscription_item_label($item) : '',
             'items[' . $rowKey . '][selected_attributes]',
-            $selectedAttributes
+            $selectedAttributes,
+            'items[' . $rowKey . '][variation_id]',
+            $selectedVariationId
         );
         echo '</div>';
         echo '</div>';
