@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.224] — 2026-07-16
+
+### Fixed
+- Abonnementen backend: geposte verzendregels blijven nu autoritatief na de deferred WooCommerce order-item sync, zodat oude verzendregels wijzigingen of verwijderingen niet opnieuw overschrijven.
+
 ## [0.3.223] — 2026-07-16
 
 ### Fixed

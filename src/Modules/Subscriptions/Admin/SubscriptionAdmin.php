@@ -16,6 +16,9 @@ class SubscriptionAdmin {
     /** @var array<int, bool> */
     private static $deferredSyncOrderIds = [];
 
+    /** @var array<int, array<int, array<string, mixed>>> */
+    private static $postedShippingLinesByOrderId = [];
+
     /** @var SubscriptionService */
     private $service;
 
@@ -1272,6 +1275,23 @@ class SubscriptionAdmin {
             $linkedLegacyPostId = $repository->get_linked_legacy_post_id($order);
             $syncResult = $repository->sync_order_type_self($orderId, false);
 
+            if (isset(self::$postedShippingLinesByOrderId[$orderId])) {
+                $postedShippingLines = self::$postedShippingLinesByOrderId[$orderId];
+                unset(self::$postedShippingLinesByOrderId[$orderId]);
+
+                update_post_meta($orderId, SubscriptionRepository::LEGACY_SHIPPING_LINES_META, $postedShippingLines);
+                $order = $this->get_subscription_order($orderId);
+                if ($order && is_object($order)) {
+                    if (method_exists($order, 'update_meta_data')) {
+                        $order->update_meta_data(SubscriptionRepository::LEGACY_SHIPPING_LINES_META, $postedShippingLines);
+                    }
+                    $this->replace_subscription_order_shipping_items($order, $postedShippingLines);
+                    if (method_exists($order, 'save')) {
+                        $order->save();
+                    }
+                }
+            }
+
             $this->log_subscription_sync('admin.deferred_sync.completed', $order, [
                 'linked_legacy_post_id' => $linkedLegacyPostId,
                 'sync_result' => is_array($syncResult) ? $syncResult : [],
@@ -1914,10 +1934,14 @@ class SubscriptionAdmin {
         }
 
         update_post_meta($orderId, SubscriptionRepository::LEGACY_SHIPPING_LINES_META, $normalized);
+        self::$postedShippingLinesByOrderId[$orderId] = $normalized;
         if ($order && is_object($order) && method_exists($order, 'update_meta_data')) {
             $order->update_meta_data(SubscriptionRepository::LEGACY_SHIPPING_LINES_META, $normalized);
         }
         $this->replace_subscription_order_shipping_items($order, $normalized);
+        if ($order && is_object($order) && method_exists($order, 'save')) {
+            $order->save();
+        }
 
         return $normalized;
     }
@@ -1966,8 +1990,11 @@ class SubscriptionAdmin {
     }
 
     private function get_subscription_shipping_lines_for_order(int $orderId, $order): array {
-        $stored = get_post_meta($orderId, SubscriptionRepository::LEGACY_SHIPPING_LINES_META, true);
-        $hasStoredShippingLines = metadata_exists('post', $orderId, SubscriptionRepository::LEGACY_SHIPPING_LINES_META);
+        $stored = $order && is_object($order) && method_exists($order, 'get_meta')
+            ? $order->get_meta(SubscriptionRepository::LEGACY_SHIPPING_LINES_META, true)
+            : get_post_meta($orderId, SubscriptionRepository::LEGACY_SHIPPING_LINES_META, true);
+        $hasStoredShippingLines = ($order && is_object($order) && method_exists($order, 'meta_exists') && $order->meta_exists(SubscriptionRepository::LEGACY_SHIPPING_LINES_META))
+            || metadata_exists('post', $orderId, SubscriptionRepository::LEGACY_SHIPPING_LINES_META);
         $lines = [];
 
         if (is_array($stored)) {
