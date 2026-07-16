@@ -6,6 +6,11 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.3.219] — 2026-07-16
+
+### Fixed
+- Abonnementen backend: een bewust lege of aangepaste verzendregelset valt na opslaan niet meer terug op oude WooCommerce shipping-items, zodat wijzigingen zichtbaar blijven na Update.
+
 ## [0.3.218] — 2026-07-16
 
 ### Fixed

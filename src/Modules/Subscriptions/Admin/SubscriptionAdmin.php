@@ -1663,6 +1663,7 @@ class SubscriptionAdmin {
 
     private function get_subscription_shipping_lines_for_order(int $orderId, $order): array {
         $stored = get_post_meta($orderId, SubscriptionRepository::LEGACY_SHIPPING_LINES_META, true);
+        $hasStoredShippingLines = metadata_exists('post', $orderId, SubscriptionRepository::LEGACY_SHIPPING_LINES_META);
         $lines = [];
 
         if (is_array($stored)) {
@@ -1677,9 +1678,11 @@ class SubscriptionAdmin {
                 }
             }
 
-            if (!empty($lines)) {
-                return $lines;
-            }
+            return $lines;
+        }
+
+        if ($hasStoredShippingLines) {
+            return [];
         }
 
         if (!$order || !is_object($order) || !method_exists($order, 'get_items')) {
