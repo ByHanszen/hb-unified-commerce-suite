@@ -14,6 +14,7 @@ class Settings {
     const OPT_INVOICE_EMAIL = 'hb_ucs_invoice_email_settings'; // Invoice e-mail module instellingen
     const OPT_CUSTOMER_ORDER_NOTE = 'hb_ucs_customer_order_note_settings'; // Klantnotitie module instellingen
     const OPT_SUBSCRIPTIONS = 'hb_ucs_subscriptions_settings'; // Subscriptions module instellingen
+    const OPT_BUNDLES = 'hb_ucs_bundles_settings'; // Productbundel module instellingen
     const OPT_ORDER_OVERVIEW_STATUS = 'hb_ucs_order_overview_status_settings'; // Orderoverzicht status module instellingen
     const OPT_RETURNS = 'hb_ucs_returns_settings'; // Retourmodule instellingen
     const OPT_PRODUCT_PAGES = 'hb_ucs_product_pages_settings'; // Productpagina module instellingen
@@ -56,6 +57,9 @@ class Settings {
         add_option(self::OPT_INVOICE_EMAIL, $this->defaults_invoice_email());
         add_option(self::OPT_CUSTOMER_ORDER_NOTE, $this->defaults_customer_order_note());
         add_option(self::OPT_SUBSCRIPTIONS, $this->defaults_subscriptions());
+        $bundleDefaults = class_exists('HB\\UCS\\Modules\\Bundles\\Admin\\BundleSettings')
+            ? \HB\UCS\Modules\Bundles\Admin\BundleSettings::defaults() : [];
+        add_option(self::OPT_BUNDLES, $bundleDefaults);
         add_option(self::OPT_ORDER_OVERVIEW_STATUS, $this->defaults_order_overview_status());
         add_option(self::OPT_RETURNS, $this->defaults_returns());
         add_option(self::OPT_PRODUCT_PAGES, $this->defaults_product_pages());
@@ -146,6 +150,7 @@ class Settings {
                 'roles'         => 0,
                 'customer_order_note' => 0,
                 'subscriptions' => 0,
+                'bundles'       => 0,
                 'order_overview_status' => 0,
                 'returns'       => 0,
                 'product_pages' => 0,
@@ -537,6 +542,15 @@ class Settings {
             $checked = !empty($mods['subscriptions']) ? 'checked' : '';
             echo '<label><input type="checkbox" name="'.esc_attr(self::OPT).'[modules][subscriptions]" value="1" '.$checked.'/> '.esc_html__('Activeren', 'hb-ucs').'</label>';
             echo '<p class="description">'.esc_html__('Maak van reguliere producten optioneel een abonnement (1–4 weken).', 'hb-ucs').'</p>';
+        }, 'hb-ucs', 'hb_ucs_modules');
+
+        add_settings_field('bundles', __('Productbundels', 'hb-ucs'), function () {
+            $opt = get_option(self::OPT, $this->defaults_main());
+            $mods = $opt['modules'] ?? [];
+            $checked = !empty($mods['bundles']) ? 'checked' : '';
+            echo '<label><input type="checkbox" name="'.esc_attr(self::OPT).'[modules][bundles]" value="1" '.$checked.'/> '.esc_html__('Activeren', 'hb-ucs').'</label>';
+            echo '<p class="description">'.esc_html__('Maak duidelijke, configureerbare productbundels met WPC-compatibele productgegevens, voorraad en orderregels.', 'hb-ucs').'</p>';
+            echo '<p class="description"><strong>'.esc_html__('Let op:', 'hb-ucs').'</strong> '.esc_html__('deactiveer WPC Product Bundles voordat deze module wordt geactiveerd.', 'hb-ucs').'</p>';
         }, 'hb-ucs', 'hb_ucs_modules');
 
         add_settings_field('order_overview_status', __('Besteloverzicht statussen', 'hb-ucs'), function () {

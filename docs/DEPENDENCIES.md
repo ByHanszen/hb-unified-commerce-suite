@@ -29,6 +29,7 @@ Werk dit document bij bij wijzigingen in:
   - Invoice Email
   - Order Overview Status
   - Subscriptions
+  - Productbundels
 - Deze modules initialiseren niet als `WooCommerce` niet aanwezig is.
 - Hard minimum versie: niet expliciet afgedwongen in code.
 
@@ -62,6 +63,11 @@ Werk dit document bij bij wijzigingen in:
 - Optionele integratie voor het koppelen van documenten aan invoice emails.
 - Geen harde runtime dependency.
 
+#### WPC Product Bundles 8.6.4
+- Alleen een optionele migratiebron voor bestaande `woosb`-producten en historische ordermeta; geen runtime dependency.
+- WPC en de HB-module Productbundels mogen niet tegelijk hun bundelengine uitvoeren, omdat beide hetzelfde WooCommerce-producttype registreren.
+- HB UCS detecteert de actieve WPC-plugin, pauzeert dan de eigen bundelengine en toont een beheerwaarschuwing.
+
 ## Versies en compatibiliteit
 
 ## Belangrijk
@@ -72,6 +78,8 @@ Werk dit document bij bij wijzigingen in:
 - WordPress: vereist een moderne versie die de gebruikte admin-, meta-, roles- en hook-APIs ondersteunt.
 - WooCommerce: Subscriptions gebruikt moderne WooCommerce order-type en HPOS-gerelateerde APIs wanneer beschikbaar, zoals `wc_register_order_type()` en `Automattic\\WooCommerce\\Utilities\\OrderUtil`.
 - PHP: de codebase gebruikt moderne taalconstructies zoals typed properties/signatures, null coalescing en recente WooCommerce integratiepatronen. Er staat geen expliciete minimumeis in code, maar de plugin moet worden gedraaid op een PHP-versie die door de actieve WooCommerce-versie wordt ondersteund.
+- Productbundels: WooCommerce HPOS-orders en de klassieke winkelmand/checkout worden ondersteund.
+- WooCommerce Store API: Productbundels registreert een eigen integratie voor Cart, Mini-Cart en Checkout Blocks, gekoppelde aantalgrenzen en presentatie van ouder-/onderdeelregels.
 
 ## Modulematrix
 
@@ -84,6 +92,7 @@ Werk dit document bij bij wijzigingen in:
 | Customer Order Note | Ja | WordPress | WooCommerce voor ordercontext | Core Settings | Kan ook zonder WooCommerce deels actief zijn, maar ordercontext is WooCommerce-gedreven. |
 | Order Overview Status | Ja | WordPress, WooCommerce | HPOS order list APIs | Core Settings | Extra orderoverzicht-statussen voor klassieke en HPOS orderlijsten. |
 | Subscriptions | Ja | WordPress, WooCommerce | HPOS/OrderUtil, Mollie, Elementor, WP-CLI | Core Settings, eigen admin/domain/datastore klassen | Gebruikt een eigen WooCommerce order type voor abonnementen. |
+| Productbundels | Ja | WordPress, WooCommerce | WPC 8.6.4 als migratiebron | Core Settings; zachte koppeling met Subscriptions en B2B-prijsfilters | Eigen `woosb`-engine; niet gelijktijdig met WPC activeren. |
 
 ## Onderlinge module-afhankelijkheden
 
@@ -104,6 +113,16 @@ Werk dit document bij bij wijzigingen in:
 - Elementor: voor accountweergave-widget.
 - WP-CLI: voor backfill/migratiecommando.
 - HPOS/OrderUtil: voor order-type admin en hybrid datastoregedrag als beschikbaar.
+
+### Productbundels -> Subscriptions en B2B (zachte dependency)
+- Zonder Subscriptions blijft Productbundels volledig bruikbaar voor eenmalige WooCommerce-bestellingen.
+- Met Subscriptions bewaart de abonnementsregel een bundelsnapshot en worden verlengorders opgebouwd uit echte ouder-/onderdeelregels.
+- De bestaande B2B-productprijsfilters worden eerst toegepast; daarna berekent Productbundels de eventuele bundelkorting.
+
+### Productbundels -> WPC (alleen opslagcompatibiliteit)
+- Bestaande WPC 8.6.4 productmeta wordt direct gelezen en bij opslaan in hetzelfde kernformaat behouden.
+- Er is geen code-import of actieve runtime-afhankelijkheid.
+- Zie `docs/BUNDLES.md` voor de migratievolgorde en het volledige gegevenscontract.
 
 ## Module-details
 
@@ -150,6 +169,18 @@ Werk dit document bij bij wijzigingen in:
   - optionele Elementor widget;
   - optionele WP-CLI command.
 
+### Productbundels
+- Bestand: `src/Modules/Bundles/BundlesModule.php`
+- Vereist WooCommerce.
+- Ondersteunt klassieke templates en WooCommerce Cart, Mini-Cart en Checkout Blocks.
+- Gebruikt:
+  - een eigen `WC_Product_Woosb` productklasse;
+  - WPC 8.6.4-compatibele productmeta;
+  - eigen beheer-, frontend-, winkelmand- en orderlagen;
+  - unieke groep-ID's en onveranderlijke selectie-/ordersnapshots;
+  - optionele integratie met Subscriptions en bestaande B2B-prijsfilters.
+- Pauzeert de runtime wanneer WPC Product Bundles actief is.
+
 ## Release- en beheerafhankelijkheden
 
 ### GitHub Releases / Git Updater
@@ -172,6 +203,7 @@ Belangrijkste plekken voor dependency-wijzigingen:
 - `src/Core/Kernel.php`
 - `src/Core/Settings.php`
 - `src/Modules/*/*Module.php`
+- `src/Modules/Bundles/BundlesModule.php`
 - `src/Modules/Subscriptions/OrderTypes/SubscriptionOrderType.php`
 - `src/Modules/Subscriptions/Admin/SubscriptionAdmin.php`
 - `src/Modules/Subscriptions/DataStores/HybridOrderDataStore.php`

@@ -13,6 +13,7 @@ $roles = get_option('hb_ucs_roles_settings');
 $invoice = get_option('hb_ucs_invoice_email_settings');
 $cust_note = get_option('hb_ucs_customer_order_note_settings');
 $subs = get_option('hb_ucs_subscriptions_settings');
+$bundles = get_option('hb_ucs_bundles_settings');
 $order_overview_status = get_option('hb_ucs_order_overview_status_settings');
 $returns = get_option('hb_ucs_returns_settings');
 
@@ -22,10 +23,11 @@ $delete_roles = is_array($roles) && !empty($roles['delete_data_on_uninstall']);
 $delete_invoice = is_array($invoice) && !empty($invoice['delete_data_on_uninstall']);
 $delete_cust_note = is_array($cust_note) && !empty($cust_note['delete_data_on_uninstall']);
 $delete_subs = is_array($subs) && !empty($subs['delete_data_on_uninstall']);
+$delete_bundles = is_array($bundles) && !empty($bundles['delete_data_on_uninstall']);
 $delete_order_overview_status = is_array($order_overview_status) && !empty($order_overview_status['delete_data_on_uninstall']);
 $delete_returns = is_array($returns) && !empty($returns['delete_data_on_uninstall']);
 
-$delete_any = $delete_qls || $delete_b2b || $delete_roles || $delete_invoice || $delete_cust_note || $delete_subs || $delete_order_overview_status || $delete_returns;
+$delete_any = $delete_qls || $delete_b2b || $delete_roles || $delete_invoice || $delete_cust_note || $delete_subs || $delete_bundles || $delete_order_overview_status || $delete_returns;
 
 if ($delete_any) {
     // Global plugin settings (module toggles).
@@ -117,6 +119,11 @@ if ($delete_subs) {
         delete_metadata('post', 0, '_hb_ucs_subs_disc_type_' . $k, '', true);
         delete_metadata('post', 0, '_hb_ucs_subs_disc_value_' . $k, '', true);
     }
+}
+
+if ($delete_bundles) {
+    // Bewaar alle product- en ordermeta: die kan ook afkomstig zijn van WPC Product Bundles.
+    delete_option('hb_ucs_bundles_settings');
 }
 
 if ($delete_order_overview_status) {

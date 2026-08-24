@@ -28,6 +28,10 @@ class Kernel {
             (new \HB\UCS\Modules\Roles\RolesModule())->init();
         }
 
+        if (!empty($mods['bundles']) && class_exists('HB\\UCS\\Modules\\Bundles\\BundlesModule')) {
+            (new \HB\UCS\Modules\Bundles\BundlesModule())->init();
+        }
+
         if (!empty($mods['subscriptions']) && class_exists('HB\\UCS\\Modules\\Subscriptions\\SubscriptionsModule')) {
             (new \HB\UCS\Modules\Subscriptions\SubscriptionsModule())->init();
         }

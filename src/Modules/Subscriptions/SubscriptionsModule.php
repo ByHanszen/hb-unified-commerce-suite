@@ -64,6 +64,16 @@ class SubscriptionsModule {
     private const ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT = '_hb_ucs_subscription_attribute_snapshot';
     private const ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID = '_hb_ucs_subscription_source_order_item_id';
     private const ORDER_ITEM_META_CATALOG_UNIT_PRICE = '_hb_ucs_subscription_catalog_unit_price';
+    private const BUNDLE_META_IDS = '_woosb_ids';
+    private const BUNDLE_META_PARENT_ID = '_woosb_parent_id';
+    private const BUNDLE_META_PRICE = '_woosb_price';
+    private const BUNDLE_META_FIXED_PRICE = '_woosb_fixed_price';
+    private const BUNDLE_META_DISCOUNT = '_woosb_discount';
+    private const BUNDLE_META_DISCOUNT_AMOUNT = '_woosb_discount_amount';
+    private const BUNDLE_META_INSTANCE = '_hb_ucs_bundle_instance_id';
+    private const BUNDLE_META_SNAPSHOT = '_hb_ucs_bundle_snapshot';
+    private const BUNDLE_META_ROLE = '_hb_ucs_bundle_role';
+    private const BUNDLE_META_COMPONENT_KEY = '_hb_ucs_bundle_component_key';
 
     /** @var \HB\UCS\Modules\Subscriptions\Domain\SubscriptionRepository|null */
     private $subscriptionRepository = null;
@@ -3227,6 +3237,9 @@ class SubscriptionsModule {
                     } elseif ($currentVariationId <= 0) {
                         $item['display_meta'] = [];
                     }
+                    if ($existingItem && $existingSelectedId === $selectedId && !empty($existingItem['bundle'])) {
+                        $item['bundle'] = $existingItem['bundle'];
+                    }
 
                     $newItems[] = $item;
                 }
@@ -4656,6 +4669,16 @@ class SubscriptionsModule {
             '_hb_ucs_subscription_base_product_id',
             '_hb_ucs_subscription_base_variation_id',
             '_hb_ucs_subscription_scheme',
+            self::BUNDLE_META_IDS,
+            self::BUNDLE_META_PARENT_ID,
+            self::BUNDLE_META_PRICE,
+            self::BUNDLE_META_FIXED_PRICE,
+            self::BUNDLE_META_DISCOUNT,
+            self::BUNDLE_META_DISCOUNT_AMOUNT,
+            self::BUNDLE_META_INSTANCE,
+            self::BUNDLE_META_SNAPSHOT,
+            self::BUNDLE_META_ROLE,
+            self::BUNDLE_META_COMPONENT_KEY,
             '_reduced_stock',
         ];
     }
@@ -5554,6 +5577,21 @@ class SubscriptionsModule {
     }
 
     private function get_subscription_item_variation_summary(array $item): string {
+        $bundle = $this->normalize_subscription_bundle_data($item['bundle'] ?? []);
+        if (!empty($bundle['snapshot']['components']) && is_array($bundle['snapshot']['components'])) {
+            $parts = [];
+            foreach ($bundle['snapshot']['components'] as $component) {
+                $name = trim((string) ($component['name'] ?? ''));
+                $qty = (float) ($component['quantity'] ?? 0);
+                if ($name !== '' && $qty > 0) {
+                    $parts[] = wc_format_localized_decimal($qty) . ' × ' . $name;
+                }
+            }
+            if (!empty($parts)) {
+                return implode(' · ', $parts);
+            }
+        }
+
         $displayRows = $this->get_subscription_item_attribute_display_rows($item);
 
         if (!empty($displayRows)) {
@@ -5700,6 +5738,11 @@ class SubscriptionsModule {
             'display_meta' => $normalizedDisplayMeta,
         ];
 
+        $bundle = $this->normalize_subscription_bundle_data($item['bundle'] ?? []);
+        if (!empty($bundle)) {
+            $normalized['bundle'] = $bundle;
+        }
+
         if (!empty($lineTotals)) {
             $normalized['line_subtotal'] = (float) ($lineTotals['line_subtotal'] ?? 0.0);
             $normalized['line_tax'] = (float) ($lineTotals['line_tax'] ?? 0.0);
@@ -5709,6 +5752,337 @@ class SubscriptionsModule {
         $normalized['catalog_unit_price'] = $this->resolve_subscription_item_catalog_unit_price($item, $normalized);
 
         return $normalized;
+    }
+
+    private function normalize_subscription_bundle_data($bundle): array {
+        if (!is_array($bundle)) {
+            return [];
+        }
+
+        $ids = isset($bundle['ids']) ? (string) $bundle['ids'] : '';
+        if (class_exists('HB\\UCS\\Modules\\Bundles\\Support\\BundleData')) {
+            $ids = \HB\UCS\Modules\Bundles\Support\BundleData::clean_compact_string($ids);
+        } else {
+            $ids = sanitize_text_field($ids);
+        }
+        if ($ids === '') {
+            return [];
+        }
+
+        $shippingMode = sanitize_key((string) ($bundle['shipping_mode'] ?? 'whole'));
+        if (!in_array($shippingMode, ['whole', 'each', 'both'], true)) {
+            $shippingMode = 'whole';
+        }
+
+        return [
+            'ids' => $ids,
+            'instance_id' => sanitize_text_field((string) ($bundle['instance_id'] ?? '')),
+            'snapshot' => isset($bundle['snapshot']) && is_array($bundle['snapshot']) ? wc_clean($bundle['snapshot']) : [],
+            'fixed_price' => !empty($bundle['fixed_price']) ? 1 : 0,
+            'discount' => max(0.0, (float) wc_format_decimal((string) ($bundle['discount'] ?? 0))),
+            'discount_amount' => max(0.0, (float) wc_format_decimal((string) ($bundle['discount_amount'] ?? 0))),
+            'shipping_mode' => $shippingMode,
+        ];
+    }
+
+    private function get_subscription_bundle_data_from_order_item($item): array {
+        if (!is_object($item) || !method_exists($item, 'get_meta')) {
+            return [];
+        }
+        $ids = (string) $item->get_meta(self::BUNDLE_META_IDS, true);
+        if ($ids === '') {
+            return [];
+        }
+        $product = method_exists($item, 'get_product') ? $item->get_product() : null;
+        $fixedMeta = (string) $item->get_meta(self::BUNDLE_META_FIXED_PRICE, true);
+        $fixed = $fixedMeta !== '' ? in_array($fixedMeta, ['1', 'yes', 'on', 'true'], true) : null;
+        if ($fixed === null && $product && method_exists($product, 'is_fixed_price')) {
+            $fixed = (bool) $product->is_fixed_price();
+        }
+        $shippingMode = $product && method_exists($product, 'get_meta') ? (string) $product->get_meta('woosb_shipping_fee') : 'whole';
+
+        return $this->normalize_subscription_bundle_data([
+            'ids' => $ids,
+            'instance_id' => (string) $item->get_meta(self::BUNDLE_META_INSTANCE, true),
+            'snapshot' => $item->get_meta(self::BUNDLE_META_SNAPSHOT, true),
+            'fixed_price' => $fixed === null ? ((float) $item->get_total() > 0 ? 1 : 0) : ($fixed ? 1 : 0),
+            'discount' => $item->get_meta(self::BUNDLE_META_DISCOUNT, true),
+            'discount_amount' => $item->get_meta(self::BUNDLE_META_DISCOUNT_AMOUNT, true),
+            'shipping_mode' => $shippingMode,
+        ]);
+    }
+
+    private function add_subscription_bundle_meta_to_order_item($orderItem, array $bundle, float $unitPrice = 0.0, string $role = 'parent', string $instanceId = ''): void {
+        $bundle = $this->normalize_subscription_bundle_data($bundle);
+        if (empty($bundle) || !is_object($orderItem) || !method_exists($orderItem, 'add_meta_data')) {
+            return;
+        }
+        $instanceId = $instanceId !== '' ? $instanceId : (string) ($bundle['instance_id'] ?? '');
+        $orderItem->add_meta_data(self::BUNDLE_META_IDS, (string) $bundle['ids'], true);
+        $orderItem->add_meta_data(self::BUNDLE_META_PRICE, $unitPrice, true);
+        $orderItem->add_meta_data(self::BUNDLE_META_FIXED_PRICE, !empty($bundle['fixed_price']) ? 'yes' : 'no', true);
+        $orderItem->add_meta_data(self::BUNDLE_META_DISCOUNT, (float) $bundle['discount'], true);
+        $orderItem->add_meta_data(self::BUNDLE_META_DISCOUNT_AMOUNT, (float) $bundle['discount_amount'], true);
+        $orderItem->add_meta_data(self::BUNDLE_META_INSTANCE, $instanceId, true);
+        $orderItem->add_meta_data(self::BUNDLE_META_ROLE, $role, true);
+        if (!empty($bundle['snapshot'])) {
+            $orderItem->add_meta_data(self::BUNDLE_META_SNAPSHOT, $bundle['snapshot'], true);
+        }
+    }
+
+    private function enrich_subscription_item_with_source_bundle($order, $parentItem, array $row): array {
+        $bundle = $this->get_subscription_bundle_data_from_order_item($parentItem);
+        if (empty($bundle) || !is_object($order) || !method_exists($order, 'get_items')) {
+            return $row;
+        }
+
+        $parentItemId = method_exists($parentItem, 'get_id') ? (int) $parentItem->get_id() : 0;
+        $parentProductId = (int) ($row['base_product_id'] ?? 0);
+        $instanceId = (string) ($bundle['instance_id'] ?? '');
+        if ($instanceId === '') {
+            $orderId = method_exists($order, 'get_id') ? (int) $order->get_id() : 0;
+            $instanceId = 'source-' . $orderId . '-' . $parentItemId;
+            $bundle['instance_id'] = $instanceId;
+        }
+
+        $groupItems = [$parentItem];
+        $orderItems = array_values((array) $order->get_items('line_item'));
+        if ((string) $parentItem->get_meta(self::BUNDLE_META_INSTANCE, true) !== '') {
+            foreach ($orderItems as $candidate) {
+                if (!is_object($candidate) || !method_exists($candidate, 'get_meta')) {
+                    continue;
+                }
+                if (method_exists($candidate, 'get_id') && (int) $candidate->get_id() === $parentItemId) {
+                    continue;
+                }
+                if ((string) $candidate->get_meta(self::BUNDLE_META_INSTANCE, true) === $instanceId && (int) $candidate->get_meta(self::BUNDLE_META_PARENT_ID, true) > 0) {
+                    $groupItems[] = $candidate;
+                }
+            }
+        } else {
+            // WPC 8.6.4 has no group UUID. Its child rows follow their parent, so use that bounded legacy group.
+            $afterParent = false;
+            foreach ($orderItems as $candidate) {
+                if (!is_object($candidate) || !method_exists($candidate, 'get_meta')) {
+                    continue;
+                }
+                $candidateId = method_exists($candidate, 'get_id') ? (int) $candidate->get_id() : 0;
+                if ($candidateId === $parentItemId) {
+                    $afterParent = true;
+                    continue;
+                }
+                if (!$afterParent) {
+                    continue;
+                }
+                if ((string) $candidate->get_meta(self::BUNDLE_META_IDS, true) !== '') {
+                    break;
+                }
+                if ((int) $candidate->get_meta(self::BUNDLE_META_PARENT_ID, true) === $parentProductId) {
+                    $groupItems[] = $candidate;
+                }
+            }
+        }
+
+        $lineSubtotal = 0.0;
+        $lineTotalExcludingTax = 0.0;
+        $lineTax = 0.0;
+        $taxes = ['subtotal' => [], 'total' => []];
+        foreach ($groupItems as $groupItem) {
+            $lineSubtotal += method_exists($groupItem, 'get_subtotal') ? (float) $groupItem->get_subtotal() : 0.0;
+            $lineTotalExcludingTax += method_exists($groupItem, 'get_total') ? (float) $groupItem->get_total() : 0.0;
+            $lineTax += method_exists($groupItem, 'get_total_tax') ? (float) $groupItem->get_total_tax() : 0.0;
+            $itemTaxes = method_exists($groupItem, 'get_taxes') ? (array) $groupItem->get_taxes() : [];
+            foreach (['subtotal', 'total'] as $taxGroup) {
+                foreach ((array) ($itemTaxes[$taxGroup] ?? []) as $rateId => $amount) {
+                    $rateKey = is_numeric($rateId) ? (string) absint((string) $rateId) : sanitize_key((string) $rateId);
+                    if ($rateKey === '') {
+                        continue;
+                    }
+                    $taxes[$taxGroup][$rateKey] = (float) ($taxes[$taxGroup][$rateKey] ?? 0.0) + (float) $amount;
+                }
+            }
+        }
+
+        $qty = max(1, (int) ($row['qty'] ?? 1));
+        $row['unit_price'] = (float) wc_format_decimal((string) ($lineTotalExcludingTax / $qty));
+        $row['taxes'] = $taxes;
+        $row['line_subtotal'] = (float) wc_format_decimal((string) $lineSubtotal);
+        $row['line_tax'] = (float) wc_format_decimal((string) $lineTax);
+        $row['line_total'] = (float) wc_format_decimal((string) ($lineTotalExcludingTax + $lineTax));
+
+        if (empty($bundle['snapshot']) && class_exists('HB\\UCS\\Modules\\Bundles\\Support\\BundleData')) {
+            $bundleProduct = method_exists($parentItem, 'get_product') ? $parentItem->get_product() : null;
+            if ($bundleProduct) {
+                $selection = \HB\UCS\Modules\Bundles\Support\BundleData::parse_selection((string) $bundle['ids']);
+                $bundle['snapshot'] = \HB\UCS\Modules\Bundles\Support\BundleData::build_snapshot($bundleProduct, $selection);
+            }
+        }
+        $row['bundle'] = $bundle;
+
+        return $row;
+    }
+
+    private function add_subscription_bundle_renewal_items($order, array $preparedItem, string $scheme): bool {
+        $bundle = $this->normalize_subscription_bundle_data($preparedItem['bundle'] ?? []);
+        if (empty($bundle) || !class_exists('HB\\UCS\\Modules\\Bundles\\Support\\BundleData')) {
+            return false;
+        }
+
+        $selection = \HB\UCS\Modules\Bundles\Support\BundleData::parse_selection((string) $bundle['ids']);
+        if (empty($selection)) {
+            throw new \RuntimeException(__('De opgeslagen bundelsamenstelling van dit abonnement is leeg.', 'hb-ucs'));
+        }
+
+        $parentQty = max(1, (int) ($preparedItem['qty'] ?? 1));
+        $parentProductId = (int) ($preparedItem['base_product_id'] ?? 0);
+        $instanceId = function_exists('wp_generate_uuid4') ? wp_generate_uuid4() : uniqid('hb-bundle-renewal-', true);
+        $components = [];
+        $totalWeight = 0.0;
+        $stockRequirements = [];
+        $stockProducts = [];
+        foreach ($selection as $componentKey => $selected) {
+            $product = wc_get_product((int) ($selected['id'] ?? 0));
+            $componentQty = max(0.0, (float) ($selected['qty'] ?? 0));
+            if (!$product || $componentQty <= 0 || !$product->is_purchasable() || !$product->is_in_stock() || (method_exists($product, 'is_type') && $product->is_type('woosb'))) {
+                throw new \RuntimeException(__('Een opgeslagen bundelonderdeel is niet meer beschikbaar.', 'hb-ucs'));
+            }
+            if ($product->managing_stock() && !$product->backorders_allowed()) {
+                $stockId = method_exists($product, 'get_stock_managed_by_id') ? (int) $product->get_stock_managed_by_id() : (int) $product->get_id();
+                $stockProduct = $stockId > 0 ? wc_get_product($stockId) : false;
+                if ($stockProduct) {
+                    $stockRequirements[$stockId] = (float) ($stockRequirements[$stockId] ?? 0.0) + ($componentQty * $parentQty);
+                    $stockProducts[$stockId] = $stockProduct;
+                }
+            }
+            $weight = max(0.0, (float) $product->get_price()) * $componentQty;
+            if ($weight <= 0) {
+                $weight = $componentQty;
+            }
+            $components[] = [
+                'key' => sanitize_key((string) $componentKey),
+                'product' => $product,
+                'qty' => $componentQty * $parentQty,
+                'weight' => $weight,
+            ];
+            $totalWeight += $weight;
+        }
+        if (empty($components)) {
+            throw new \RuntimeException(__('De opgeslagen bundel bevat geen bestelbare onderdelen.', 'hb-ucs'));
+        }
+        foreach ($stockRequirements as $stockId => $requiredQuantity) {
+            if (!$stockProducts[$stockId]->has_enough_stock($requiredQuantity)) {
+                throw new \RuntimeException(sprintf(__('Er is onvoldoende voorraad van “%s” voor deze verlenging.', 'hb-ucs'), $stockProducts[$stockId]->get_name()));
+            }
+        }
+
+        $fixed = !empty($bundle['fixed_price']);
+        $parentItem = new \WC_Order_Item_Product();
+        $parentItem->set_product($preparedItem['product']);
+        $parentItem->set_quantity($parentQty);
+        $parentItem->set_subtotal($fixed ? (float) $preparedItem['line_subtotal'] : 0.0);
+        $parentItem->set_total($fixed ? (float) $preparedItem['line_total_ex_tax'] : 0.0);
+        if ($fixed && method_exists($parentItem, 'set_taxes')) {
+            $parentItem->set_taxes((array) $preparedItem['taxes']);
+        } elseif (method_exists($parentItem, 'set_taxes')) {
+            $parentItem->set_taxes(['subtotal' => [], 'total' => []]);
+        }
+        if (method_exists($parentItem, 'set_subtotal_tax')) {
+            $parentItem->set_subtotal_tax($fixed ? (float) $preparedItem['line_subtotal_tax'] : 0.0);
+        }
+        if (method_exists($parentItem, 'set_total_tax')) {
+            $parentItem->set_total_tax($fixed ? (float) $preparedItem['line_tax'] : 0.0);
+        }
+        $parentItem->add_meta_data('_hb_ucs_subscription_base_product_id', $parentProductId, true);
+        if ((int) ($preparedItem['base_variation_id'] ?? 0) > 0) {
+            $parentItem->add_meta_data('_hb_ucs_subscription_base_variation_id', (int) $preparedItem['base_variation_id'], true);
+        }
+        if ((int) ($preparedItem['source_order_item_id'] ?? 0) > 0) {
+            $parentItem->add_meta_data(self::ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID, (int) $preparedItem['source_order_item_id'], true);
+        }
+        $parentItem->add_meta_data(self::ORDER_ITEM_META_CATALOG_UNIT_PRICE, (float) $preparedItem['catalog_unit_price'], true);
+        if (!empty($preparedItem['selected_attributes'])) {
+            $parentItem->add_meta_data(self::ORDER_ITEM_META_SELECTED_ATTRIBUTES, wp_json_encode($preparedItem['selected_attributes']), true);
+        }
+        if (!empty($preparedItem['attribute_snapshot'])) {
+            $parentItem->add_meta_data(self::ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT, wp_json_encode($preparedItem['attribute_snapshot']), true);
+        }
+        foreach ((array) ($preparedItem['display_meta'] ?? []) as $displayMetaRow) {
+            $label = (string) ($displayMetaRow['label'] ?? '');
+            $value = (string) ($displayMetaRow['value'] ?? '');
+            if ($label !== '' && $value !== '') {
+                $parentItem->add_meta_data($label, $value, true);
+            }
+        }
+        $parentItem->add_meta_data('_hb_ucs_subscription_scheme', $scheme, true);
+        $unitPrice = $parentQty > 0 ? (float) $preparedItem['line_total_ex_tax'] / $parentQty : 0.0;
+        $this->add_subscription_bundle_meta_to_order_item($parentItem, $bundle, $unitPrice, 'parent', $instanceId);
+        $order->add_item($parentItem);
+
+        $componentCount = count($components);
+        $allocatedSubtotal = 0.0;
+        $allocatedTotal = 0.0;
+        $allocatedTaxes = ['subtotal' => [], 'total' => []];
+        foreach ($components as $index => $component) {
+            $isLast = $index === ($componentCount - 1);
+            $share = $totalWeight > 0 ? (float) $component['weight'] / $totalWeight : (1 / $componentCount);
+            if ($fixed) {
+                $lineSubtotal = 0.0;
+                $lineTotal = 0.0;
+            } else {
+                $lineSubtotal = $isLast
+                    ? (float) $preparedItem['line_subtotal'] - $allocatedSubtotal
+                    : $this->round_subscription_order_item_amount((float) $preparedItem['line_subtotal'] * $share);
+                $lineTotal = $isLast
+                    ? (float) $preparedItem['line_total_ex_tax'] - $allocatedTotal
+                    : $this->round_subscription_order_item_amount((float) $preparedItem['line_total_ex_tax'] * $share);
+            }
+            $lineSubtotal = max(0.0, $this->round_subscription_order_item_amount($lineSubtotal));
+            $lineTotal = max(0.0, $this->round_subscription_order_item_amount($lineTotal));
+            $allocatedSubtotal += $lineSubtotal;
+            $allocatedTotal += $lineTotal;
+
+            $componentTaxes = ['subtotal' => [], 'total' => []];
+            if (!$fixed) {
+                foreach (['subtotal', 'total'] as $taxGroup) {
+                    foreach ((array) ($preparedItem['taxes'][$taxGroup] ?? []) as $rateId => $fullAmount) {
+                        $rateKey = is_numeric($rateId) ? (string) absint((string) $rateId) : sanitize_key((string) $rateId);
+                        if ($rateKey === '') {
+                            continue;
+                        }
+                        $already = (float) ($allocatedTaxes[$taxGroup][$rateKey] ?? 0.0);
+                        $amount = $isLast
+                            ? (float) $fullAmount - $already
+                            : $this->round_subscription_order_item_amount((float) $fullAmount * $share);
+                        $amount = max(0.0, $this->round_subscription_order_item_amount($amount));
+                        $componentTaxes[$taxGroup][$rateKey] = $amount;
+                        $allocatedTaxes[$taxGroup][$rateKey] = $already + $amount;
+                    }
+                }
+            }
+
+            $childItem = new \WC_Order_Item_Product();
+            $childItem->set_product($component['product']);
+            $childItem->set_quantity((float) $component['qty']);
+            $childItem->set_subtotal($lineSubtotal);
+            $childItem->set_total($lineTotal);
+            if (method_exists($childItem, 'set_taxes')) {
+                $childItem->set_taxes($componentTaxes);
+            }
+            if (method_exists($childItem, 'set_subtotal_tax')) {
+                $childItem->set_subtotal_tax((float) array_sum($componentTaxes['subtotal']));
+            }
+            if (method_exists($childItem, 'set_total_tax')) {
+                $childItem->set_total_tax((float) array_sum($componentTaxes['total']));
+            }
+            $childItem->add_meta_data(self::BUNDLE_META_PARENT_ID, $parentProductId, true);
+            $childItem->add_meta_data(self::BUNDLE_META_FIXED_PRICE, $fixed ? 'yes' : 'no', true);
+            $childItem->add_meta_data(self::BUNDLE_META_INSTANCE, $instanceId, true);
+            $childItem->add_meta_data(self::BUNDLE_META_ROLE, 'child', true);
+            $childItem->add_meta_data(self::BUNDLE_META_COMPONENT_KEY, (string) $component['key'], true);
+            $order->add_item($childItem);
+        }
+
+        return true;
     }
 
     private function resolve_subscription_item_catalog_unit_price(array $rawItem, array $normalizedItem): float {
@@ -5940,6 +6314,7 @@ class SubscriptionsModule {
                 'selected_attributes' => $selectedAttributes,
                 'attribute_snapshot' => $attributeSnapshot,
                 'display_meta' => $displayMeta,
+                'bundle' => $this->get_subscription_bundle_data_from_order_item($item),
                 'line_subtotal' => $lineSubtotal,
                 'line_tax' => $lineTax,
                 'line_total' => $lineTotal + $lineTax,
@@ -6498,6 +6873,9 @@ class SubscriptionsModule {
             if ($scheme !== '') {
                 $orderItem->add_meta_data('_hb_ucs_subscription_scheme', $scheme, true);
             }
+            if (!empty($item['bundle'])) {
+                $this->add_subscription_bundle_meta_to_order_item($orderItem, (array) $item['bundle'], $qty > 0 ? $lineTotalExcludingTax / $qty : 0.0);
+            }
 
             if (!empty($selectedAttributes)) {
                 $orderItem->add_meta_data(self::ORDER_ITEM_META_SELECTED_ATTRIBUTES, wp_json_encode($selectedAttributes), true);
@@ -6665,6 +7043,93 @@ class SubscriptionsModule {
         }
     }
 
+    private function get_subscription_bundle_shipping_contents(string $baseKey, array $item, $parentProduct, int $parentQty, float $lineSubtotal, float $lineTaxTotal): array {
+        $bundle = $this->normalize_subscription_bundle_data($item['bundle'] ?? []);
+        $mode = (string) ($bundle['shipping_mode'] ?? 'whole');
+        if (empty($bundle) || $mode === 'whole' || !class_exists('HB\\UCS\\Modules\\Bundles\\Support\\BundleData')) {
+            return [];
+        }
+
+        $selection = \HB\UCS\Modules\Bundles\Support\BundleData::parse_selection((string) $bundle['ids']);
+        $components = [];
+        $totalWeight = 0.0;
+        foreach ($selection as $componentKey => $selected) {
+            $product = wc_get_product((int) ($selected['id'] ?? 0));
+            $componentQty = max(0.0, (float) ($selected['qty'] ?? 0));
+            if (!$product || $componentQty <= 0) {
+                continue;
+            }
+            $weight = max(0.0, (float) $product->get_price()) * $componentQty;
+            if ($weight <= 0) {
+                $weight = $componentQty;
+            }
+            $components[] = [
+                'key' => sanitize_key((string) $componentKey),
+                'product' => $product,
+                'qty' => $componentQty * $parentQty,
+                'weight' => $weight,
+            ];
+            $totalWeight += $weight;
+        }
+        if (empty($components)) {
+            return [];
+        }
+
+        $contents = [];
+        if ($mode === 'both') {
+            $contents[$baseKey . '_parent'] = [
+                'key' => $baseKey . '_parent',
+                'product_id' => (int) ($item['base_product_id'] ?? 0),
+                'variation_id' => (int) ($item['base_variation_id'] ?? 0),
+                'variation' => (array) ($item['attribute_snapshot'] ?? ($item['selected_attributes'] ?? [])),
+                'quantity' => $parentQty,
+                'data' => $parentProduct,
+                'line_subtotal' => $lineSubtotal,
+                'line_total' => $lineSubtotal,
+                'line_tax' => $lineTaxTotal,
+                'line_subtotal_tax' => $lineTaxTotal,
+            ];
+        }
+
+        $count = count($components);
+        $allocatedSubtotal = 0.0;
+        $allocatedTax = 0.0;
+        foreach ($components as $index => $component) {
+            $isLast = $index === ($count - 1);
+            $share = $totalWeight > 0 ? (float) $component['weight'] / $totalWeight : (1 / $count);
+            if ($mode === 'each') {
+                $componentSubtotal = $isLast ? $lineSubtotal - $allocatedSubtotal : $this->round_subscription_order_item_amount($lineSubtotal * $share);
+                $componentTax = $isLast ? $lineTaxTotal - $allocatedTax : $this->round_subscription_order_item_amount($lineTaxTotal * $share);
+                $componentSubtotal = max(0.0, $this->round_subscription_order_item_amount($componentSubtotal));
+                $componentTax = max(0.0, $this->round_subscription_order_item_amount($componentTax));
+                $allocatedSubtotal += $componentSubtotal;
+                $allocatedTax += $componentTax;
+            } else {
+                $componentSubtotal = 0.0;
+                $componentTax = 0.0;
+            }
+
+            $product = $component['product'];
+            $isVariation = $product instanceof \WC_Product_Variation;
+            $key = $baseKey . '_component_' . $index;
+            $contents[$key] = [
+                'key' => $key,
+                'product_id' => $isVariation ? (int) $product->get_parent_id() : (int) $product->get_id(),
+                'variation_id' => $isVariation ? (int) $product->get_id() : 0,
+                'variation' => $isVariation ? (array) $product->get_variation_attributes() : [],
+                'quantity' => (float) $component['qty'],
+                'data' => $product,
+                'line_subtotal' => $componentSubtotal,
+                'line_total' => $componentSubtotal,
+                'line_tax' => $componentTax,
+                'line_subtotal_tax' => $componentTax,
+                'hb_ucs_bundle_component_key' => (string) $component['key'],
+            ];
+        }
+
+        return $contents;
+    }
+
     private function get_available_subscription_shipping_rates(int $subId, array $items, $fallbackOrder = null): array {
         if ($subId <= 0 || empty($items) || !function_exists('WC') || !WC() || !WC()->shipping()) {
             return [];
@@ -6698,6 +7163,15 @@ class SubscriptionsModule {
             $lineSubtotal = (float) wc_format_decimal((string) ($this->get_subscription_item_storage_unit_price($item) * $qty));
             $lineTaxes = $this->normalize_subscription_tax_amounts($this->get_subscription_item_taxes($item, $this->get_subscription_tax_customer($subId, $fallbackOrder))['total']);
             $lineTaxTotal = (float) wc_format_decimal((string) array_sum($lineTaxes));
+            $baseKey = 'hb_ucs_sub_' . $index;
+            $bundleContents = $this->get_subscription_bundle_shipping_contents($baseKey, $item, $product, $qty, $lineSubtotal, $lineTaxTotal);
+            if (!empty($bundleContents)) {
+                foreach ($bundleContents as $bundleKey => $bundleRow) {
+                    $contents[$bundleKey] = $bundleRow;
+                }
+                $contentsCost += $lineSubtotal;
+                continue;
+            }
             $contentsCost += $lineSubtotal;
 
             $contents['hb_ucs_sub_' . $index] = [
@@ -10552,6 +11026,9 @@ JS;
             if (!is_object($item) || !method_exists($item, 'get_meta')) {
                 continue;
             }
+            if ((int) $item->get_meta(self::BUNDLE_META_PARENT_ID, true) > 0) {
+                continue; // A WPC component belongs to its bundle parent and must never create a separate subscription.
+            }
             $scheme = (string) $item->get_meta('_hb_ucs_subscription_scheme', true);
             if ($scheme === '' || $scheme === '0') {
                 continue;
@@ -10617,7 +11094,7 @@ JS;
             $selectedAttributes = $this->get_selected_attributes_from_order_item($item, $baseProductId, $baseVariationId);
             $displayMeta = $this->get_display_meta_rows_from_order_item($item, $baseProductId, $selectedAttributes);
 
-            $this->persist_subscription_items($subId, [[
+            $subscriptionItem = [
                 'base_product_id' => $baseProductId,
                 'base_variation_id' => $baseVariationId,
                 'source_order_item_id' => method_exists($item, 'get_id') ? (int) $item->get_id() : 0,
@@ -10631,7 +11108,8 @@ JS;
                 'line_tax' => method_exists($item, 'get_total_tax') ? (float) $item->get_total_tax() : 0.0,
                 'line_total' => (float) (method_exists($item, 'get_total') ? $item->get_total() : 0.0)
                     + (float) (method_exists($item, 'get_total_tax') ? $item->get_total_tax() : 0.0),
-            ]]);
+            ];
+            $this->persist_subscription_items($subId, [$this->enrich_subscription_item_with_source_bundle($order, $item, $subscriptionItem)]);
             $this->persist_subscription_fee_lines($subId, $this->extract_subscription_fee_lines($order));
             $this->persist_subscription_shipping_lines($subId, $this->extract_subscription_shipping_lines($order));
             update_post_meta($subId, self::SUB_META_PAYMENT_METHOD, $paymentMethod);
@@ -11172,6 +11650,7 @@ JS;
                 'selected_attributes' => $this->get_subscription_item_selected_attributes($subscriptionItem),
                 'attribute_snapshot' => $this->get_subscription_item_attribute_snapshot($subscriptionItem),
                 'display_meta' => $this->get_subscription_item_effective_display_meta($subId, $subscriptionItem),
+                'bundle' => $this->normalize_subscription_bundle_data($subscriptionItem['bundle'] ?? []),
             ];
         }
 
@@ -11207,6 +11686,9 @@ JS;
             ]);
 
             foreach ($preparedOrderItems as $preparedItem) {
+                if (!empty($preparedItem['bundle']) && $this->add_subscription_bundle_renewal_items($order, $preparedItem, $scheme)) {
+                    continue;
+                }
                 $item = new \WC_Order_Item_Product();
                 $item->set_product($preparedItem['product']);
                 $item->set_quantity((int) $preparedItem['qty']);
@@ -11655,7 +12137,7 @@ JS;
         }
 
         $product = wc_get_product($post->ID);
-        if (!$product || (! $product->is_type('simple') && ! $product->is_type('variable'))) {
+        if (!$product || !$product->is_type(['simple', 'variable', 'woosb'])) {
             return;
         }
 
@@ -11678,7 +12160,7 @@ JS;
             return;
         }
 
-        if ($product->is_type('simple')) {
+        if ($product->is_type(['simple', 'woosb'])) {
             $basePrice = (string) $product->get_price();
             $basePriceFloat = $basePrice === '' ? 0.0 : (float) wc_format_decimal($basePrice);
 
@@ -11763,29 +12245,29 @@ JS;
             return;
         }
 
-        // Only handle simple/variable products.
-        if (method_exists($product, 'is_type') && !$product->is_type('simple') && !$product->is_type('variable')) {
+        // Only handle product types with a complete HB subscription pricing contract.
+        if (method_exists($product, 'is_type') && !$product->is_type(['simple', 'variable', 'woosb'])) {
             return;
         }
 
         $enabled = isset($_POST[self::META_ENABLED]) ? 'yes' : 'no';
         update_post_meta($productId, self::META_ENABLED, $enabled);
 
-        // Save discount settings for simple + variable products.
-        if ($product->is_type('simple') || $product->is_type('variable')) {
+        // Save discount settings for simple, variable and bundle products.
+        if ($product->is_type(['simple', 'variable', 'woosb'])) {
             $freqs = $this->get_enabled_frequencies();
 
             $discEnabled = isset($_POST['hb_ucs_subs_disc_enabled']) && is_array($_POST['hb_ucs_subs_disc_enabled']) ? (array) $_POST['hb_ucs_subs_disc_enabled'] : [];
             $discType = isset($_POST['hb_ucs_subs_disc_type']) && is_array($_POST['hb_ucs_subs_disc_type']) ? (array) $_POST['hb_ucs_subs_disc_type'] : [];
             $discValue = isset($_POST['hb_ucs_subs_disc_value']) && is_array($_POST['hb_ucs_subs_disc_value']) ? (array) $_POST['hb_ucs_subs_disc_value'] : [];
 
-            // Fixed override only for simple products.
-            $fixed = ($product->is_type('simple') && isset($_POST['hb_ucs_subs_fixed_price']) && is_array($_POST['hb_ucs_subs_fixed_price'])) ? (array) $_POST['hb_ucs_subs_fixed_price'] : [];
+            // Fixed override is supported for products with one effective price, including bundles.
+            $fixed = ($product->is_type(['simple', 'woosb']) && isset($_POST['hb_ucs_subs_fixed_price']) && is_array($_POST['hb_ucs_subs_fixed_price'])) ? (array) $_POST['hb_ucs_subs_fixed_price'] : [];
 
             foreach ($freqs as $scheme => $row) {
                 $scheme = (string) $scheme;
 
-                if ($product->is_type('simple')) {
+                if ($product->is_type(['simple', 'woosb'])) {
                     $fixedRaw = isset($fixed[$scheme]) ? (string) wp_unslash($fixed[$scheme]) : '';
                     $fixedRaw = trim($fixedRaw);
                     $fixedKey = self::META_PRICE_PREFIX . $scheme;
@@ -11836,7 +12318,7 @@ JS;
         if (!$product || !is_object($product) || !method_exists($product, 'get_id')) {
             return;
         }
-        if (!$product->is_type('simple') && !$product->is_type('variable')) {
+        if (!$product->is_type(['simple', 'variable', 'woosb'])) {
             return;
         }
 
@@ -11917,7 +12399,7 @@ JS;
             echo '<label class="hb-ucs-subscriptions__option hb-ucs-subscriptions__option--native">';
             echo '<input type="radio" name="hb_ucs_subs_scheme" value="' . esc_attr($scheme) . '" ' . checked($selected, (string) $scheme, false) . ' /> ';
             echo esc_html($label);
-            if ($product->is_type('simple')) {
+            if ($product->is_type(['simple', 'woosb'])) {
                 $pricing = $this->get_product_page_subscription_pricing($productId, $product, (string) $scheme);
                 $priceHtml = $pricing ? $this->format_subscription_price_html((float) $pricing['base'], (float) $pricing['final'], (string) ($pricing['badge'] ?? '')) : '';
                 echo ' — <span class="price">' . wp_kses_post($priceHtml) . '</span>';
@@ -12190,6 +12672,9 @@ JS;
             if ($baseId <= 0 || $scheme === '') {
                 continue;
             }
+            if ((string) $item->get_meta(self::BUNDLE_META_IDS, true) !== '' || (int) $item->get_meta(self::BUNDLE_META_PARENT_ID, true) > 0) {
+                continue; // WooCommerce reduces the real bundle component rows; never reduce the parent a second time.
+            }
 
             $qty = (int) (method_exists($item, 'get_quantity') ? $item->get_quantity() : 0);
             if ($qty <= 0) {
@@ -12359,6 +12844,9 @@ JS;
             $scheme = (string) $item->get_meta('_hb_ucs_subscription_scheme', true);
             if ($baseId <= 0 || $scheme === '') {
                 continue;
+            }
+            if ((string) $item->get_meta(self::BUNDLE_META_IDS, true) !== '' || (int) $item->get_meta(self::BUNDLE_META_PARENT_ID, true) > 0) {
+                continue; // Symmetric with maybe_reduce_base_stock().
             }
 
             $qty = (int) (method_exists($item, 'get_quantity') ? $item->get_quantity() : 0);

@@ -6,6 +6,25 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-08-20
+
+### Added
+- Complete module Productbundels met een eigen producteditor, klantvriendelijke kaart-/lijstweergave, servervalidatie, gekoppelde winkelmandregels en onveranderlijke ordersnapshots.
+- Compatibele opslag voor producten en historische bestellingen uit WPC Product Bundles 8.6.4, inclusief array-, compact-, legacy ID/aantal- en SKU-formaten.
+- Bundelonderdelen ondersteunen verplichte en optionele aantallen, vaste variaties, toegestane variatiekeuzes, klantteksten, labels, visuele groepen en vrije tekst-/tussenkopregels.
+- Vaste bundelprijzen, dynamische componentprijzen, procentuele of vaste korting, voorraad- en verzendmodi en veilig herhaalbestellen.
+- Integratie met HB-abonnementen: één abonnementsregel met snapshot, uitklappen naar echte orderregels bij verlenging en correcte verwerking van prijs, belasting, voorraad en verzending.
+- Integratie met WooCommerce Cart, Mini-Cart en Checkout Blocks via de Store API, inclusief gekoppelde aantallen, atomaire verwijdering, bewerklink en gebundelde totalen.
+- Alleen-lezen runtime-smoketest voor het opslagcontract en historische parserformaten.
+
+### Changed
+- Productpagina-instellingen herkennen nu zowel gewone producten als het producttype `woosb`.
+- HPOS- en WooCommerce Cart/Checkout Blocks-compatibiliteit worden expliciet gedeclareerd.
+- Uninstall kan alleen de eigen module-instelling verwijderen en bewaart product- en ordermeta.
+
+### Security
+- Elke bundelselectie wordt op de server opnieuw gecontroleerd en iedere winkelmandbundel krijgt een unieke groep-ID, zodat onderdelen niet los of met gemanipuleerde aantallen kunnen worden opgeslagen.
+
 ## [0.3.225] — 2026-07-16
 
 ### Fixed

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HB Unified Commerce Suite
  * Description: Overkoepelende plugin met modulaire features.
- * Version: 0.3.225
+ * Version: 0.4.0
  * Author: Hoeksche Branders
  * Text Domain: hb-ucs
  */
@@ -12,8 +12,15 @@ if (!defined('HB_UCS_PLUGIN_FILE')) {
     define('HB_UCS_PLUGIN_FILE', __FILE__);
 }
 if (!defined('HB_UCS_VERSION')) {
-    define('HB_UCS_VERSION', '0.3.225');
+    define('HB_UCS_VERSION', '0.4.0');
 }
+
+add_action('before_woocommerce_init', function () {
+    if (class_exists('Automattic\\WooCommerce\\Utilities\\FeaturesUtil')) {
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('custom_order_tables', HB_UCS_PLUGIN_FILE, true);
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('cart_checkout_blocks', HB_UCS_PLUGIN_FILE, true);
+    }
+});
 
 spl_autoload_register(function ($class) {
     $prefix = 'HB\\UCS\\';
@@ -33,6 +40,7 @@ register_activation_hook(__FILE__, function () {
             'roles'         => false,
             'customer_order_note' => false,
             'subscriptions' => false,
+            'bundles'       => false,
             'order_overview_status' => false,
             'returns'       => false,
             'product_pages' => false,

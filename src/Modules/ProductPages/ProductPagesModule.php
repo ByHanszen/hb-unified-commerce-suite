@@ -142,7 +142,7 @@ class ProductPagesModule {
     }
 
     private function get_product_type_key(\WC_Product $product): string {
-        if ($product->is_type('bundle')) {
+        if ($product->is_type(['bundle', 'woosb'])) {
             return 'bundle';
         }
 
