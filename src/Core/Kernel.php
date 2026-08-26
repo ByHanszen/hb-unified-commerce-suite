@@ -51,5 +51,9 @@ class Kernel {
         if (!empty($mods['product_pages']) && class_exists('HB\\UCS\\Modules\\ProductPages\\ProductPagesModule')) {
             (new \HB\UCS\Modules\ProductPages\ProductPagesModule())->init();
         }
+
+        if (!empty($mods['product_search']) && class_exists('HB\\UCS\\Modules\\ProductSearch\\ProductSearchModule')) {
+            (new \HB\UCS\Modules\ProductSearch\ProductSearchModule())->init();
+        }
     }
 }

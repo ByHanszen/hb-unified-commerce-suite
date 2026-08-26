@@ -6,6 +6,17 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-08-26
+
+### Added
+- Zelfstandige ProductSearch-module met een standaard uitgeschakelde toggle, configureerbare zoekbasis en nette `/zoeken/{zoekterm}/`-routes.
+- Tijdelijke 302-migratie van geldige Elementor Search-widget URL's, zonder redirects voor AJAX, REST, cron of beheerrequests.
+- Geïsoleerde ProductSearch-smoketests en staging-/rollbackdocumentatie.
+
+### Changed
+- Gemarkeerde nette zoekroutes blijven echte WordPress searches, maar beperken alleen hun main query tot gepubliceerde WooCommerce-producten met behoud van catalogusvisibility en bestaande B2B-prijsfilters.
+- Interne productzoekresultaten gebruiken de bestaande Elementor product Search Results-template en zijn standaard `noindex, follow`, zonder legacy canonical.
+
 ## [0.4.1] — 2026-08-25
 
 ### Changed

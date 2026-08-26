@@ -18,6 +18,7 @@ class Settings {
     const OPT_ORDER_OVERVIEW_STATUS = 'hb_ucs_order_overview_status_settings'; // Orderoverzicht status module instellingen
     const OPT_RETURNS = 'hb_ucs_returns_settings'; // Retourmodule instellingen
     const OPT_PRODUCT_PAGES = 'hb_ucs_product_pages_settings'; // Productpagina module instellingen
+    const OPT_PRODUCT_SEARCH = 'hb_ucs_product_search_settings'; // Productzoekmodule instellingen
     const LEGACY_QLS = 'qls_exclude_settings'; // oude plugin optie (migratie)
 
     public function init(): void {
@@ -50,6 +51,10 @@ class Settings {
         add_action('admin_post_hb_ucs_save_customer_order_note', [$this, 'handle_save_customer_order_note']);
         add_action('admin_post_hb_ucs_save_subscriptions', [$this, 'handle_save_subscriptions']);
         add_action('admin_post_hb_ucs_save_product_pages', [$this, 'handle_save_product_pages']);
+        add_action('admin_post_hb_ucs_save_product_search', [$this, 'handle_save_product_search']);
+
+        add_action('update_option_' . self::OPT, [$this, 'maybe_schedule_product_search_rewrite_flush'], 10, 2);
+        add_action('init', [$this, 'maybe_flush_product_search_rewrite_rules'], 99);
     }
 
     public function seed_default_options(): void {
@@ -63,6 +68,7 @@ class Settings {
         add_option(self::OPT_ORDER_OVERVIEW_STATUS, $this->defaults_order_overview_status());
         add_option(self::OPT_RETURNS, $this->defaults_returns());
         add_option(self::OPT_PRODUCT_PAGES, $this->defaults_product_pages());
+        add_option(self::OPT_PRODUCT_SEARCH, $this->defaults_product_search());
     }
 
     public function enqueue_admin_assets(string $hook): void {
@@ -154,6 +160,7 @@ class Settings {
                 'order_overview_status' => 0,
                 'returns'       => 0,
                 'product_pages' => 0,
+                'product_search' => 0,
             ],
         ];
     }
@@ -293,6 +300,19 @@ class Settings {
             'default_archive_text_simple' => '',
             'default_archive_text_variable' => '',
             'default_archive_text_bundle' => '',
+        ];
+    }
+
+    private function defaults_product_search(): array {
+        if (class_exists('HB\\UCS\\Modules\\ProductSearch\\ProductSearchModule')) {
+            return \HB\UCS\Modules\ProductSearch\ProductSearchModule::defaults();
+        }
+
+        return [
+            'search_base' => 'zoeken',
+            'redirect_legacy_elementor_urls' => 1,
+            'noindex' => 1,
+            'delete_data_on_uninstall' => 0,
         ];
     }
 
@@ -488,6 +508,15 @@ class Settings {
             'hb-ucs-product-pages',
             [$this, 'render_product_pages']
         );
+
+        add_submenu_page(
+            'hb-ucs',
+            __('Product zoeken', 'hb-ucs'),
+            __('Product zoeken', 'hb-ucs'),
+            'manage_options',
+            'hb-ucs-product-search',
+            [$this, 'render_product_search']
+        );
     }
 
     public function register(): void {
@@ -575,6 +604,14 @@ class Settings {
             $checked = !empty($mods['product_pages']) ? 'checked' : '';
             echo '<label><input type="checkbox" name="'.esc_attr(self::OPT).'[modules][product_pages]" value="1" '.$checked.'/> '.esc_html__('Activeren', 'hb-ucs').'</label>';
             echo '<p class="description">'.esc_html__('Per product extra instellingen voor productpagina\'s, zoals afwijkende add-to-cart knopteksten op product- en shopoverzichten, inclusief standaard Elementor WooCommerce widgets.', 'hb-ucs').'</p>';
+        }, 'hb-ucs', 'hb_ucs_modules');
+
+        add_settings_field('product_search', __('Product zoeken', 'hb-ucs'), function () {
+            $opt = get_option(self::OPT, $this->defaults_main());
+            $mods = $opt['modules'] ?? [];
+            $checked = !empty($mods['product_search']) ? 'checked' : '';
+            echo '<label><input type="checkbox" name="'.esc_attr(self::OPT).'[modules][product_search]" value="1" '.$checked.'/> '.esc_html__('Activeren', 'hb-ucs').'</label>';
+            echo '<p class="description">'.esc_html__('Nette productzoek-URL\'s met behoud van de Elementor Search-widget en Search Results-template.', 'hb-ucs').'</p>';
         }, 'hb-ucs', 'hb_ucs_modules');
     }
 
@@ -1478,5 +1515,104 @@ class Settings {
         $redirect = add_query_arg(['page' => 'hb-ucs-product-pages', 'updated' => 'true'], admin_url('admin.php'));
         wp_safe_redirect($redirect);
         exit;
+    }
+
+    public function render_product_search(): void {
+        $main = get_option(self::OPT, $this->defaults_main());
+        $mods = $main['modules'] ?? [];
+        $enabled = !empty($mods['product_search']);
+        $opt = get_option(self::OPT_PRODUCT_SEARCH, $this->defaults_product_search());
+        $opt = array_replace($this->defaults_product_search(), is_array($opt) ? $opt : []);
+
+        echo '<div class="wrap">';
+        echo '<h1>' . esc_html__('Product zoeken', 'hb-ucs') . '</h1>';
+
+        if (!empty($_GET['updated'])) {
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Instellingen opgeslagen.', 'hb-ucs') . '</p></div>';
+        }
+
+        if ($enabled) {
+            echo '<div class="notice notice-success"><p>' . esc_html__('Module status: ingeschakeld.', 'hb-ucs') . '</p></div>';
+        } else {
+            $modulesUrl = add_query_arg(['page' => 'hb-ucs'], admin_url('admin.php'));
+            echo '<div class="notice notice-warning"><p>' . esc_html__('Module status: uitgeschakeld.', 'hb-ucs') . ' ';
+            echo '<a href="' . esc_url($modulesUrl) . '">' . esc_html__('Schakel in via Modules.', 'hb-ucs') . '</a></p></div>';
+        }
+
+        echo '<p>' . esc_html__('De bestaande Elementor Search-widget blijft de zoekinterface. Deze instellingen bepalen alleen routing, legacy-redirect en SEO.', 'hb-ucs') . '</p>';
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        echo '<input type="hidden" name="action" value="hb_ucs_save_product_search" />';
+        wp_nonce_field('hb_ucs_save_product_search', 'hb_ucs_save_product_search_nonce');
+
+        echo '<table class="form-table" role="presentation"><tbody>';
+        echo '<tr><th scope="row"><label for="hb_ucs_product_search_base">' . esc_html__('Zoekbasis', 'hb-ucs') . '</label></th><td>';
+        echo '<input type="text" class="regular-text" id="hb_ucs_product_search_base" name="hb_ucs_product_search[search_base]" value="' . esc_attr((string) $opt['search_base']) . '" />';
+        echo '<p class="description">' . esc_html__('Bijvoorbeeld zoeken voor /zoeken/zoekterm/. Wijzigen plant één rewrite-flush in.', 'hb-ucs') . '</p></td></tr>';
+
+        foreach ([
+            'redirect_legacy_elementor_urls' => __('Legacy Elementor-URL\'s met één 302 doorsturen', 'hb-ucs'),
+            'noindex' => __('Productzoekresultaten als noindex, follow markeren', 'hb-ucs'),
+            'delete_data_on_uninstall' => __('Module-instellingen verwijderen bij uninstall', 'hb-ucs'),
+        ] as $key => $label) {
+            $checked = !empty($opt[$key]) ? 'checked' : '';
+            echo '<tr><th scope="row">' . esc_html($label) . '</th><td>';
+            echo '<label><input type="checkbox" name="hb_ucs_product_search[' . esc_attr($key) . ']" value="1" ' . $checked . ' /> ' . esc_html__('Ingeschakeld', 'hb-ucs') . '</label>';
+            echo '</td></tr>';
+        }
+
+        echo '</tbody></table>';
+        submit_button(__('Instellingen opslaan', 'hb-ucs'));
+        echo '</form></div>';
+    }
+
+    public function handle_save_product_search(): void {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Onvoldoende rechten.', 'hb-ucs'));
+        }
+
+        check_admin_referer('hb_ucs_save_product_search', 'hb_ucs_save_product_search_nonce');
+
+        $raw = isset($_POST['hb_ucs_product_search']) ? (array) wp_unslash($_POST['hb_ucs_product_search']) : [];
+        $base = isset($raw['search_base']) ? sanitize_title((string) $raw['search_base']) : '';
+        if ($base === '') {
+            $base = 'zoeken';
+        }
+
+        $clean = [
+            'search_base' => $base,
+            'redirect_legacy_elementor_urls' => empty($raw['redirect_legacy_elementor_urls']) ? 0 : 1,
+            'noindex' => empty($raw['noindex']) ? 0 : 1,
+            'delete_data_on_uninstall' => empty($raw['delete_data_on_uninstall']) ? 0 : 1,
+        ];
+
+        update_option(self::OPT_PRODUCT_SEARCH, $clean, false);
+
+        $redirect = add_query_arg(['page' => 'hb-ucs-product-search', 'updated' => 'true'], admin_url('admin.php'));
+        wp_safe_redirect($redirect);
+        exit;
+    }
+
+    public function maybe_schedule_product_search_rewrite_flush($oldValue, $newValue): void {
+        $oldEnabled = !empty($oldValue['modules']['product_search']);
+        $newEnabled = !empty($newValue['modules']['product_search']);
+        if ($oldEnabled === $newEnabled) {
+            return;
+        }
+
+        if (class_exists('HB\\UCS\\Modules\\ProductSearch\\ProductSearchModule')) {
+            \HB\UCS\Modules\ProductSearch\ProductSearchModule::schedule_rewrite_flush();
+            return;
+        }
+
+        update_option('hb_ucs_product_search_rewrite_flush_required', 1, false);
+    }
+
+    public function maybe_flush_product_search_rewrite_rules(): void {
+        if (!get_option('hb_ucs_product_search_rewrite_flush_required', 0)) {
+            return;
+        }
+
+        flush_rewrite_rules(false);
+        delete_option('hb_ucs_product_search_rewrite_flush_required');
     }
 }

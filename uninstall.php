@@ -16,6 +16,7 @@ $subs = get_option('hb_ucs_subscriptions_settings');
 $bundles = get_option('hb_ucs_bundles_settings');
 $order_overview_status = get_option('hb_ucs_order_overview_status_settings');
 $returns = get_option('hb_ucs_returns_settings');
+$product_search = get_option('hb_ucs_product_search_settings');
 
 $delete_qls = !empty($opts['delete_data_on_uninstall']);
 $delete_b2b = is_array($b2b) && !empty($b2b['delete_data_on_uninstall']);
@@ -26,8 +27,9 @@ $delete_subs = is_array($subs) && !empty($subs['delete_data_on_uninstall']);
 $delete_bundles = is_array($bundles) && !empty($bundles['delete_data_on_uninstall']);
 $delete_order_overview_status = is_array($order_overview_status) && !empty($order_overview_status['delete_data_on_uninstall']);
 $delete_returns = is_array($returns) && !empty($returns['delete_data_on_uninstall']);
+$delete_product_search = is_array($product_search) && !empty($product_search['delete_data_on_uninstall']);
 
-$delete_any = $delete_qls || $delete_b2b || $delete_roles || $delete_invoice || $delete_cust_note || $delete_subs || $delete_bundles || $delete_order_overview_status || $delete_returns;
+$delete_any = $delete_qls || $delete_b2b || $delete_roles || $delete_invoice || $delete_cust_note || $delete_subs || $delete_bundles || $delete_order_overview_status || $delete_returns || $delete_product_search;
 
 if ($delete_any) {
     // Global plugin settings (module toggles).
@@ -151,6 +153,11 @@ if ($delete_returns) {
             }
         }
     }
+}
+
+if ($delete_product_search) {
+    delete_option('hb_ucs_product_search_settings');
+    delete_option('hb_ucs_product_search_rewrite_flush_required');
 }
 
 // Drop custom tables if you add them later (examples):
