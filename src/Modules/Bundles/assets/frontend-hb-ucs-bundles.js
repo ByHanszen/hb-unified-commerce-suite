@@ -15,6 +15,11 @@
         }
     }
 
+    function quantity(value) {
+        var number = Number(value || 0);
+        return number % 1 === 0 ? String(number) : String(Math.round(number * 100) / 100);
+    }
+
     function parseJson(value, fallback) {
         try { return JSON.parse(value); } catch (e) { return fallback; }
     }
@@ -58,6 +63,28 @@
         return component;
     }
 
+    function updateItemState($item, component, qty, itemError) {
+        var cfg = window.hbUcsBundles || {};
+        var selected = qty > 0 && !!component.selectedId && !!component.purchasable && !itemError;
+        var state = cfg.chooseLabel || 'Maak een keuze';
+
+        if (selected) {
+            state = cfg.selectedLabel || 'Geselecteerd';
+        } else if (qty > 0 && !component.purchasable && (!component.variable || component.selectedId)) {
+            state = cfg.unavailableLabel || 'Niet beschikbaar';
+        } else if (component.optional && qty <= 0) {
+            state = cfg.optionalEmptyLabel || 'Niet geselecteerd';
+        }
+
+        $item.toggleClass('is-selected', selected);
+        $item.toggleClass('has-error', !!itemError);
+        $item.find('.hb-ucs-bundle__item-status').contents().filter(function () {
+            return this.nodeType === 3;
+        }).remove();
+        $item.find('.hb-ucs-bundle__item-status').append(document.createTextNode(state));
+        $item.find('.hb-ucs-bundle__qty, .hb-ucs-bundle__attribute').attr('aria-invalid', itemError ? 'true' : null);
+    }
+
     function update($bundle) {
         var cfg = window.hbUcsBundles || {};
         var config = parseJson($bundle.attr('data-config'), {});
@@ -77,14 +104,18 @@
             var qty = component.optional ? Number($item.find('.hb-ucs-bundle__qty').val() || 0) : Number(component.qty || 0);
             var min = Number(component.min || 0);
             var max = Number(component.max || 0);
-            if (qty < min || (max > 0 && qty > max)) error = error || (cfg.quantityError || 'Controleer de aantallen.');
-            if (!component.optional && qty <= 0) error = error || (cfg.requiredError || 'Maak alle keuzes.');
-            if (component.variable && qty > 0 && !component.selectedId) error = error || (cfg.requiredError || 'Maak alle keuzes.');
-            if (qty > 0 && !component.purchasable) error = error || (cfg.stockError || 'Niet op voorraad.');
-            if (qty > 0 && Number(component.stock) >= 0 && (qty * bundleQty) > Number(component.stock)) error = error || (cfg.stockError || 'Niet op voorraad.');
+            var itemError = '';
 
+            if (qty < min || (max > 0 && qty > max)) itemError = cfg.quantityError || 'Controleer de aantallen.';
+            if (!component.optional && qty <= 0) itemError = itemError || cfg.requiredError || 'Maak alle keuzes.';
+            if (component.variable && qty > 0 && !component.selectedId) itemError = itemError || cfg.requiredError || 'Maak alle keuzes.';
+            if (qty > 0 && !component.purchasable) itemError = itemError || cfg.stockError || 'Niet op voorraad.';
+            if (qty > 0 && Number(component.stock) >= 0 && (qty * bundleQty) > Number(component.stock)) itemError = itemError || cfg.stockError || 'Niet op voorraad.';
+
+            if (itemError) error = error || itemError;
             $item.attr('data-component', JSON.stringify(component));
-            $item.toggleClass('is-selected', qty > 0 && !!component.selectedId);
+            updateItemState($item, component, qty, itemError);
+
             if (qty > 0 && component.selectedId) {
                 var attrs = component.attributes || {};
                 selection.push(Number(component.selectedId) + '/' + encodeURIComponent(String(component.key)) + '/' + qty + '/' + encodeURIComponent(JSON.stringify(attrs)));
@@ -115,14 +146,31 @@
         if (config.useTotalLimits && Number(config.minTotal || 0) > 0 && total < Number(config.minTotal)) error = error || (cfg.totalError || 'Ongeldig totaal.');
         if (config.useTotalLimits && Number(config.maxTotal || 0) > 0 && total > Number(config.maxTotal)) error = error || (cfg.totalError || 'Ongeldig totaal.');
 
+        var $summary = $bundle.find('.hb-ucs-bundle__summary');
         var $list = $bundle.find('.hb-ucs-bundle__summary-list').empty();
         $.each(summary, function (_, row) {
             var $li = $('<li>');
-            $('<span>').text(row.qty + ' × ' + row.title).appendTo($li);
-            if (row.choices) $('<small>').text(row.choices).appendTo($li);
+            var $main = $('<span class="hb-ucs-bundle__summary-main">');
+            $('<strong>').text(quantity(row.qty) + ' × ' + row.title).appendTo($main);
+            if (row.choices) $('<small>').text(row.choices).appendTo($main);
+            $li.append($main);
             $list.append($li);
         });
+        $summary.toggleClass('is-empty', summary.length === 0);
+        $summary.find('.hb-ucs-bundle__summary-count strong').text(quantity(count));
+        $summary.find('.hb-ucs-bundle__summary-count span').text(count === 1 ? (cfg.componentSingular || 'onderdeel') : (cfg.componentPlural || 'onderdelen'));
         $bundle.find('.hb-ucs-bundle__total-value').text(money(total));
+
+        var savings = Math.max(0, regularTotal - total);
+        var $savings = $bundle.find('.hb-ucs-bundle__savings');
+        if (savings > 0.005) {
+            $savings.find('strong').text(money(savings));
+            $savings.prop('hidden', false);
+        } else {
+            $savings.find('strong').text('');
+            $savings.prop('hidden', true);
+        }
+
         $form.find('.hb-ucs-bundle-selection').val(selection.join(','));
         var $notice = $bundle.find('.hb-ucs-bundle__notice');
         if (error) {
@@ -138,7 +186,9 @@
     $(function () {
         $('.hb-ucs-bundle').each(function () {
             var $bundle = $(this);
-            $bundle.on('change input', '.hb-ucs-bundle__qty, .hb-ucs-bundle__attribute', function () { update($bundle); });
+            $bundle.on('change input', '.hb-ucs-bundle__qty, .hb-ucs-bundle__attribute', function () {
+                update($bundle);
+            });
             $bundle.closest('form.cart').on('change input', '.quantity .qty', function () {
                 if (!$(this).hasClass('hb-ucs-bundle__qty')) {
                     update($bundle);

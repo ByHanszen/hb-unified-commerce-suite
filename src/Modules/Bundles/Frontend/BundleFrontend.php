@@ -33,6 +33,13 @@ final class BundleFrontend {
             'stockError' => __('Een gekozen onderdeel is niet voldoende op voorraad.', 'hb-ucs'),
             'emptyError' => __('Kies minimaal één onderdeel.', 'hb-ucs'),
             'totalError' => __('De gekozen samenstelling valt buiten de toegestane prijsgrenzen.', 'hb-ucs'),
+            'selectedLabel' => __('Geselecteerd', 'hb-ucs'),
+            'chooseLabel' => __('Maak een keuze', 'hb-ucs'),
+            'optionalEmptyLabel' => __('Niet geselecteerd', 'hb-ucs'),
+            'unavailableLabel' => __('Niet beschikbaar', 'hb-ucs'),
+            'savingsLabel' => __('Je voordeel', 'hb-ucs'),
+            'componentSingular' => __('onderdeel', 'hb-ucs'),
+            'componentPlural' => __('onderdelen', 'hb-ucs'),
         ]);
     }
 
@@ -56,6 +63,16 @@ final class BundleFrontend {
         $editing = $this->get_editing_cart_item($product->get_id());
         $editSelection = !empty($editing['woosb_ids']) ? BundleData::parse_selection((string) $editing['woosb_ids']) : [];
         $fixedPrice = method_exists($product, 'is_fixed_price') && $product->is_fixed_price();
+        $componentCount = 0;
+        $optionalCount = 0;
+        foreach ($items as $item) {
+            if (!empty($item['id'])) {
+                $componentCount++;
+                if (!empty($item['optional'])) {
+                    $optionalCount++;
+                }
+            }
+        }
         $config = [
             'bundleId' => $product->get_id(),
             'fixedPrice' => $fixedPrice,
@@ -73,14 +90,22 @@ final class BundleFrontend {
         echo '<form class="cart hb-ucs-bundle-form" action="' . esc_url(apply_filters('woocommerce_add_to_cart_form_action', $product->get_permalink())) . '" method="post" enctype="multipart/form-data">';
         wp_nonce_field('hb_ucs_add_bundle_' . $product->get_id(), 'hb_ucs_bundle_nonce');
         echo '<section class="hb-ucs-bundle hb-ucs-bundle--' . esc_attr($layout) . '" data-config="' . esc_attr(wp_json_encode($config)) . '">';
-        echo '<header class="hb-ucs-bundle__header"><h2>' . esc_html($sectionTitle) . '</h2>';
+        echo '<header class="hb-ucs-bundle__header">';
+        echo '<span class="hb-ucs-bundle__eyebrow">' . esc_html__('Bundelsamenstelling', 'hb-ucs') . '</span>';
+        echo '<div class="hb-ucs-bundle__header-row"><h2>' . esc_html($sectionTitle) . '</h2>';
+        echo '<span class="hb-ucs-bundle__component-total"><strong>' . esc_html((string) $componentCount) . '</strong> ' . esc_html($componentCount === 1 ? __('product', 'hb-ucs') : __('producten', 'hb-ucs')) . '</span></div>';
+        echo '<p class="hb-ucs-bundle__guide">' . esc_html($optionalCount > 0
+            ? __('De vaste onderdelen staan al klaar. Maak waar nodig je keuze en pas optionele aantallen aan.', 'hb-ucs')
+            : __('Controleer de inbegrepen producten en maak eventuele productkeuzes compleet.', 'hb-ucs')) . '</p>';
         $before = (string) $product->get_meta('woosb_before_text');
         if ($before !== '') {
             echo '<div class="hb-ucs-bundle__intro">' . wp_kses_post(wpautop(do_shortcode($before))) . '</div>';
         }
-        echo '</header><div class="hb-ucs-bundle__items">';
+        echo '</header>';
 
+        echo '<div class="hb-ucs-bundle__workspace"><div class="hb-ucs-bundle__items">';
         $currentGroup = null;
+        $componentPosition = 0;
         foreach ($items as $key => $item) {
             if (empty($item['id'])) {
                 $tag = (string) ($item['type'] ?? 'p');
@@ -97,12 +122,22 @@ final class BundleFrontend {
                 echo '<h3 class="hb-ucs-bundle__group">' . esc_html($group) . '</h3>';
                 $currentGroup = $group;
             }
+            $componentPosition++;
             $selected = isset($editSelection[$key]) ? $editSelection[$key] : [];
-            $this->render_component((string) $key, $item, $selected, $settings);
+            $this->render_component((string) $key, $item, $selected, $settings, $componentPosition);
         }
         echo '</div>';
 
-        echo '<aside class="hb-ucs-bundle__summary" aria-live="polite"><h3>' . esc_html((string) $settings['summary_title']) . '</h3><ul class="hb-ucs-bundle__summary-list"></ul><div class="hb-ucs-bundle__total"><span>' . esc_html((string) $settings['total_text']) . '</span><strong class="hb-ucs-bundle__total-value"></strong></div></aside>';
+        echo '<aside class="hb-ucs-bundle__summary is-empty" aria-live="polite" aria-atomic="false">';
+        echo '<header class="hb-ucs-bundle__summary-header"><h3>' . esc_html((string) $settings['summary_title']) . '</h3>';
+        echo '<span class="hb-ucs-bundle__summary-count"><strong>0</strong> <span>' . esc_html__('onderdelen', 'hb-ucs') . '</span></span></header>';
+        echo '<p class="hb-ucs-bundle__summary-empty">' . esc_html__('Je gekozen onderdelen verschijnen hier automatisch.', 'hb-ucs') . '</p>';
+        echo '<ul class="hb-ucs-bundle__summary-list"></ul>';
+        echo '<div class="hb-ucs-bundle__savings" hidden><span>' . esc_html__('Je voordeel', 'hb-ucs') . '</span><strong></strong></div>';
+        echo '<div class="hb-ucs-bundle__total"><span>' . esc_html((string) $settings['total_text']) . '</span><strong class="hb-ucs-bundle__total-value"></strong></div>';
+        echo '<p class="hb-ucs-bundle__summary-note"><span class="hb-ucs-bundle__summary-check" aria-hidden="true">✓</span>' . esc_html__('De volledige samenstelling wordt ook in je winkelmand en bestelling getoond.', 'hb-ucs') . '</p>';
+        echo '</aside></div>';
+
         echo '<div class="hb-ucs-bundle__notice" role="alert" hidden></div>';
         $after = (string) $product->get_meta('woosb_after_text');
         if ($after !== '') {
@@ -115,16 +150,20 @@ final class BundleFrontend {
             echo '<input type="hidden" name="hb_ucs_bundle_edit_key" value="' . esc_attr((string) $editing['key']) . '" />';
         }
         do_action('woocommerce_before_add_to_cart_button');
+        echo '<div class="hb-ucs-bundle__purchase">';
         if (!$product->is_sold_individually()) {
+            echo '<div class="hb-ucs-bundle__purchase-quantity"><span>' . esc_html__('Aantal bundels', 'hb-ucs') . '</span>';
             woocommerce_quantity_input(['min_value' => 1, 'max_value' => $product->get_max_purchase_quantity(), 'input_value' => !empty($editing['quantity']) ? (int) $editing['quantity'] : 1], $product);
+            echo '</div>';
         }
         echo '<button type="submit" name="add-to-cart" value="' . esc_attr($product->get_id()) . '" class="single_add_to_cart_button button alt hb-ucs-bundle__submit">' . esc_html(!empty($editing['key']) ? __('Bundel bijwerken', 'hb-ucs') : (string) $settings['add_button_text']) . '</button>';
+        echo '</div>';
         do_action('woocommerce_after_add_to_cart_button');
         echo '</form>';
         do_action('woocommerce_after_add_to_cart_form');
     }
 
-    private function render_component(string $key, array $item, array $selected, array $settings): void {
+    private function render_component(string $key, array $item, array $selected, array $settings, int $position): void {
         $source = wc_get_product((int) $item['id']);
         if (!$source || BundleData::is_bundle_product($source)) {
             return;
@@ -161,15 +200,22 @@ final class BundleFrontend {
         $classes = ['hb-ucs-bundle__item'];
         $classes[] = $optional ? 'is-optional' : 'is-required';
         $classes[] = $source->is_in_stock() ? 'is-in-stock' : 'is-out-of-stock';
-        echo '<article class="' . esc_attr(implode(' ', $classes)) . '" data-component="' . esc_attr(wp_json_encode($component)) . '">';
+        $classes[] = !empty($settings['show_images']) ? 'has-image' : 'has-no-image';
+        $titleId = 'hb-ucs-bundle-component-' . $source->get_id() . '-' . sanitize_html_class($key);
+
+        echo '<article class="' . esc_attr(implode(' ', $classes)) . '" data-component="' . esc_attr(wp_json_encode($component)) . '" aria-labelledby="' . esc_attr($titleId) . '">';
+        echo '<span class="hb-ucs-bundle__sequence" aria-hidden="true">' . esc_html((string) $position) . '</span>';
         if (!empty($settings['show_images'])) {
             echo '<div class="hb-ucs-bundle__image">' . wp_kses_post($source->get_image('woocommerce_thumbnail')) . '</div>';
         }
-        echo '<div class="hb-ucs-bundle__details"><div class="hb-ucs-bundle__title-row"><h4>' . esc_html($title) . '</h4>';
+        echo '<div class="hb-ucs-bundle__details"><div class="hb-ucs-bundle__title-row"><h4 id="' . esc_attr($titleId) . '">' . esc_html($title) . '</h4>';
         if (!empty($item['badge'])) {
             echo '<span class="hb-ucs-bundle__badge">' . esc_html((string) $item['badge']) . '</span>';
         }
-        echo '</div><span class="hb-ucs-bundle__kind">' . esc_html($optional ? (string) $settings['optional_text'] : (string) $settings['required_text']) . '</span>';
+        echo '</div><div class="hb-ucs-bundle__meta-row">';
+        echo '<span class="hb-ucs-bundle__kind">' . esc_html($optional ? (string) $settings['optional_text'] : (string) $settings['required_text']) . '</span>';
+        echo '<span class="hb-ucs-bundle__item-status"><span aria-hidden="true"></span>' . esc_html($optional && $qty <= 0 ? __('Niet geselecteerd', 'hb-ucs') : ($source->is_type('variable') ? __('Maak een keuze', 'hb-ucs') : __('Geselecteerd', 'hb-ucs'))) . '</span>';
+        echo '</div>';
         if ($description !== '') {
             echo '<div class="hb-ucs-bundle__description">' . wp_kses_post(wpautop($description)) . '</div>';
         }
@@ -181,10 +227,12 @@ final class BundleFrontend {
         }
         echo '</div><div class="hb-ucs-bundle__choice">';
         if (!empty($settings['show_prices'])) {
-            echo '<div class="hb-ucs-bundle__price">' . wp_kses_post($source->get_price_html()) . '</div>';
+            echo '<div class="hb-ucs-bundle__price"><span class="screen-reader-text">' . esc_html__('Prijs per onderdeel:', 'hb-ucs') . '</span>' . wp_kses_post($source->get_price_html()) . '</div>';
         }
         if ($optional) {
+            echo '<div class="hb-ucs-bundle__qty-control"><span>' . esc_html__('Aantal', 'hb-ucs') . '</span>';
             woocommerce_quantity_input(['input_value' => $qty, 'min_value' => $min, 'max_value' => $max, 'input_name' => 'hb_ucs_bundle_qty_' . $key, 'classes' => ['input-text', 'qty', 'text', 'hb-ucs-bundle__qty']], $source);
+            echo '</div>';
         } else {
             echo '<div class="hb-ucs-bundle__fixed-qty"><span>' . esc_html__('Aantal', 'hb-ucs') . '</span><strong>' . esc_html(wc_format_localized_decimal($qty)) . '</strong></div>';
         }

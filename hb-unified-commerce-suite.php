@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HB Unified Commerce Suite
  * Description: Overkoepelende plugin met modulaire features.
- * Version: 0.4.0
+ * Version: 0.4.1
  * Author: Hoeksche Branders
  * Text Domain: hb-ucs
  */
@@ -12,7 +12,7 @@ if (!defined('HB_UCS_PLUGIN_FILE')) {
     define('HB_UCS_PLUGIN_FILE', __FILE__);
 }
 if (!defined('HB_UCS_VERSION')) {
-    define('HB_UCS_VERSION', '0.4.0');
+    define('HB_UCS_VERSION', '0.4.1');
 }
 
 add_action('before_woocommerce_init', function () {

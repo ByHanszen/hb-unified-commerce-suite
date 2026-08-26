@@ -6,6 +6,17 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-08-25
+
+### Changed
+- De producteditor heeft een overzichtelijke bundelbouwer met productzoekbalk, onderdeelenteller, inklapbare kaarten, productdetails en gegroepeerde prijs-, keuze-, voorraad- en presentatie-instellingen.
+- De algemene bundelinstellingen zijn verdeeld in duidelijke kaarten voor presentatie, winkelmandgedrag, klantteksten en gegevensbeheer.
+- De productpagina toont een duidelijkere introductie, selectie- en foutstatus per onderdeel, een live onderdeelenteller, voordeelweergave en een responsive samenvatting.
+- Klassieke en Blocks-winkelmandregels maken de relatie tussen hoofdproduct en bundelonderdelen visueel duidelijker.
+
+### Fixed
+- Bij het omzetten van een vast onderdeel naar een keuzeonderdeel wordt het minimumaantal in de producteditor direct op nul gezet.
+
 ## [0.4.0] — 2026-08-20
 
 ### Added
