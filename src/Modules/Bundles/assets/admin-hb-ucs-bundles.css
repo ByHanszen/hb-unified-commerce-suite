@@ -451,6 +451,12 @@
     border-radius: 6px;
 }
 
+#woocommerce-product-data .hb-ucs-bundle-item-grid input,
+#woocommerce-product-data .hb-ucs-bundle-item-grid select,
+#woocommerce-product-data .hb-ucs-bundle-item-grid textarea {
+    float: none;
+}
+
 .hb-ucs-bundle-item-grid textarea {
     min-height: 76px;
     resize: vertical;
