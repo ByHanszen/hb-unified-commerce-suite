@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HB Unified Commerce Suite
  * Description: Overkoepelende plugin met modulaire features.
- * Version: 0.4.1
+ * Version: 0.5.0
  * Author: Hoeksche Branders
  * Text Domain: hb-ucs
  */
@@ -12,7 +12,7 @@ if (!defined('HB_UCS_PLUGIN_FILE')) {
     define('HB_UCS_PLUGIN_FILE', __FILE__);
 }
 if (!defined('HB_UCS_VERSION')) {
-    define('HB_UCS_VERSION', '0.4.1');
+    define('HB_UCS_VERSION', '0.5.0');
 }
 
 add_action('before_woocommerce_init', function () {
@@ -44,6 +44,7 @@ register_activation_hook(__FILE__, function () {
             'order_overview_status' => false,
             'returns'       => false,
             'product_pages' => false,
+            'product_search' => false,
         ],
     ];
     $opt = get_option('hb_ucs_settings', []);
@@ -56,6 +57,16 @@ register_activation_hook(__FILE__, function () {
     // Store current plugin version for update tracking.
     if (defined('HB_UCS_VERSION')) {
         update_option('hb_ucs_version', HB_UCS_VERSION);
+    }
+
+    if (class_exists('HB\\UCS\\Modules\\ProductSearch\\ProductSearchModule')) {
+        \HB\UCS\Modules\ProductSearch\ProductSearchModule::activate();
+    }
+});
+
+register_deactivation_hook(__FILE__, function () {
+    if (class_exists('HB\\UCS\\Modules\\ProductSearch\\ProductSearchModule')) {
+        \HB\UCS\Modules\ProductSearch\ProductSearchModule::deactivate();
     }
 });
 
