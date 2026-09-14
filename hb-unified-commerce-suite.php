@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HB Unified Commerce Suite
  * Description: Overkoepelende plugin met modulaire features.
- * Version: 0.5.2
+ * Version: 0.5.3
  * Author: Hoeksche Branders
  * Text Domain: hb-ucs
  */
@@ -12,7 +12,7 @@ if (!defined('HB_UCS_PLUGIN_FILE')) {
     define('HB_UCS_PLUGIN_FILE', __FILE__);
 }
 if (!defined('HB_UCS_VERSION')) {
-    define('HB_UCS_VERSION', '0.5.2');
+    define('HB_UCS_VERSION', '0.5.3');
 }
 
 add_action('before_woocommerce_init', function () {
@@ -35,12 +35,21 @@ add_action('wp_ajax_woocommerce_save_order_items', function () {
     $subscriptionType = 'shop_subscription_hb';
     $isSubscriptionOrder = $orderId > 0 && get_post_type($orderId) === $subscriptionType;
     $referer = isset($_SERVER['HTTP_REFERER']) ? (string) wp_unslash($_SERVER['HTTP_REFERER']) : '';
+    $postedItems = [];
 
-    if (!$isSubscriptionOrder && strpos($referer, 'page=wc-orders--' . $subscriptionType) !== false) {
+    if (isset($_REQUEST['items']) && is_string($_REQUEST['items'])) {
+        parse_str(wp_unslash($_REQUEST['items']), $postedItems);
+    }
+
+    $isSubscriptionEditorRequest = isset($postedItems['hb_ucs_shipping_lines_present'])
+        || isset($postedItems['hb_ucs_items_present'])
+        || isset($postedItems['hb_ucs_fees_present']);
+
+    if (!$isSubscriptionOrder && !$isSubscriptionEditorRequest && strpos($referer, 'page=wc-orders--' . $subscriptionType) !== false) {
         $isSubscriptionOrder = true;
     }
 
-    if (!$isSubscriptionOrder) {
+    if (!$isSubscriptionOrder && !$isSubscriptionEditorRequest) {
         return;
     }
 
