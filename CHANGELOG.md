@@ -17,6 +17,7 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ### Fixed
 - De subscription-editor triggert niet langer WooCommerce's standaard AJAX-save voor orderregels bij het herberekenen of opslaan van verzendregels.
+- Het abonnementsscherm laadt niet langer WooCommerce's standaard order-metabox-JavaScript, zodat updates niet meer eindigen in de melding "Ongeldige bestelling".
 
 ## [0.5.0] — 2026-08-26
 

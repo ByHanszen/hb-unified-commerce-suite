@@ -108,7 +108,7 @@ class SubscriptionsModule {
         add_action('woocommerce_save_product_variation', [$this, 'save_variation_fields'], 10, 2);
 
         if (is_admin()) {
-            add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
+            add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets'], 100);
             add_action('woocommerce_admin_order_data_after_billing_address', [$this, 'render_subscription_mollie_admin_fields'], 20, 1);
             add_action('wp_ajax_hb_ucs_subscription_product_data', [$this, 'handle_subscription_product_data_ajax']);
             add_action('wp_ajax_hb_ucs_subscription_customer_details', [$this, 'handle_subscription_customer_details_ajax']);
@@ -9592,6 +9592,8 @@ class SubscriptionsModule {
 
         // Subscription screens: use WooCommerce admin styles + enhanced selects for filters/product search.
         if ($screen->id === 'woocommerce_page_wc-orders--' . $this->get_subscription_order_type()->get_type() || $screen->id === 'admin_page_wc-orders--' . $this->get_subscription_order_type()->get_type()) {
+            wp_dequeue_script('wc-admin-order-meta-boxes');
+
             if (wp_style_is('woocommerce_admin_styles', 'registered') || wp_style_is('woocommerce_admin_styles', 'enqueued')) {
                 wp_enqueue_style('woocommerce_admin_styles');
             }
