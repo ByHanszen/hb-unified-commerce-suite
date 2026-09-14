@@ -9635,6 +9635,16 @@ jQuery(function($){
         subscriptionItemsBox.off('click', 'button.add-line-item, button.add-order-item, button.add-order-fee, button.add-order-shipping, button.add-order-tax, button.save-action, button.calculate-action, .cancel-action');
     }
 
+    var saveOrderItemsButton = $('#save_order_items');
+    if (saveOrderItemsButton.length) {
+        saveOrderItemsButton.off('click').on('click', function(event) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            $('#post').trigger('submit');
+            return false;
+        });
+    }
+
     var cfg = {
         ajaxUrl: __AJAX_URL__,
         nonce: __NONCE__,
