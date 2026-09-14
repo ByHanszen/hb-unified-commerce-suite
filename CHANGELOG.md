@@ -4,7 +4,7 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
-## [Unreleased]
+## [0.5.1] — 2026-09-14
 
 ### Added
 - Productbundels ondersteunen nu expliciete single- en multi-keuzegroepen via aanvullende `hb_ucs_bundle_groups`-meta en stabiele `group_id`-koppelingen in het bestaande `woosb_ids`-contract.
