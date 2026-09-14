@@ -109,6 +109,7 @@ class SubscriptionsModule {
 
         if (is_admin()) {
             add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets'], 100);
+            add_action('admin_init', [$this, 'guard_subscription_order_items_ajax'], 0);
             add_action('woocommerce_admin_order_data_after_billing_address', [$this, 'render_subscription_mollie_admin_fields'], 20, 1);
             add_action('wp_ajax_hb_ucs_subscription_product_data', [$this, 'handle_subscription_product_data_ajax']);
             add_action('wp_ajax_hb_ucs_subscription_customer_details', [$this, 'handle_subscription_customer_details_ajax']);
@@ -197,6 +198,38 @@ class SubscriptionsModule {
         add_action('woocommerce_restore_order_stock', [$this, 'maybe_restore_base_stock'], 10, 1);
         add_filter('woocommerce_hidden_order_itemmeta', [$this, 'filter_hidden_order_itemmeta'], 20, 1);
         add_filter('woocommerce_order_item_get_formatted_meta_data', [$this, 'filter_order_item_formatted_meta_data'], 20, 2);
+    }
+
+    public function guard_subscription_order_items_ajax(): void {
+        if (!wp_doing_ajax()) {
+            return;
+        }
+
+        $action = isset($_REQUEST['action']) ? sanitize_key((string) wp_unslash($_REQUEST['action'])) : '';
+        if ($action !== 'woocommerce_save_order_items') {
+            return;
+        }
+
+        $orderId = isset($_REQUEST['order_id']) ? absint((string) wp_unslash($_REQUEST['order_id'])) : 0;
+        if ($orderId <= 0 || !function_exists('wc_get_order')) {
+            return;
+        }
+
+        $order = wc_get_order($orderId);
+        if (!$order || !is_object($order) || !method_exists($order, 'get_type') || (string) $order->get_type() !== $this->get_subscription_order_type()->get_type()) {
+            return;
+        }
+
+        add_action('wp_ajax_woocommerce_save_order_items', [$this, 'handle_subscription_order_items_ajax'], 1);
+    }
+
+    public function handle_subscription_order_items_ajax(): void {
+        if (!current_user_can('edit_shop_orders')) {
+            wp_die(-1);
+        }
+
+        check_ajax_referer('order-item', 'security');
+        wp_send_json_success(['html' => '', 'notes_html' => '']);
     }
 
     private function bootstrap_phase1_architecture(): void {
