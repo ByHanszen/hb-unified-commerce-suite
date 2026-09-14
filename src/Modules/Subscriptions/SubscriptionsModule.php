@@ -9599,7 +9599,8 @@ class SubscriptionsModule {
 
     public function enqueue_admin_assets(string $hook): void {
         if (!is_admin()) return;
-        if ($hook !== 'post.php' && $hook !== 'post-new.php' && $hook !== 'edit.php' && $hook !== 'woocommerce_page_wc-orders') return;
+        $isOrderTypeHook = strpos($hook, 'woocommerce_page_wc-orders--') === 0 || strpos($hook, 'admin_page_wc-orders--') === 0;
+        if ($hook !== 'post.php' && $hook !== 'post-new.php' && $hook !== 'edit.php' && $hook !== 'woocommerce_page_wc-orders' && !$isOrderTypeHook) return;
         if (!function_exists('get_current_screen')) return;
         $screen = get_current_screen();
         if (!$screen) return;

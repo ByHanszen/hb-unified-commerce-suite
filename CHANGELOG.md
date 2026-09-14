@@ -4,7 +4,7 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
-## [0.5.7] — 2026-09-14
+## [0.5.8] — 2026-09-14
 
 ### Added
 - Productbundels ondersteunen nu expliciete single- en multi-keuzegroepen via aanvullende `hb_ucs_bundle_groups`-meta en stabiele `group_id`-koppelingen in het bestaande `woosb_ids`-contract.
@@ -26,6 +26,7 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 - De WooCommerce order-item AJAX-hook wordt nu tijdens `admin_init` volledig vervangen, direct voordat WordPress de AJAX-action dispatcht.
 - De standaard knop voor het opslaan van orderregels submit nu het subscription-formulier, zodat de custom orderregels niet door een lege WooCommerce AJAX-response uit beeld verdwijnen.
 - De orderregel-save wordt nu al op native browser-capture-niveau onderschept, ook wanneer WooCommerce de save-knop dynamisch toevoegt.
+- De subscription-order-type schermen accepteren nu hun eigen `admin_enqueue_scripts` hooknamen, zodat de custom save-logica daadwerkelijk wordt geladen.
 
 ## [0.5.0] — 2026-08-26
 
