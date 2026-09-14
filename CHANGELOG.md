@@ -19,7 +19,7 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 - De subscription-editor triggert niet langer WooCommerce's standaard AJAX-save voor orderregels bij het herberekenen of opslaan van verzendregels.
 - Het abonnementsscherm laadt niet langer WooCommerce's standaard order-metabox-JavaScript, zodat updates niet meer eindigen in de melding "Ongeldige bestelling".
 - De subscription-editor verwijdert resterende WooCommerce order-item handlers ook client-side, zodat een gecachte of opnieuw geladen core-script geen `woocommerce_save_order_items`-AJAX-call meer kan starten.
-- Een resterende `woocommerce_save_order_items`-AJAX-call voor een subscription-order wordt server-side vroeg afgevangen, zodat WooCommerce niet langer met een ongeldig orderobject kan crashen.
+- Een resterende `woocommerce_save_order_items`-AJAX-call voor een subscription-order wordt direct server-side afgevangen, ook wanneer WooCommerce zelf het order-ID niet kan laden, zodat de core-handler niet langer met een ongeldig orderobject kan crashen.
 
 ## [0.5.0] — 2026-08-26
 
