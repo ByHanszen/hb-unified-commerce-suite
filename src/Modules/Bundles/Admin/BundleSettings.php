@@ -55,7 +55,9 @@ final class BundleSettings {
         }
         $base = trailingslashit(plugins_url('src/Modules/Bundles/assets/', HB_UCS_PLUGIN_FILE));
         $version = defined('HB_UCS_VERSION') ? HB_UCS_VERSION : '0.0.0';
-        wp_enqueue_style('hb-ucs-bundles-admin', $base . 'admin-hb-ucs-bundles.css', [], $version);
+        $stylePath = dirname(HB_UCS_PLUGIN_FILE) . '/src/Modules/Bundles/assets/admin-hb-ucs-bundles.css';
+        $styleVersion = $version . '.' . (is_readable($stylePath) ? (string) filemtime($stylePath) : '0');
+        wp_enqueue_style('hb-ucs-bundles-admin', $base . 'admin-hb-ucs-bundles.css', [], $styleVersion);
     }
 
     public function render(): void {

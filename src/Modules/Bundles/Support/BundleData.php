@@ -12,6 +12,7 @@ if (!defined('ABSPATH')) exit;
 final class BundleData {
     public const PRODUCT_TYPE = 'woosb';
     public const META_ITEMS = 'woosb_ids';
+    public const META_GROUPS = 'hb_ucs_bundle_groups';
     public const META_FIXED_PRICE = 'woosb_disable_auto_price';
     public const META_DISCOUNT = 'woosb_discount';
     public const META_DISCOUNT_AMOUNT = 'woosb_discount_amount';
@@ -93,7 +94,7 @@ final class BundleData {
                 $max = $qty;
             }
 
-            $normalized[$key] = [
+            $normalizedItem = [
                 'id' => $id,
                 'sku' => sanitize_text_field((string) ($rawItem['sku'] ?? '')),
                 'qty' => max(0.0, $qty),
@@ -106,6 +107,86 @@ final class BundleData {
                 'customer_description' => wp_kses_post((string) ($rawItem['customer_description'] ?? '')),
                 'badge' => sanitize_text_field((string) ($rawItem['badge'] ?? '')),
                 'group' => sanitize_text_field((string) ($rawItem['group'] ?? '')),
+            ];
+            // Omit an empty relation so normalizing/saving a legacy woosb_ids
+            // array does not acquire new structural data.
+            $groupId = sanitize_key((string) ($rawItem['group_id'] ?? ''));
+            if ($groupId !== '') {
+                $normalizedItem['group_id'] = $groupId;
+            }
+            $normalized[$key] = $normalizedItem;
+        }
+
+        return $normalized;
+    }
+
+    /** @return array<string,array<string,mixed>> */
+    public static function normalize_product_groups($product, $raw = null): array {
+        if ($raw === null && is_object($product) && method_exists($product, 'get_meta')) {
+            $raw = $product->get_meta(self::META_GROUPS);
+        }
+        return self::normalize_groups($raw);
+    }
+
+    /**
+     * Normalize the HB choice-group contract. Keys and group_id are kept equal
+     * so component relations cannot depend on a mutable customer-facing title.
+     *
+     * @return array<string,array<string,mixed>>
+     */
+    public static function normalize_groups($raw): array {
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($raw as $rawKey => $rawGroup) {
+            if (!is_array($rawGroup)) {
+                continue;
+            }
+            $candidate = sanitize_key((string) ($rawGroup['group_id'] ?? $rawKey));
+            if ($candidate === '') {
+                $candidate = 'group_' . substr(md5((string) $rawKey . ':' . count($normalized)), 0, 10);
+            }
+            $groupId = $candidate;
+            $suffix = 2;
+            while (isset($normalized[$groupId])) {
+                $groupId = $candidate . '_' . $suffix;
+                $suffix++;
+            }
+
+            $type = sanitize_key((string) ($rawGroup['type'] ?? 'multi'));
+            if (!in_array($type, ['single', 'multi'], true)) {
+                $type = 'multi';
+            }
+            $min = max(0, (int) ($rawGroup['min'] ?? 0));
+            $max = max($min, (int) ($rawGroup['max'] ?? ($type === 'single' ? 1 : $min)));
+            if ($type === 'single') {
+                $min = min(1, $min);
+                $max = 1;
+            }
+            $maxPerItemRaw = $rawGroup['max_per_item'] ?? '';
+            $maxPerItem = ($maxPerItemRaw === '' || $maxPerItemRaw === null)
+                ? '' : max(1, (int) $maxPerItemRaw);
+            $layout = sanitize_key((string) ($rawGroup['layout'] ?? 'standard'));
+            if (!in_array($layout, ['standard', 'cards', 'compact', 'list', 'radio_cards'], true)) {
+                $layout = 'standard';
+            }
+
+            $normalized[$groupId] = [
+                'group_id' => $groupId,
+                'title' => sanitize_text_field((string) ($rawGroup['title'] ?? '')),
+                'description' => wp_kses_post((string) ($rawGroup['description'] ?? '')),
+                'type' => $type,
+                'min' => $min,
+                'max' => $max,
+                'max_per_item' => $maxPerItem,
+                'allow_duplicates' => !empty($rawGroup['allow_duplicates']) ? 1 : 0,
+                'layout' => $layout,
+                'show_images' => !array_key_exists('show_images', $rawGroup) || !empty($rawGroup['show_images']) ? 1 : 0,
+                'show_prices' => !array_key_exists('show_prices', $rawGroup) || !empty($rawGroup['show_prices']) ? 1 : 0,
+                'show_descriptions' => !empty($rawGroup['show_descriptions']) ? 1 : 0,
+                'source' => 'explicit',
             ];
         }
 
@@ -217,12 +298,15 @@ final class BundleData {
     /** @return array<string,mixed> */
     public static function build_snapshot($bundle, array $selection): array {
         $components = [];
+        $definitions = is_object($bundle) && method_exists($bundle, 'get_items')
+            ? (array) $bundle->get_items() : self::normalize_product_items($bundle);
+        $groups = self::normalize_product_groups($bundle);
         foreach ($selection as $key => $selected) {
             $product = function_exists('wc_get_product') ? wc_get_product((int) ($selected['id'] ?? 0)) : false;
             if (!$product) {
                 continue;
             }
-            $components[] = [
+            $component = [
                 'key' => sanitize_key((string) $key),
                 'product_id' => (int) $product->get_id(),
                 'parent_product_id' => method_exists($product, 'get_parent_id') ? (int) $product->get_parent_id() : 0,
@@ -232,16 +316,27 @@ final class BundleData {
                 'attributes' => self::sanitize_attributes($selected['attrs'] ?? []),
                 'unit_price' => (float) $product->get_price(),
             ];
+            if (!empty($groups)) {
+                $groupId = sanitize_key((string) ($definitions[$key]['group_id'] ?? ''));
+                if ($groupId !== '') {
+                    $component['group_id'] = $groupId;
+                }
+            }
+            $components[] = $component;
         }
 
-        return [
-            'schema_version' => 1,
+        $snapshot = [
+            'schema_version' => empty($groups) ? 1 : 2,
             'bundle_product_id' => is_object($bundle) && method_exists($bundle, 'get_id') ? (int) $bundle->get_id() : 0,
             'bundle_name' => is_object($bundle) && method_exists($bundle, 'get_name') ? (string) $bundle->get_name() : '',
             'pricing_mode' => is_object($bundle) && method_exists($bundle, 'is_fixed_price') && $bundle->is_fixed_price() ? 'fixed' : 'components',
             'shipping_mode' => is_object($bundle) && method_exists($bundle, 'get_meta') ? (string) ($bundle->get_meta(self::META_SHIPPING) ?: 'whole') : 'whole',
             'components' => $components,
         ];
+        if (!empty($groups)) {
+            $snapshot['groups'] = array_values($groups);
+        }
+        return $snapshot;
     }
 
     private static function normalize_key($rawKey, array $existing): string {

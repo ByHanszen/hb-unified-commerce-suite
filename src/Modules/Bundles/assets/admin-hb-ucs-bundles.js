@@ -1,176 +1,69 @@
 (function ($) {
     'use strict';
+    function key(prefix) { prefix = prefix || 'item'; if (window.crypto && window.crypto.getRandomValues) { var v = new Uint32Array(2); window.crypto.getRandomValues(v); return prefix + '_' + v[0].toString(36) + v[1].toString(36); } return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+    function esc(value) { return $('<div>').text(value == null ? '' : String(value)).html(); }
+    function label(name, fallback) { return (window.hbUcsBundlesAdmin || {})[name] || fallback; }
+    function field(k, name) { return 'hb_ucs_bundle_items[' + k + '][' + name + ']'; }
+    function groupField(k, name) { return 'hb_ucs_bundle_groups[' + k + '][' + name + ']'; }
+    function announce(message) { $('.hb-ucs-bundle-status').text('').text(message); }
 
-    function key() {
-        if (window.crypto && window.crypto.getRandomValues) {
-            var values = new Uint32Array(2);
-            window.crypto.getRandomValues(values);
-            return 'item_' + values[0].toString(36) + values[1].toString(36);
-        }
-        return 'item_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    }
-
-    function esc(value) {
-        return $('<div>').text(value == null ? '' : String(value)).html();
-    }
-
-    function label(name, fallback) {
-        var labels = window.hbUcsBundlesAdmin || {};
-        return labels[name] || fallback;
-    }
-
-    function fieldName(itemKey, field) {
-        return 'hb_ucs_bundle_items[' + itemKey + '][' + field + ']';
-    }
-
-    function itemHeader(itemKey, title, state, content) {
-        var thumb = content
-            ? '<span class="hb-ucs-bundle-item__thumb hb-ucs-bundle-item__thumb--content"><span class="dashicons dashicons-editor-textcolor" aria-hidden="true"></span></span>'
-            : '<span class="hb-ucs-bundle-item__thumb hb-ucs-bundle-item__thumb--placeholder"><span class="dashicons dashicons-products" aria-hidden="true"></span></span>';
-
-        return '<header class="hb-ucs-bundle-item__header">' +
-            '<span class="hb-ucs-bundle-handle dashicons dashicons-move" role="button" tabindex="0" aria-label="Onderdeel verslepen"></span>' +
-            '<span class="hb-ucs-bundle-item__index" aria-hidden="true"></span>' +
-            thumb +
-            '<span class="hb-ucs-bundle-item__heading"><strong>' + esc(title) + '</strong><span class="hb-ucs-bundle-item__meta">' +
-            esc(content ? 'Verduidelijkt de samenstelling voor de klant' : 'Nieuw onderdeel — sla het product op voor alle productgegevens') +
-            '</span></span>' +
-            '<span class="hb-ucs-bundle-item__state">' + esc(state) + '</span>' +
-            '<button type="button" class="button-link hb-ucs-bundle-toggle" aria-expanded="true" aria-label="' + esc(label('collapse', 'Onderdeel inklappen')) + '"><span class="dashicons dashicons-arrow-up-alt2" aria-hidden="true"></span></button>' +
-            '<button type="button" class="button-link-delete hb-ucs-bundle-remove"><span class="dashicons dashicons-trash" aria-hidden="true"></span><span class="screen-reader-text">' + esc(label('remove', 'Verwijderen')) + '</span></button>' +
-            '</header>';
-    }
-
-    function itemHtml(itemKey, id, title) {
-        return '<article class="hb-ucs-bundle-item" data-key="' + esc(itemKey) + '">' +
-            itemHeader(itemKey, title, label('included', 'Vast inbegrepen'), false) +
-            '<input type="hidden" name="' + esc(fieldName(itemKey, 'id')) + '" value="' + esc(id) + '">' +
-            '<input type="hidden" name="' + esc(fieldName(itemKey, 'sku')) + '" value="">' +
-            '<div class="hb-ucs-bundle-item__body"><div class="hb-ucs-bundle-item-grid">' +
-            '<label><span>' + esc(label('defaultQuantity', 'Standaardaantal')) + '</span><input type="number" min="0" step="any" name="' + esc(fieldName(itemKey, 'qty')) + '" value="1"></label>' +
-            '<label class="hb-ucs-bundle-optional"><span>' + esc(label('type', 'Type')) + '</span><select name="' + esc(fieldName(itemKey, 'optional')) + '"><option value="0">' + esc(label('included', 'Vast inbegrepen')) + '</option><option value="1">' + esc(label('optional', 'Keuzeonderdeel')) + '</option></select></label>' +
-            '<label><span>' + esc(label('minimum', 'Minimum')) + '</span><input type="number" min="0" step="any" name="' + esc(fieldName(itemKey, 'min')) + '" value="1"></label>' +
-            '<label><span>' + esc(label('maximum', 'Maximum')) + '</span><input type="number" min="0" step="any" name="' + esc(fieldName(itemKey, 'max')) + '" value="1"></label>' +
-            '<label><span>' + esc(label('customerTitle', 'Klanttitel')) + '</span><input type="text" name="' + esc(fieldName(itemKey, 'customer_title')) + '" placeholder="' + esc(label('customerTitlePlaceholder', 'Leeg gebruikt de productnaam')) + '"></label>' +
-            '<label><span>' + esc(label('badge', 'Label')) + '</span><input type="text" name="' + esc(fieldName(itemKey, 'badge')) + '" placeholder="' + esc(label('badgePlaceholder', 'Bijv. Meest gekozen')) + '"></label>' +
-            '<label><span>' + esc(label('group', 'Groep')) + '</span><input type="text" name="' + esc(fieldName(itemKey, 'group')) + '" placeholder="' + esc(label('groupPlaceholder', 'Bijv. Basis of Extra’s')) + '"></label>' +
-            '<label class="hb-ucs-bundle-wide"><span>' + esc(label('customerDescription', 'Uitleg voor klant')) + '</span><textarea rows="3" name="' + esc(fieldName(itemKey, 'customer_description')) + '"></textarea><small>Houd deze uitleg kort; de klant ziet hem direct onder de productnaam.</small></label>' +
-            '</div></div></article>';
-    }
-
-    function contentHtml(itemKey) {
-        return '<article class="hb-ucs-bundle-item hb-ucs-bundle-content-item" data-key="' + esc(itemKey) + '">' +
-            itemHeader(itemKey, label('contentRow', 'Tekst of tussenkop'), label('content', 'Inhoud'), true) +
-            '<input type="hidden" name="' + esc(fieldName(itemKey, 'id')) + '" value="0">' +
-            '<div class="hb-ucs-bundle-item__body"><div class="hb-ucs-bundle-item-grid"><label><span>' + esc(label('format', 'Opmaak')) + '</span><select name="' + esc(fieldName(itemKey, 'type')) + '"><option value="h1">H1</option><option value="h2">H2</option><option value="h3">H3</option><option value="h4">H4</option><option value="h5">H5</option><option value="h6">H6</option><option value="p" selected>' + esc(label('paragraph', 'Alinea')) + '</option><option value="span">' + esc(label('shortText', 'Korte tekst')) + '</option><option value="none">' + esc(label('noMarkup', 'Geen extra opmaak')) + '</option></select></label>' +
-            '<label class="hb-ucs-bundle-wide"><span>' + esc(label('text', 'Tekst')) + '</span><textarea rows="3" name="' + esc(fieldName(itemKey, 'text')) + '"></textarea></label></div></div></article>';
-    }
-
-    function announce(message) {
-        $('.hb-ucs-bundle-status').text('').text(message);
-    }
-
-    function setItemState($item) {
-        if ($item.hasClass('hb-ucs-bundle-content-item')) return;
-        var optional = $item.find('.hb-ucs-bundle-optional select').val() === '1';
-        $item.toggleClass('is-optional', optional);
-        $item.find('.hb-ucs-bundle-item__state').text(optional ? label('optional', 'Keuzeonderdeel') : label('included', 'Vast inbegrepen'));
-    }
-
-    function refreshUi($items) {
-        var $all = $items.children('.hb-ucs-bundle-item');
-        var count = $all.length;
-        $items.toggleClass('is-empty', count === 0);
-        $all.each(function (index) {
-            $(this).find('.hb-ucs-bundle-item__index').first().text(index + 1);
-            setItemState($(this));
+    function groupOptions(selected) {
+        var html = '<option value="">' + esc(label('ungrouped', 'Geen keuzegroep')) + '</option>';
+        $('.hb-ucs-bundle-choice-group').each(function () {
+            var id = String($(this).data('group-id') || '');
+            var title = $.trim($(this).find('[name$="[title]"]').first().val()) || id;
+            html += '<option value="' + esc(id) + '"' + (id === selected ? ' selected' : '') + '>' + esc(title) + '</option>';
         });
-        var $count = $('.hb-ucs-bundle-builder__count');
-        $count.find('strong').text(count);
-        var $label = $count.find('span');
-        $label.text(count === 1 ? ($label.data('singular') || label('itemSingular', 'onderdeel')) : ($label.data('plural') || label('itemPlural', 'onderdelen')));
+        return html;
+    }
+    function header(title, state, content) {
+        var thumb = content ? '<span class="hb-ucs-bundle-item__thumb hb-ucs-bundle-item__thumb--content"><span class="dashicons dashicons-editor-textcolor"></span></span>' : '<span class="hb-ucs-bundle-item__thumb hb-ucs-bundle-item__thumb--placeholder"><span class="dashicons dashicons-products"></span></span>';
+        return '<header class="hb-ucs-bundle-item__header"><span class="hb-ucs-bundle-handle dashicons dashicons-move" role="button" tabindex="0" aria-label="Onderdeel verslepen"></span><span class="hb-ucs-bundle-item__index"></span>' + thumb + '<span class="hb-ucs-bundle-item__heading"><strong>' + esc(title) + '</strong><span class="hb-ucs-bundle-item__meta">' + esc(content ? 'Verduidelijkt de samenstelling' : 'Nieuw onderdeel — sla op voor productgegevens') + '</span></span><span class="hb-ucs-bundle-item__state">' + esc(state) + '</span><button type="button" class="button-link hb-ucs-bundle-toggle" aria-expanded="true" aria-label="Onderdeel inklappen"><span class="dashicons dashicons-arrow-up-alt2"></span></button><button type="button" class="button-link-delete hb-ucs-bundle-remove"><span class="dashicons dashicons-trash"></span><span class="screen-reader-text">' + esc(label('remove', 'Verwijderen')) + '</span></button></header>';
+    }
+    function itemHtml(k, id, title, groupId) {
+        groupId = groupId || '';
+        return '<article class="hb-ucs-bundle-item" data-key="' + esc(k) + '">' + header(title, groupId ? label('choiceGroup', 'Keuzegroep') : label('included', 'Vast inbegrepen'), false) + '<input type="hidden" name="' + esc(field(k, 'id')) + '" value="' + esc(id) + '"><input type="hidden" name="' + esc(field(k, 'sku')) + '" value=""><div class="hb-ucs-bundle-item__body"><div class="hb-ucs-bundle-item-grid">' +
+            '<label class="hb-ucs-bundle-group-link"><span>' + esc(label('choiceGroup', 'Keuzegroep')) + '</span><select name="' + esc(field(k, 'group_id')) + '">' + groupOptions(groupId) + '</select><small>Binnen een keuzegroep zijn de groepsgrenzen leidend.</small></label>' +
+            '<div class="hb-ucs-bundle-item-rules"><label><span>' + esc(label('defaultQuantity', 'Standaardaantal')) + '</span><input type="number" min="0" step="any" name="' + esc(field(k, 'qty')) + '" value="' + (groupId ? 0 : 1) + '"></label><label class="hb-ucs-bundle-optional"><span>' + esc(label('type', 'Type')) + '</span><select name="' + esc(field(k, 'optional')) + '"><option value="0"' + (groupId ? '' : ' selected') + '>Vast inbegrepen</option><option value="1"' + (groupId ? ' selected' : '') + '>Keuzeonderdeel</option></select></label><label><span>Minimum</span><input type="number" min="0" step="any" name="' + esc(field(k, 'min')) + '" value="' + (groupId ? 0 : 1) + '"></label><label><span>Maximum</span><input type="number" min="0" step="any" name="' + esc(field(k, 'max')) + '" value="1"></label></div>' +
+            '<label><span>Klanttitel</span><input type="text" name="' + esc(field(k, 'customer_title')) + '" placeholder="Leeg gebruikt de productnaam"></label><label><span>Label</span><input type="text" name="' + esc(field(k, 'badge')) + '"></label><label><span>Visuele groep (legacy)</span><input type="text" name="' + esc(field(k, 'group')) + '"></label><label class="hb-ucs-bundle-wide"><span>Uitleg voor klant</span><textarea rows="3" name="' + esc(field(k, 'customer_description')) + '"></textarea></label></div></div></article>';
+    }
+    function contentHtml(k) {
+        return '<article class="hb-ucs-bundle-item hb-ucs-bundle-content-item" data-key="' + esc(k) + '">' + header(label('contentRow', 'Tekst of tussenkop'), label('content', 'Inhoud'), true) + '<input type="hidden" name="' + esc(field(k, 'id')) + '" value="0"><div class="hb-ucs-bundle-item__body"><div class="hb-ucs-bundle-item-grid"><label><span>Opmaak</span><select name="' + esc(field(k, 'type')) + '"><option value="h2">H2</option><option value="h3">H3</option><option value="p" selected>Alinea</option><option value="span">Korte tekst</option><option value="none">Geen extra opmaak</option></select></label><label class="hb-ucs-bundle-wide"><span>Tekst</span><textarea rows="3" name="' + esc(field(k, 'text')) + '"></textarea></label></div></div></article>';
+    }
+    function groupHtml(id) {
+        return '<section class="hb-ucs-bundle-choice-group" data-group-id="' + esc(id) + '"><header class="hb-ucs-bundle-choice-group__header"><span class="hb-ucs-bundle-group-handle dashicons dashicons-move" aria-hidden="true"></span><div><strong class="hb-ucs-bundle-choice-group__title">' + esc(label('newGroup', 'Nieuwe keuzegroep')) + '</strong><span class="hb-ucs-bundle-choice-group__summary">Multi · 0–1 producten · 0 keuzes</span></div><button type="button" class="button-link hb-ucs-bundle-group-toggle" aria-expanded="true" aria-label="Keuzegroep inklappen"><span class="dashicons dashicons-arrow-up-alt2"></span></button><button type="button" class="button-link-delete hb-ucs-bundle-group-remove" aria-label="Keuzegroep verwijderen"><span class="dashicons dashicons-trash"></span></button></header><input type="hidden" name="' + esc(groupField(id, 'group_id')) + '" value="' + esc(id) + '"><div class="hb-ucs-bundle-choice-group__body"><div class="hb-ucs-bundle-group-fields">' +
+            '<label><span>Titel voor klant</span><input type="text" name="' + esc(groupField(id, 'title')) + '" value="' + esc(label('newGroup', 'Nieuwe keuzegroep')) + '"></label><label class="hb-ucs-bundle-wide"><span>Omschrijving</span><textarea name="' + esc(groupField(id, 'description')) + '" rows="3"></textarea></label><label><span>Type</span><select name="' + esc(groupField(id, 'type')) + '"><option value="single">Eén keuze</option><option value="multi" selected>Meerdere keuzes</option></select></label><label><span>Minimum</span><input type="number" min="0" step="1" name="' + esc(groupField(id, 'min')) + '" value="0"></label><label><span>Maximum</span><input type="number" min="0" step="1" name="' + esc(groupField(id, 'max')) + '" value="1"></label><label><span>Maximum per product</span><input type="number" min="1" step="1" name="' + esc(groupField(id, 'max_per_item')) + '" value="1"></label><label><span>Layout</span><select name="' + esc(groupField(id, 'layout')) + '"><option value="standard">Standaard</option><option value="cards" selected>Kaarten</option><option value="compact">Compacte kaarten</option><option value="list">Lijst</option><option value="radio_cards">Radio cards</option></select></label>' +
+            '<label class="hb-ucs-bundle-group-check"><input type="checkbox" name="' + esc(groupField(id, 'allow_duplicates')) + '" value="1"><span>Dubbele aantallen toestaan</span></label><label class="hb-ucs-bundle-group-check"><input type="checkbox" name="' + esc(groupField(id, 'show_images')) + '" value="1" checked><span>Afbeeldingen tonen</span></label><label class="hb-ucs-bundle-group-check"><input type="checkbox" name="' + esc(groupField(id, 'show_prices')) + '" value="1" checked><span>Prijzen tonen</span></label><label class="hb-ucs-bundle-group-check"><input type="checkbox" name="' + esc(groupField(id, 'show_descriptions')) + '" value="1"><span>Korte omschrijvingen tonen</span></label></div><div class="hb-ucs-bundle-group-products"></div><div class="hb-ucs-bundle-group-add"><select class="wc-product-search hb-ucs-bundle-group-search" multiple="multiple" data-placeholder="Zoek producten of variaties…" data-action="woocommerce_json_search_products_and_variations"></select><button type="button" class="button hb-ucs-bundle-group-add-products" disabled>+ Product toevoegen</button></div></div></section>';
+    }
+
+    function refreshGroupOptions() { $('.hb-ucs-bundle-group-link select').each(function () { var selected = String($(this).val() || ''); $(this).html(groupOptions(selected)).val(selected); }); }
+    function refresh() {
+        var $all = $('.hb-ucs-bundle-item'), count = $all.length;
+        $('.hb-ucs-bundle-items').toggleClass('is-empty', $('.hb-ucs-bundle-items > .hb-ucs-bundle-item, .hb-ucs-bundle-items > .hb-ucs-bundle-choice-group').length === 0);
+        $all.each(function (i) { var grouped = $(this).closest('.hb-ucs-bundle-choice-group').length > 0; $(this).find('.hb-ucs-bundle-item__index').first().text(i + 1); $(this).toggleClass('is-grouped', grouped); if (grouped) $(this).find('.hb-ucs-bundle-item__state').text(label('choiceGroup', 'Keuzegroep')); });
+        var $counter = $('.hb-ucs-bundle-builder__count'); $counter.find('strong').text(count); $counter.find('span').text(count === 1 ? 'onderdeel' : 'onderdelen');
+        $('.hb-ucs-bundle-choice-group').each(function () { var $g = $(this), title = $.trim($g.find('[name$="[title]"]').first().val()) || label('newGroup', 'Nieuwe keuzegroep'), type = $g.find('[name$="[type]"]').first().val() === 'single' ? 'Single' : 'Multi', min = $g.find('[name$="[min]"]').first().val() || 0, max = $g.find('[name$="[max]"]').first().val() || 0; $g.find('.hb-ucs-bundle-choice-group__title').text(title); $g.find('.hb-ucs-bundle-choice-group__summary').text(type + ' · ' + min + '–' + max + ' producten · ' + $g.find('.hb-ucs-bundle-group-products > .hb-ucs-bundle-item').length + ' keuzes'); });
+    }
+    function initSortables() {
+        $('.hb-ucs-bundle-items, .hb-ucs-bundle-group-products').sortable({handle: '.hb-ucs-bundle-handle', items: '> .hb-ucs-bundle-item', connectWith: '.hb-ucs-bundle-items, .hb-ucs-bundle-group-products', placeholder: 'hb-ucs-bundle-sort-placeholder', forcePlaceholderSize: true, receive: function (_, ui) { var id = String($(this).closest('.hb-ucs-bundle-choice-group').data('group-id') || ''); ui.item.find('.hb-ucs-bundle-group-link select').val(id); refresh(); }, update: refresh});
     }
 
     $(function () {
-        var $items = $('.hb-ucs-bundle-items');
-        if (!$items.length) return;
-
-        $items.sortable({
-            handle: '.hb-ucs-bundle-handle',
-            items: '> .hb-ucs-bundle-item',
-            placeholder: 'hb-ucs-bundle-sort-placeholder',
-            forcePlaceholderSize: true,
-            update: function () {
-                refreshUi($items);
-            }
-        });
-        refreshUi($items);
-
-        $(document).on('change', '.hb-ucs-bundle-search', function () {
-            $('.hb-ucs-bundle-add').prop('disabled', !$(this).find('option:selected').length);
-        });
-
-        $(document).on('click', '.hb-ucs-bundle-add', function () {
-            var $search = $('.hb-ucs-bundle-search');
-            var added = 0;
-            $search.find('option:selected').each(function () {
-                var id = parseInt($(this).val(), 10);
-                if (!id) return;
-                $items.append(itemHtml(key(), id, $(this).text()));
-                added++;
-            });
-            $search.val(null).trigger('change');
-            refreshUi($items);
-            if (added) {
-                announce(label('added', 'Onderdeel toegevoegd.'));
-                $items.children('.hb-ucs-bundle-item').last().find('input, select, textarea').first().trigger('focus');
-            }
-        });
-
-        $(document).on('click', '.hb-ucs-bundle-add-content', function () {
-            $items.append(contentHtml(key()));
-            refreshUi($items);
-            announce(label('added', 'Onderdeel toegevoegd.'));
-            $items.children('.hb-ucs-bundle-item').last().find('select').first().trigger('focus');
-        });
-
-        $(document).on('click', '.hb-ucs-bundle-remove', function () {
-            $(this).closest('.hb-ucs-bundle-item').remove();
-            refreshUi($items);
-            announce(label('removed', 'Onderdeel verwijderd.'));
-        });
-
-        $(document).on('click', '.hb-ucs-bundle-toggle', function () {
-            var $button = $(this);
-            var $item = $button.closest('.hb-ucs-bundle-item');
-            var collapsed = !$item.hasClass('is-collapsed');
-            $item.toggleClass('is-collapsed', collapsed);
-            $button.attr('aria-expanded', collapsed ? 'false' : 'true');
-            $button.attr('aria-label', collapsed ? label('expand', 'Onderdeel uitklappen') : label('collapse', 'Onderdeel inklappen'));
-            $button.find('.dashicons').toggleClass('dashicons-arrow-down-alt2', collapsed).toggleClass('dashicons-arrow-up-alt2', !collapsed);
-        });
-
-        $(document).on('change', '.hb-ucs-bundle-optional select', function () {
-            var $item = $(this).closest('.hb-ucs-bundle-item');
-            var optional = $(this).val() === '1';
-            var qty = $item.find('[name$="[qty]"]').val() || 1;
-            if (optional) {
-                $item.find('[name$="[min]"]').val(0);
-                if (!$item.find('[name$="[max]"]').val()) {
-                    $item.find('[name$="[max]"]').val(qty);
-                }
-            } else {
-                $item.find('[name$="[min]"]').val(qty);
-                $item.find('[name$="[max]"]').val(qty);
-            }
-            setItemState($item);
-        });
-
-        $('#product-type').on('change', function () {
-            if ($(this).val() === 'woosb') {
-                $('.show_if_simple, .show_if_woosb').show();
-                $('.show_if_external').hide();
-            }
-        }).trigger('change');
+        if (!$('.hb-ucs-bundle-items').length) return; initSortables(); refresh();
+        $(document).on('change', '.hb-ucs-bundle-search', function () { $('.hb-ucs-bundle-add').prop('disabled', !$(this).find('option:selected').length); });
+        $(document).on('change', '.hb-ucs-bundle-group-search', function () { $(this).siblings('.hb-ucs-bundle-group-add-products').prop('disabled', !$(this).find('option:selected').length); });
+        $(document).on('click', '.hb-ucs-bundle-add', function () { var $s = $('.hb-ucs-bundle-search'); $s.find('option:selected').each(function () { var id = parseInt($(this).val(), 10); if (id) $('.hb-ucs-bundle-items').append(itemHtml(key(), id, $(this).text(), '')); }); $s.val(null).trigger('change'); refresh(); announce(label('added', 'Onderdeel toegevoegd.')); });
+        $(document).on('click', '.hb-ucs-bundle-group-add-products', function () { var $g = $(this).closest('.hb-ucs-bundle-choice-group'), gid = String($g.data('group-id')), $s = $g.find('.hb-ucs-bundle-group-search'); $s.find('option:selected').each(function () { var id = parseInt($(this).val(), 10); if (id) $g.find('.hb-ucs-bundle-group-products').append(itemHtml(key(), id, $(this).text(), gid)); }); $s.val(null).trigger('change'); refresh(); });
+        $(document).on('click', '.hb-ucs-bundle-add-group', function () { var $g = $(groupHtml(key('group'))).appendTo('.hb-ucs-bundle-items'); $g.find('.wc-product-search').trigger('wc-enhanced-select-init'); initSortables(); refreshGroupOptions(); refresh(); $g.find('[name$="[title]"]').focus(); announce(label('groupAdded', 'Keuzegroep toegevoegd.')); });
+        $(document).on('click', '.hb-ucs-bundle-add-content', function () { $('.hb-ucs-bundle-items').append(contentHtml(key())); refresh(); });
+        $(document).on('click', '.hb-ucs-bundle-remove', function () { $(this).closest('.hb-ucs-bundle-item').remove(); refresh(); });
+        $(document).on('click', '.hb-ucs-bundle-group-remove', function () { var $g = $(this).closest('.hb-ucs-bundle-choice-group'); $g.find('.hb-ucs-bundle-group-products > .hb-ucs-bundle-item').insertBefore($g).find('.hb-ucs-bundle-group-link select').val(''); $g.remove(); refreshGroupOptions(); refresh(); announce(label('groupRemoved', 'Keuzegroep verwijderd.')); });
+        $(document).on('click', '.hb-ucs-bundle-toggle', function () { var $b = $(this), $i = $b.closest('.hb-ucs-bundle-item'), collapsed = !$i.hasClass('is-collapsed'); $i.toggleClass('is-collapsed', collapsed); $b.attr('aria-expanded', !collapsed).find('.dashicons').toggleClass('dashicons-arrow-down-alt2', collapsed).toggleClass('dashicons-arrow-up-alt2', !collapsed); });
+        $(document).on('click', '.hb-ucs-bundle-group-toggle', function () { var $b = $(this), $body = $b.closest('.hb-ucs-bundle-choice-group').find('.hb-ucs-bundle-choice-group__body').first(), open = $body.prop('hidden'); $body.prop('hidden', !open); $b.attr('aria-expanded', open).find('.dashicons').toggleClass('dashicons-arrow-down-alt2', !open).toggleClass('dashicons-arrow-up-alt2', open); });
+        $(document).on('change', '.hb-ucs-bundle-group-link select', function () { var id = String($(this).val() || ''), $item = $(this).closest('.hb-ucs-bundle-item'), $target = id ? $('.hb-ucs-bundle-choice-group[data-group-id="' + $.escapeSelector(id) + '"] .hb-ucs-bundle-group-products') : $('.hb-ucs-bundle-items'); if ($target.length) $item.appendTo($target); refresh(); });
+        $(document).on('change input', '.hb-ucs-bundle-group-fields input, .hb-ucs-bundle-group-fields select, .hb-ucs-bundle-group-fields textarea', function () { refresh(); refreshGroupOptions(); });
+        $(document).on('change', '.hb-ucs-bundle-group-fields [name$="[type]"]', function () { var $g = $(this).closest('.hb-ucs-bundle-choice-group'); if ($(this).val() === 'single') { $g.find('[name$="[min]"]').val(Math.min(1, Number($g.find('[name$="[min]"]').val() || 0))); $g.find('[name$="[max]"]').val(1); $g.find('[name$="[max_per_item]"]').val(1); $g.find('[name$="[allow_duplicates]"]').prop('checked', false); } refresh(); });
+        $(document).on('change', '.hb-ucs-bundle-optional select', function () { var $i = $(this).closest('.hb-ucs-bundle-item'), optional = $(this).val() === '1', qty = $i.find('[name$="[qty]"]').val() || 1; $i.find('[name$="[min]"]').val(optional ? 0 : qty); if (!optional || !$i.find('[name$="[max]"]').val()) $i.find('[name$="[max]"]').val(qty); refresh(); });
+        $('#product-type').on('change', function () { if ($(this).val() === 'woosb') { $('.show_if_simple, .show_if_woosb').show(); $('.show_if_external').hide(); } }).trigger('change');
     });
 })(jQuery);

@@ -103,17 +103,17 @@ defined('ABSPATH') || exit;
         <div class="clear"></div>
 
         <div class="wc-order-bulk-actions add-items">
-            <button type="button" class="button add-line-item" id="hb-ucs-show-add-item-actions"><?php esc_html_e('Item(s) toevoegen', 'hb-ucs'); ?></button>
-            <button type="button" class="button button-primary calculate-action" id="hb-ucs-recalc-order-items"><?php esc_html_e('Herberekenen', 'hb-ucs'); ?></button>
+            <button type="button" class="button" id="hb-ucs-show-add-item-actions"><?php esc_html_e('Item(s) toevoegen', 'hb-ucs'); ?></button>
+            <button type="button" class="button button-primary" id="hb-ucs-recalc-order-items"><?php esc_html_e('Herberekenen', 'hb-ucs'); ?></button>
         </div>
 
         <div class="wc-order-data-row wc-order-add-item wc-order-data-row-toggle" style="display:none;">
-            <button type="button" class="button add-order-item" id="hb-ucs-add-order-item"><?php esc_html_e('Product(en) toevoegen', 'hb-ucs'); ?></button>
-            <button type="button" class="button add-order-fee" id="hb-ucs-add-order-fee"><?php esc_html_e('Kosten toevoegen', 'hb-ucs'); ?></button>
-            <button type="button" class="button add-order-shipping" id="hb-ucs-add-order-shipping"><?php esc_html_e('Voeg verzending toe', 'hb-ucs'); ?></button>
-            <button type="button" class="button add-order-tax" id="hb-ucs-add-order-tax"><?php esc_html_e('Belastingen toevoegen', 'hb-ucs'); ?></button>
-            <button type="button" class="button cancel-action" id="hb-ucs-cancel-order-actions"><?php esc_html_e('Annuleren', 'hb-ucs'); ?></button>
-            <button type="button" class="button button-primary save-action" id="hb-ucs-save-order-actions"><?php esc_html_e('Opslaan', 'hb-ucs'); ?></button>
+            <button type="button" class="button" id="hb-ucs-add-order-item"><?php esc_html_e('Product(en) toevoegen', 'hb-ucs'); ?></button>
+            <button type="button" class="button" id="hb-ucs-add-order-fee"><?php esc_html_e('Kosten toevoegen', 'hb-ucs'); ?></button>
+            <button type="button" class="button" id="hb-ucs-add-order-shipping"><?php esc_html_e('Voeg verzending toe', 'hb-ucs'); ?></button>
+            <button type="button" class="button" id="hb-ucs-add-order-tax"><?php esc_html_e('Belastingen toevoegen', 'hb-ucs'); ?></button>
+            <button type="button" class="button" id="hb-ucs-cancel-order-actions"><?php esc_html_e('Annuleren', 'hb-ucs'); ?></button>
+            <button type="button" class="button button-primary" id="hb-ucs-save-order-actions"><?php esc_html_e('Opslaan', 'hb-ucs'); ?></button>
         </div>
 
         <script type="text/template" id="tmpl-hb-ucs-subscription-item-row"><?php echo str_replace('</script>', '<\/script>', $rowTemplate); ?></script>

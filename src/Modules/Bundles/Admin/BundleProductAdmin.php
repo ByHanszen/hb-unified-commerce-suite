@@ -35,10 +35,14 @@ final class BundleProductAdmin {
         }
         $base = trailingslashit(plugins_url('src/Modules/Bundles/assets/', HB_UCS_PLUGIN_FILE));
         $version = defined('HB_UCS_VERSION') ? HB_UCS_VERSION : '0.0.0';
+        $scriptPath = dirname(HB_UCS_PLUGIN_FILE) . '/src/Modules/Bundles/assets/admin-hb-ucs-bundles.js';
+        $stylePath = dirname(HB_UCS_PLUGIN_FILE) . '/src/Modules/Bundles/assets/admin-hb-ucs-bundles.css';
+        $scriptVersion = $version . '.' . (is_readable($scriptPath) ? (string) filemtime($scriptPath) : '0');
+        $styleVersion = $version . '.' . (is_readable($stylePath) ? (string) filemtime($stylePath) : '0');
         wp_enqueue_script('jquery-ui-sortable');
         wp_enqueue_script('wc-enhanced-select');
-        wp_enqueue_script('hb-ucs-bundles-admin', $base . 'admin-hb-ucs-bundles.js', ['jquery', 'jquery-ui-sortable', 'wc-enhanced-select'], $version, true);
-        wp_enqueue_style('hb-ucs-bundles-admin', $base . 'admin-hb-ucs-bundles.css', [], $version);
+        wp_enqueue_script('hb-ucs-bundles-admin', $base . 'admin-hb-ucs-bundles.js', ['jquery', 'jquery-ui-sortable', 'wc-enhanced-select'], $scriptVersion, true);
+        wp_enqueue_style('hb-ucs-bundles-admin', $base . 'admin-hb-ucs-bundles.css', [], $styleVersion);
         wp_localize_script('hb-ucs-bundles-admin', 'hbUcsBundlesAdmin', [
             'remove' => __('Verwijderen', 'hb-ucs'),
             'included' => __('Vast inbegrepen', 'hb-ucs'),
@@ -67,6 +71,22 @@ final class BundleProductAdmin {
             'paragraph' => __('Alinea', 'hb-ucs'),
             'shortText' => __('Korte tekst', 'hb-ucs'),
             'noMarkup' => __('Geen extra opmaak', 'hb-ucs'),
+            'choiceGroup' => __('Keuzegroep', 'hb-ucs'),
+            'choiceGroups' => __('Keuzegroepen', 'hb-ucs'),
+            'newGroup' => __('Nieuwe keuzegroep', 'hb-ucs'),
+            'groupTitle' => __('Titel voor klant', 'hb-ucs'),
+            'groupDescription' => __('Omschrijving', 'hb-ucs'),
+            'single' => __('Eén keuze', 'hb-ucs'),
+            'multi' => __('Meerdere keuzes', 'hb-ucs'),
+            'maxPerItem' => __('Maximum per product', 'hb-ucs'),
+            'allowDuplicates' => __('Dubbele aantallen toestaan', 'hb-ucs'),
+            'showImages' => __('Afbeeldingen tonen', 'hb-ucs'),
+            'showPrices' => __('Prijzen tonen', 'hb-ucs'),
+            'showDescriptions' => __('Korte omschrijvingen tonen', 'hb-ucs'),
+            'addProduct' => __('Product toevoegen', 'hb-ucs'),
+            'ungrouped' => __('Geen keuzegroep', 'hb-ucs'),
+            'groupAdded' => __('Keuzegroep toegevoegd.', 'hb-ucs'),
+            'groupRemoved' => __('Keuzegroep verwijderd; producten zijn naar losse onderdelen verplaatst.', 'hb-ucs'),
         ]);
     }
 
@@ -77,6 +97,7 @@ final class BundleProductAdmin {
             return;
         }
         $items = BundleData::normalize_product_items($product);
+        $groups = BundleData::normalize_product_groups($product);
         $itemCount = count($items);
 
         echo '<div id="hb_ucs_bundle_product_data" class="panel woocommerce_options_panel hidden">';
@@ -94,14 +115,32 @@ final class BundleProductAdmin {
         echo '<label class="hb-ucs-bundle-toolbar__search"><span>' . esc_html__('Producten zoeken', 'hb-ucs') . '</span>';
         echo '<select class="wc-product-search hb-ucs-bundle-search" multiple="multiple" data-placeholder="' . esc_attr__('Zoek op productnaam, SKU of variatie…', 'hb-ucs') . '" data-action="woocommerce_json_search_products_and_variations" data-exclude="' . esc_attr($product->get_id()) . '"></select></label>';
         echo '<div class="hb-ucs-bundle-toolbar__actions">';
-        echo '<button type="button" class="button button-primary hb-ucs-bundle-add" disabled><span class="dashicons dashicons-plus-alt2" aria-hidden="true"></span>' . esc_html__('Product toevoegen', 'hb-ucs') . '</button>';
-        echo '<button type="button" class="button hb-ucs-bundle-add-content"><span class="dashicons dashicons-editor-textcolor" aria-hidden="true"></span>' . esc_html__('Tekstregel toevoegen', 'hb-ucs') . '</button>';
+        echo '<button type="button" class="button button-primary hb-ucs-bundle-add" disabled><span class="dashicons dashicons-plus-alt2" aria-hidden="true"></span>' . esc_html__('Product', 'hb-ucs') . '</button>';
+        echo '<button type="button" class="button hb-ucs-bundle-add-group"><span class="dashicons dashicons-plus-alt2" aria-hidden="true"></span>' . esc_html__('Keuzegroep', 'hb-ucs') . '</button>';
+        echo '<button type="button" class="button hb-ucs-bundle-add-content"><span class="dashicons dashicons-plus-alt2" aria-hidden="true"></span>' . esc_html__('Tekst', 'hb-ucs') . '</button>';
         echo '</div></div>';
         echo '<div class="hb-ucs-bundle-help"><span class="dashicons dashicons-info-outline" aria-hidden="true"></span><p>' . esc_html__('Sleep onderdelen aan de handgreep in de gewenste volgorde. Voeg een vaste variatie rechtstreeks toe; gebruik een variabel product als de klant een keuze moet maken.', 'hb-ucs') . '</p></div>';
         echo '<p class="screen-reader-text hb-ucs-bundle-status" aria-live="polite"></p>';
-        echo '<div class="hb-ucs-bundle-items" data-empty-text="' . esc_attr__('Nog geen onderdelen toegevoegd. Zoek hierboven een product of begin met een tekstregel.', 'hb-ucs') . '">';
+        echo '<div class="hb-ucs-bundle-items" data-empty-text="' . esc_attr__('Nog geen onderdelen toegevoegd. Gebruik + Product, + Keuzegroep of + Tekst.', 'hb-ucs') . '">';
+        $renderedGroups = [];
         foreach ($items as $key => $item) {
-            $this->render_item((string) $key, $item);
+            if (!empty($item['id']) && !empty($item['group_id']) && isset($groups[$item['group_id']])) {
+                $groupId = (string) $item['group_id'];
+                if (!isset($renderedGroups[$groupId])) {
+                    $groupItems = array_filter($items, static function (array $candidate) use ($groupId): bool {
+                        return !empty($candidate['id']) && (string) ($candidate['group_id'] ?? '') === $groupId;
+                    });
+                    $this->render_group($groupId, $groups[$groupId], $groupItems, $groups);
+                    $renderedGroups[$groupId] = true;
+                }
+                continue;
+            }
+            $this->render_item((string) $key, $item, $groups);
+        }
+        foreach ($groups as $groupId => $group) {
+            if (!isset($renderedGroups[$groupId])) {
+                $this->render_group((string) $groupId, $group, [], $groups);
+            }
         }
         echo '</div></div>';
 
@@ -154,8 +193,19 @@ final class BundleProductAdmin {
             return;
         }
         $rawItems = isset($_POST['hb_ucs_bundle_items']) && is_array($_POST['hb_ucs_bundle_items']) ? wp_unslash($_POST['hb_ucs_bundle_items']) : [];
+        $rawGroups = isset($_POST['hb_ucs_bundle_groups']) && is_array($_POST['hb_ucs_bundle_groups']) ? wp_unslash($_POST['hb_ucs_bundle_groups']) : [];
+        foreach ($rawGroups as &$rawGroup) {
+            if (!is_array($rawGroup)) {
+                continue;
+            }
+            foreach (['allow_duplicates', 'show_images', 'show_prices', 'show_descriptions'] as $flag) {
+                $rawGroup[$flag] = empty($rawGroup[$flag]) ? 0 : 1;
+            }
+        }
+        unset($rawGroup);
+        $groups = BundleData::normalize_groups($rawGroups);
         $items = BundleData::normalize_items($rawItems);
-        foreach ($items as $key => $item) {
+        foreach ($items as $key => &$item) {
             if (empty($item['id'])) {
                 continue;
             }
@@ -165,9 +215,27 @@ final class BundleProductAdmin {
                 if (class_exists('WC_Admin_Meta_Boxes')) {
                     \WC_Admin_Meta_Boxes::add_error(__('Een productbundel kan niet zichzelf of een andere bundel bevatten.', 'hb-ucs'));
                 }
+                continue;
+            }
+            $groupId = sanitize_key((string) ($item['group_id'] ?? ''));
+            if ($groupId !== '' && isset($groups[$groupId])) {
+                $item['group_id'] = $groupId;
+                $item['optional'] = 1;
+                $item['qty'] = 0.0;
+                $item['min'] = 0.0;
+                $item['max'] = $groups[$groupId]['max_per_item'] !== ''
+                    ? (float) $groups[$groupId]['max_per_item'] : (float) $groups[$groupId]['max'];
+            } else {
+                unset($item['group_id']);
             }
         }
+        unset($item);
         $product->update_meta_data(BundleData::META_ITEMS, $items);
+        if (empty($groups)) {
+            $product->delete_meta_data(BundleData::META_GROUPS);
+        } else {
+            $product->update_meta_data(BundleData::META_GROUPS, $groups);
+        }
         foreach (['woosb_disable_auto_price', 'woosb_total_limits', 'woosb_manage_stock'] as $key) {
             $product->update_meta_data($key, isset($_POST[$key]) ? 'on' : 'off');
         }
@@ -183,7 +251,7 @@ final class BundleProductAdmin {
         $product->update_meta_data('woosb_after_text', wp_kses_post((string) wp_unslash($_POST['woosb_after_text'] ?? '')));
     }
 
-    private function render_item(string $key, array $item): void {
+    private function render_item(string $key, array $item, array $groups = []): void {
         if (empty($item['id'])) {
             $this->render_content_item($key, $item);
             return;
@@ -220,16 +288,53 @@ final class BundleProductAdmin {
         echo '<input type="hidden" name="' . esc_attr($prefix . '[id]') . '" value="' . esc_attr($product->get_id()) . '" />';
         echo '<input type="hidden" name="' . esc_attr($prefix . '[sku]') . '" value="' . esc_attr($sku) . '" />';
         echo '<div class="hb-ucs-bundle-item__body"><div class="hb-ucs-bundle-item-grid">';
+        echo '<label class="hb-ucs-bundle-group-link"><span>' . esc_html__('Keuzegroep', 'hb-ucs') . '</span><select name="' . esc_attr($prefix . '[group_id]') . '"><option value="">' . esc_html__('Geen keuzegroep', 'hb-ucs') . '</option>';
+        foreach ($groups as $groupId => $group) {
+            echo '<option value="' . esc_attr($groupId) . '" ' . selected((string) ($item['group_id'] ?? ''), (string) $groupId, false) . '>' . esc_html((string) ($group['title'] ?: $groupId)) . '</option>';
+        }
+        echo '</select><small>' . esc_html__('Binnen een keuzegroep zijn de groepsgrenzen leidend.', 'hb-ucs') . '</small></label>';
+        echo '<div class="hb-ucs-bundle-item-rules">';
         $this->number_field($prefix . '[qty]', __('Standaardaantal', 'hb-ucs'), $item['qty'] ?? 1, 0);
         echo '<label class="hb-ucs-bundle-optional"><span>' . esc_html__('Type', 'hb-ucs') . '</span><select name="' . esc_attr($prefix . '[optional]') . '"><option value="0" ' . selected(empty($item['optional']), true, false) . '>' . esc_html__('Vast inbegrepen', 'hb-ucs') . '</option><option value="1" ' . selected(!empty($item['optional']), true, false) . '>' . esc_html__('Keuzeonderdeel', 'hb-ucs') . '</option></select></label>';
         $this->number_field($prefix . '[min]', __('Minimum', 'hb-ucs'), $item['min'] ?? 0, 0);
         $this->number_field($prefix . '[max]', __('Maximum', 'hb-ucs'), $item['max'] ?? '', 0);
+        echo '</div>';
         $this->text_field($prefix . '[customer_title]', __('Klanttitel', 'hb-ucs'), $item['customer_title'] ?? '', __('Leeg gebruikt de productnaam', 'hb-ucs'));
         $this->text_field($prefix . '[badge]', __('Label', 'hb-ucs'), $item['badge'] ?? '', __('Bijv. Meest gekozen', 'hb-ucs'));
         $this->text_field($prefix . '[group]', __('Groep', 'hb-ucs'), $item['group'] ?? '', __('Bijv. Basis of Extra’s', 'hb-ucs'));
         echo '<label class="hb-ucs-bundle-wide"><span>' . esc_html__('Uitleg voor klant', 'hb-ucs') . '</span><textarea name="' . esc_attr($prefix . '[customer_description]') . '" rows="3">' . esc_textarea((string) ($item['customer_description'] ?? '')) . '</textarea><small>' . esc_html__('Houd deze uitleg kort; de klant ziet hem direct onder de productnaam.', 'hb-ucs') . '</small></label>';
         $this->render_variation_restrictions($prefix, $product, $item);
         echo '</div></div></article>';
+    }
+
+    private function render_group(string $groupId, array $group, array $items, array $groups): void {
+        $prefix = 'hb_ucs_bundle_groups[' . $groupId . ']';
+        $title = (string) ($group['title'] ?: __('Naamloze keuzegroep', 'hb-ucs'));
+        echo '<section class="hb-ucs-bundle-choice-group" data-group-id="' . esc_attr($groupId) . '">';
+        echo '<header class="hb-ucs-bundle-choice-group__header"><span class="hb-ucs-bundle-group-handle dashicons dashicons-move" aria-hidden="true"></span><div><strong class="hb-ucs-bundle-choice-group__title">' . esc_html($title) . '</strong><span class="hb-ucs-bundle-choice-group__summary">' . esc_html(sprintf(__('%1$s · %2$s–%3$s producten · %4$s keuzes', 'hb-ucs'), $group['type'] === 'single' ? __('Single', 'hb-ucs') : __('Multi', 'hb-ucs'), $group['min'], $group['max'], count($items))) . '</span></div>';
+        echo '<button type="button" class="button-link hb-ucs-bundle-group-toggle" aria-expanded="false"><span class="dashicons dashicons-arrow-down-alt2" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html__('Keuzegroep uitklappen', 'hb-ucs') . '</span></button>';
+        echo '<button type="button" class="button-link-delete hb-ucs-bundle-group-remove"><span class="dashicons dashicons-trash" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html__('Keuzegroep verwijderen', 'hb-ucs') . '</span></button></header>';
+        echo '<input type="hidden" name="' . esc_attr($prefix . '[group_id]') . '" value="' . esc_attr($groupId) . '" />';
+        echo '<div class="hb-ucs-bundle-choice-group__body" hidden><div class="hb-ucs-bundle-group-fields">';
+        $this->text_field($prefix . '[title]', __('Titel voor klant', 'hb-ucs'), $group['title']);
+        echo '<label class="hb-ucs-bundle-wide"><span>' . esc_html__('Omschrijving', 'hb-ucs') . '</span><textarea name="' . esc_attr($prefix . '[description]') . '" rows="3">' . esc_textarea((string) $group['description']) . '</textarea></label>';
+        echo '<label><span>' . esc_html__('Type', 'hb-ucs') . '</span><select name="' . esc_attr($prefix . '[type]') . '"><option value="single" ' . selected($group['type'], 'single', false) . '>' . esc_html__('Eén keuze', 'hb-ucs') . '</option><option value="multi" ' . selected($group['type'], 'multi', false) . '>' . esc_html__('Meerdere keuzes', 'hb-ucs') . '</option></select></label>';
+        $this->number_field($prefix . '[min]', __('Minimum aantal', 'hb-ucs'), $group['min'], 0, '1');
+        $this->number_field($prefix . '[max]', __('Maximum aantal', 'hb-ucs'), $group['max'], 0, '1');
+        $this->number_field($prefix . '[max_per_item]', __('Maximum per product', 'hb-ucs'), $group['max_per_item'], 1, '1');
+        echo '<label><span>' . esc_html__('Layout', 'hb-ucs') . '</span><select name="' . esc_attr($prefix . '[layout]') . '">';
+        foreach (['standard' => __('Standaard', 'hb-ucs'), 'cards' => __('Kaarten', 'hb-ucs'), 'compact' => __('Compacte kaarten', 'hb-ucs'), 'list' => __('Lijst', 'hb-ucs'), 'radio_cards' => __('Radio cards', 'hb-ucs')] as $value => $label) {
+            echo '<option value="' . esc_attr($value) . '" ' . selected($group['layout'], $value, false) . '>' . esc_html($label) . '</option>';
+        }
+        echo '</select></label>';
+        foreach (['allow_duplicates' => __('Dubbele aantallen toestaan', 'hb-ucs'), 'show_images' => __('Afbeeldingen tonen', 'hb-ucs'), 'show_prices' => __('Prijzen tonen', 'hb-ucs'), 'show_descriptions' => __('Korte omschrijvingen tonen', 'hb-ucs')] as $field => $label) {
+            echo '<label class="hb-ucs-bundle-group-check"><input type="checkbox" name="' . esc_attr($prefix . '[' . $field . ']') . '" value="1" ' . checked(!empty($group[$field]), true, false) . ' /><span>' . esc_html($label) . '</span></label>';
+        }
+        echo '</div><div class="hb-ucs-bundle-group-products">';
+        foreach ($items as $key => $item) {
+            $this->render_item((string) $key, $item, $groups);
+        }
+        echo '</div><div class="hb-ucs-bundle-group-add"><select class="wc-product-search hb-ucs-bundle-group-search" multiple="multiple" data-placeholder="' . esc_attr__('Zoek producten of variaties…', 'hb-ucs') . '" data-action="woocommerce_json_search_products_and_variations"></select><button type="button" class="button hb-ucs-bundle-group-add-products" disabled>' . esc_html__('+ Product toevoegen', 'hb-ucs') . '</button></div></div></section>';
     }
 
     private function render_content_item(string $key, array $item): void {
@@ -299,8 +404,8 @@ final class BundleProductAdmin {
         echo '</div></section>';
     }
 
-    private function number_field(string $name, string $label, $value, $min): void {
-        echo '<label><span>' . esc_html($label) . '</span><input type="number" min="' . esc_attr($min) . '" step="any" name="' . esc_attr($name) . '" value="' . esc_attr((string) $value) . '" /></label>';
+    private function number_field(string $name, string $label, $value, $min, string $step = 'any'): void {
+        echo '<label><span>' . esc_html($label) . '</span><input type="number" min="' . esc_attr($min) . '" step="' . esc_attr($step) . '" name="' . esc_attr($name) . '" value="' . esc_attr((string) $value) . '" /></label>';
     }
 
     private function text_field(string $name, string $label, $value, string $placeholder = ''): void {

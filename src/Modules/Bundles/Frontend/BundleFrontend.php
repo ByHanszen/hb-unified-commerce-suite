@@ -22,8 +22,12 @@ final class BundleFrontend {
         }
         $base = plugins_url('src/Modules/Bundles/assets/', HB_UCS_PLUGIN_FILE);
         $version = defined('HB_UCS_VERSION') ? HB_UCS_VERSION : '0.0.0';
-        wp_enqueue_style('hb-ucs-bundles-frontend', $base . 'frontend-hb-ucs-bundles.css', [], $version);
-        wp_enqueue_script('hb-ucs-bundles-frontend', $base . 'frontend-hb-ucs-bundles.js', ['jquery'], $version, true);
+        $scriptPath = dirname(HB_UCS_PLUGIN_FILE) . '/src/Modules/Bundles/assets/frontend-hb-ucs-bundles.js';
+        $stylePath = dirname(HB_UCS_PLUGIN_FILE) . '/src/Modules/Bundles/assets/frontend-hb-ucs-bundles.css';
+        $scriptVersion = $version . '.' . (is_readable($scriptPath) ? (string) filemtime($scriptPath) : '0');
+        $styleVersion = $version . '.' . (is_readable($stylePath) ? (string) filemtime($stylePath) : '0');
+        wp_enqueue_style('hb-ucs-bundles-frontend', $base . 'frontend-hb-ucs-bundles.css', [], $styleVersion);
+        wp_enqueue_script('hb-ucs-bundles-frontend', $base . 'frontend-hb-ucs-bundles.js', ['jquery'], $scriptVersion, true);
         wp_localize_script('hb-ucs-bundles-frontend', 'hbUcsBundles', [
             'locale' => str_replace('_', '-', determine_locale()),
             'currency' => get_woocommerce_currency(),
@@ -40,6 +44,12 @@ final class BundleFrontend {
             'savingsLabel' => __('Je voordeel', 'hb-ucs'),
             'componentSingular' => __('onderdeel', 'hb-ucs'),
             'componentPlural' => __('onderdelen', 'hb-ucs'),
+            'addLabel' => __('Toevoegen', 'hb-ucs'),
+            'minimumRemaining' => __('Kies nog minimaal %s.', 'hb-ucs'),
+            'minimumReached' => __('Minimum bereikt. Je kunt nog %s toevoegen.', 'hb-ucs'),
+            'groupComplete' => __('Deze stap is compleet.', 'hb-ucs'),
+            'singleRequired' => __('Kies één optie.', 'hb-ucs'),
+            'maximumReached' => __('Maximum bereikt.', 'hb-ucs'),
         ]);
     }
 
@@ -49,6 +59,7 @@ final class BundleFrontend {
             return;
         }
         $items = method_exists($product, 'get_items') ? $product->get_items() : BundleData::normalize_product_items($product);
+        $groups = BundleData::normalize_product_groups($product);
         if (empty($items)) {
             echo '<p class="stock out-of-stock">' . esc_html__('Deze bundel heeft nog geen onderdelen.', 'hb-ucs') . '</p>';
             return;
@@ -85,6 +96,9 @@ final class BundleFrontend {
             'minTotal' => max(0, (float) $product->get_meta('woosb_total_limits_min')),
             'maxTotal' => max(0, (float) $product->get_meta('woosb_total_limits_max')),
         ];
+        if (!empty($groups)) {
+            $config['groups'] = array_values($groups);
+        }
 
         do_action('woocommerce_before_add_to_cart_form');
         echo '<form class="cart hb-ucs-bundle-form" action="' . esc_url(apply_filters('woocommerce_add_to_cart_form_action', $product->get_permalink())) . '" method="post" enctype="multipart/form-data">';
@@ -105,6 +119,7 @@ final class BundleFrontend {
 
         echo '<div class="hb-ucs-bundle__workspace"><div class="hb-ucs-bundle__items">';
         $currentGroup = null;
+        $renderedChoiceGroups = [];
         $componentPosition = 0;
         foreach ($items as $key => $item) {
             if (empty($item['id'])) {
@@ -114,6 +129,17 @@ final class BundleFrontend {
                 } else {
                     $tag = in_array($tag, ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'span'], true) ? $tag : 'p';
                     echo '<' . tag_escape($tag) . ' class="hb-ucs-bundle__content-row">' . wp_kses_post((string) ($item['text'] ?? '')) . '</' . tag_escape($tag) . '>';
+                }
+                continue;
+            }
+            $choiceGroupId = sanitize_key((string) ($item['group_id'] ?? ''));
+            if ($choiceGroupId !== '' && isset($groups[$choiceGroupId])) {
+                if (!isset($renderedChoiceGroups[$choiceGroupId])) {
+                    $groupItems = array_filter($items, static function (array $candidate) use ($choiceGroupId): bool {
+                        return !empty($candidate['id']) && (string) ($candidate['group_id'] ?? '') === $choiceGroupId;
+                    });
+                    $componentPosition = $this->render_choice_group($choiceGroupId, $groups[$choiceGroupId], $groupItems, $editSelection, $settings, $componentPosition);
+                    $renderedChoiceGroups[$choiceGroupId] = true;
                 }
                 continue;
             }
@@ -133,8 +159,14 @@ final class BundleFrontend {
         echo '<span class="hb-ucs-bundle__summary-count"><strong>0</strong> <span>' . esc_html__('onderdelen', 'hb-ucs') . '</span></span></header>';
         echo '<p class="hb-ucs-bundle__summary-empty">' . esc_html__('Je gekozen onderdelen verschijnen hier automatisch.', 'hb-ucs') . '</p>';
         echo '<ul class="hb-ucs-bundle__summary-list"></ul>';
+        if (!empty($groups)) {
+            echo '<div class="hb-ucs-bundle__summary-groups"></div>';
+        }
         echo '<div class="hb-ucs-bundle__savings" hidden><span>' . esc_html__('Je voordeel', 'hb-ucs') . '</span><strong></strong></div>';
         echo '<div class="hb-ucs-bundle__total"><span>' . esc_html((string) $settings['total_text']) . '</span><strong class="hb-ucs-bundle__total-value"></strong></div>';
+        if (!empty($groups)) {
+            echo '<button type="button" class="button alt hb-ucs-bundle__summary-submit">' . esc_html(!empty($editing['key']) ? __('Bundel bijwerken', 'hb-ucs') : (string) $settings['add_button_text']) . '</button>';
+        }
         echo '<p class="hb-ucs-bundle__summary-note"><span class="hb-ucs-bundle__summary-check" aria-hidden="true">✓</span>' . esc_html__('De volledige samenstelling wordt ook in je winkelmand en bestelling getoond.', 'hb-ucs') . '</p>';
         echo '</aside></div>';
 
@@ -142,6 +174,10 @@ final class BundleFrontend {
         $after = (string) $product->get_meta('woosb_after_text');
         if ($after !== '') {
             echo '<div class="hb-ucs-bundle__after">' . wp_kses_post(wpautop(do_shortcode($after))) . '</div>';
+        }
+        if (!empty($groups)) {
+            echo '<div class="hb-ucs-bundle__mobile-bar"><span class="hb-ucs-bundle__mobile-progress"></span><strong class="hb-ucs-bundle__mobile-total"></strong><button type="button" class="hb-ucs-bundle__mobile-open" aria-expanded="false">' . esc_html__('Bekijk pakket', 'hb-ucs') . '</button></div>';
+            echo '<div class="hb-ucs-bundle__mobile-sheet" role="dialog" aria-modal="true" aria-label="' . esc_attr__('Jouw pakket', 'hb-ucs') . '" hidden><button type="button" class="hb-ucs-bundle__mobile-close" aria-label="' . esc_attr__('Samenvatting sluiten', 'hb-ucs') . '">&times;</button><h3>' . esc_html((string) $settings['summary_title']) . '</h3><div class="hb-ucs-bundle__mobile-groups"></div><ul class="hb-ucs-bundle__mobile-list"></ul><div class="hb-ucs-bundle__mobile-sheet-total"><span>' . esc_html((string) $settings['total_text']) . '</span><strong></strong></div><button type="button" class="button alt hb-ucs-bundle__mobile-submit">' . esc_html(!empty($editing['key']) ? __('Bundel bijwerken', 'hb-ucs') : (string) $settings['add_button_text']) . '</button></div><button type="button" class="hb-ucs-bundle__mobile-backdrop" aria-label="' . esc_attr__('Samenvatting sluiten', 'hb-ucs') . '" hidden></button>';
         }
         echo '</section>';
 
@@ -163,18 +199,37 @@ final class BundleFrontend {
         do_action('woocommerce_after_add_to_cart_form');
     }
 
-    private function render_component(string $key, array $item, array $selected, array $settings, int $position): void {
+    private function render_choice_group(string $groupId, array $group, array $items, array $selection, array $settings, int $position): int {
+        $titleId = 'hb-ucs-bundle-group-' . sanitize_html_class($groupId);
+        $classes = ['hb-ucs-bundle__choice-group', 'hb-ucs-bundle__choice-group--' . sanitize_html_class((string) $group['layout']), 'is-' . sanitize_html_class((string) $group['type'])];
+        echo '<section class="' . esc_attr(implode(' ', $classes)) . '" data-group="' . esc_attr(wp_json_encode($group)) . '" aria-labelledby="' . esc_attr($titleId) . '"><header class="hb-ucs-bundle__choice-group-header"><div><h3 id="' . esc_attr($titleId) . '">' . esc_html((string) ($group['title'] ?: __('Maak je keuze', 'hb-ucs'))) . '</h3>';
+        if (!empty($group['description'])) {
+            echo '<div class="hb-ucs-bundle__choice-group-description">' . wp_kses_post(wpautop((string) $group['description'])) . '</div>';
+        }
+        echo '</div><div class="hb-ucs-bundle__progress" aria-live="polite"><strong>0 ' . esc_html(sprintf(__('van %s gekozen', 'hb-ucs'), $group['max'])) . '</strong><span></span></div></header><div class="hb-ucs-bundle__choice-group-items">';
+        foreach ($items as $key => $item) {
+            $position++;
+            $this->render_component((string) $key, $item, $selection[$key] ?? [], $settings, $position, $group);
+        }
+        echo '</div></section>';
+        return $position;
+    }
+
+    private function render_component(string $key, array $item, array $selected, array $settings, int $position, array $choiceGroup = []): void {
         $source = wc_get_product((int) $item['id']);
         if (!$source || BundleData::is_bundle_product($source)) {
             return;
         }
-        $optional = !empty($item['optional']);
-        $qty = isset($selected['qty']) ? (float) $selected['qty'] : (float) ($item['qty'] ?? 1);
-        $min = $optional ? max(0, (float) ($item['min'] ?? 0)) : $qty;
-        $max = $optional && ($item['max'] ?? '') !== '' ? max($min, (float) $item['max']) : ($optional ? 999999 : $qty);
+        $inChoiceGroup = !empty($choiceGroup);
+        $optional = $inChoiceGroup || !empty($item['optional']);
+        $qty = isset($selected['qty']) ? (float) $selected['qty'] : ($inChoiceGroup ? 0.0 : (float) ($item['qty'] ?? 1));
+        $min = $inChoiceGroup ? 0.0 : ($optional ? max(0, (float) ($item['min'] ?? 0)) : $qty);
+        $max = $inChoiceGroup
+            ? (empty($choiceGroup['allow_duplicates']) ? 1.0 : (float) ($choiceGroup['max_per_item'] !== '' ? $choiceGroup['max_per_item'] : $choiceGroup['max']))
+            : ($optional && ($item['max'] ?? '') !== '' ? max($min, (float) $item['max']) : ($optional ? 999999 : $qty));
         $title = trim((string) ($item['customer_title'] ?? '')) ?: $source->get_name();
         $description = trim((string) ($item['customer_description'] ?? ''));
-        if ($description === '' && !empty($settings['show_descriptions'])) {
+        if ($description === '' && ($inChoiceGroup ? !empty($choiceGroup['show_descriptions']) : !empty($settings['show_descriptions']))) {
             $description = $source->get_short_description();
         }
         $selectedId = !empty($selected['id']) ? (int) $selected['id'] : ($source->is_type('variable') ? 0 : $source->get_id());
@@ -196,16 +251,25 @@ final class BundleFrontend {
             'stock' => $source->get_max_purchase_quantity(),
             'purchasable' => $source->is_purchasable() && $source->is_in_stock(),
             'attributes' => $attrs,
+            'groupId' => $inChoiceGroup ? (string) $choiceGroup['group_id'] : '',
+            'groupType' => $inChoiceGroup ? (string) $choiceGroup['type'] : '',
+            'allowDuplicates' => $inChoiceGroup ? !empty($choiceGroup['allow_duplicates']) : true,
         ];
         $classes = ['hb-ucs-bundle__item'];
         $classes[] = $optional ? 'is-optional' : 'is-required';
         $classes[] = $source->is_in_stock() ? 'is-in-stock' : 'is-out-of-stock';
-        $classes[] = !empty($settings['show_images']) ? 'has-image' : 'has-no-image';
+        $showImages = $inChoiceGroup ? !empty($choiceGroup['show_images']) : !empty($settings['show_images']);
+        $showPrices = $inChoiceGroup ? !empty($choiceGroup['show_prices']) : !empty($settings['show_prices']);
+        $showDescriptions = $inChoiceGroup ? !empty($choiceGroup['show_descriptions']) : !empty($settings['show_descriptions']);
+        $classes[] = $showImages ? 'has-image' : 'has-no-image';
+        if ($inChoiceGroup) {
+            $classes[] = 'is-group-choice';
+        }
         $titleId = 'hb-ucs-bundle-component-' . $source->get_id() . '-' . sanitize_html_class($key);
 
         echo '<article class="' . esc_attr(implode(' ', $classes)) . '" data-component="' . esc_attr(wp_json_encode($component)) . '" aria-labelledby="' . esc_attr($titleId) . '">';
         echo '<span class="hb-ucs-bundle__sequence" aria-hidden="true">' . esc_html((string) $position) . '</span>';
-        if (!empty($settings['show_images'])) {
+        if ($showImages) {
             echo '<div class="hb-ucs-bundle__image">' . wp_kses_post($source->get_image('woocommerce_thumbnail')) . '</div>';
         }
         echo '<div class="hb-ucs-bundle__details"><div class="hb-ucs-bundle__title-row"><h4 id="' . esc_attr($titleId) . '">' . esc_html($title) . '</h4>';
@@ -216,7 +280,7 @@ final class BundleFrontend {
         echo '<span class="hb-ucs-bundle__kind">' . esc_html($optional ? (string) $settings['optional_text'] : (string) $settings['required_text']) . '</span>';
         echo '<span class="hb-ucs-bundle__item-status"><span aria-hidden="true"></span>' . esc_html($optional && $qty <= 0 ? __('Niet geselecteerd', 'hb-ucs') : ($source->is_type('variable') ? __('Maak een keuze', 'hb-ucs') : __('Geselecteerd', 'hb-ucs'))) . '</span>';
         echo '</div>';
-        if ($description !== '') {
+        if ($description !== '' && $showDescriptions) {
             echo '<div class="hb-ucs-bundle__description">' . wp_kses_post(wpautop($description)) . '</div>';
         }
         if ($source->is_type('variable')) {
@@ -226,10 +290,15 @@ final class BundleFrontend {
             echo '<div class="hb-ucs-bundle__stock">' . wp_kses_post(wc_get_stock_html($source)) . '</div>';
         }
         echo '</div><div class="hb-ucs-bundle__choice">';
-        if (!empty($settings['show_prices'])) {
+        if ($showPrices) {
             echo '<div class="hb-ucs-bundle__price"><span class="screen-reader-text">' . esc_html__('Prijs per onderdeel:', 'hb-ucs') . '</span>' . wp_kses_post($source->get_price_html()) . '</div>';
         }
-        if ($optional) {
+        if ($inChoiceGroup && $choiceGroup['type'] === 'single') {
+            echo '<label class="hb-ucs-bundle__single-control"><input type="radio" name="hb_ucs_bundle_group_' . esc_attr($choiceGroup['group_id']) . '" value="' . esc_attr($key) . '" ' . checked($qty > 0, true, false) . ' /><span>' . esc_html__('Selecteer', 'hb-ucs') . '</span></label>';
+            echo '<input type="hidden" class="hb-ucs-bundle__qty" value="' . esc_attr($qty > 0 ? '1' : '0') . '" />';
+        } elseif ($inChoiceGroup) {
+            echo '<div class="hb-ucs-bundle__group-qty"><button type="button" class="hb-ucs-bundle__add-choice">' . esc_html__('+ Toevoegen', 'hb-ucs') . '</button><div class="hb-ucs-bundle__stepper"><button type="button" class="hb-ucs-bundle__minus" aria-label="' . esc_attr(sprintf(__('Eén %s verwijderen', 'hb-ucs'), $title)) . '">&minus;</button><output>' . esc_html(wc_format_localized_decimal($qty)) . '</output><input type="hidden" class="hb-ucs-bundle__qty" value="' . esc_attr($qty) . '" /><button type="button" class="hb-ucs-bundle__plus" aria-label="' . esc_attr(sprintf(__('Eén %s toevoegen', 'hb-ucs'), $title)) . '">+</button></div></div>';
+        } elseif ($optional) {
             echo '<div class="hb-ucs-bundle__qty-control"><span>' . esc_html__('Aantal', 'hb-ucs') . '</span>';
             woocommerce_quantity_input(['input_value' => $qty, 'min_value' => $min, 'max_value' => $max, 'input_name' => 'hb_ucs_bundle_qty_' . $key, 'classes' => ['input-text', 'qty', 'text', 'hb-ucs-bundle__qty']], $source);
             echo '</div>';

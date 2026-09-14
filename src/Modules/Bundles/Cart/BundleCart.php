@@ -3,6 +3,7 @@ namespace HB\UCS\Modules\Bundles\Cart;
 
 use HB\UCS\Modules\Bundles\Admin\BundleSettings;
 use HB\UCS\Modules\Bundles\Support\BundleData;
+use HB\UCS\Modules\Bundles\Support\BundleGroups;
 
 if (!defined('ABSPATH')) exit;
 
@@ -53,9 +54,12 @@ final class BundleCart {
         $compact = isset($_REQUEST['woosb_ids']) ? BundleData::clean_compact_string((string) $_REQUEST['woosb_ids']) : '';
         $submitted = BundleData::parse_selection($compact);
         $definitions = method_exists($product, 'get_items') ? $product->get_items() : BundleData::normalize_product_items($product);
+        $groups = BundleData::normalize_product_groups($product);
         $validated = [];
         $count = 0.0;
         $total = 0.0;
+        $stockRequirements = [];
+        $stockProducts = [];
         $bundleQty = max(1.0, (float) $quantity);
 
         foreach ($submitted as $key => $selected) {
@@ -63,6 +67,11 @@ final class BundleCart {
                 wc_add_notice(__('De verzonden bundelsamenstelling is niet meer geldig.', 'hb-ucs'), 'error');
                 return false;
             }
+        }
+
+        foreach (BundleGroups::validate($groups, $definitions, $submitted) as $groupError) {
+            wc_add_notice((string) $groupError['message'], 'error');
+            return false;
         }
 
         foreach ($definitions as $key => $definition) {
@@ -74,12 +83,16 @@ final class BundleCart {
                 wc_add_notice(__('Een onderdeel van deze bundel is niet meer beschikbaar.', 'hb-ucs'), 'error');
                 return false;
             }
-            $optional = !empty($definition['optional']);
+            $groupId = sanitize_key((string) ($definition['group_id'] ?? ''));
+            $inChoiceGroup = $groupId !== '' && isset($groups[$groupId]);
+            $optional = $inChoiceGroup || !empty($definition['optional']);
             $selected = $submitted[$key] ?? null;
             $selectedQty = $selected ? max(0.0, (float) ($selected['qty'] ?? 0)) : 0.0;
             $expectedQty = max(0.0, (float) ($definition['qty'] ?? 0));
-            $min = $optional ? max(0.0, (float) ($definition['min'] ?? 0)) : $expectedQty;
-            $max = $optional && ($definition['max'] ?? '') !== '' ? max($min, (float) $definition['max']) : ($optional ? PHP_FLOAT_MAX : $expectedQty);
+            $min = $inChoiceGroup ? 0.0 : ($optional ? max(0.0, (float) ($definition['min'] ?? 0)) : $expectedQty);
+            $max = $inChoiceGroup
+                ? ($groups[$groupId]['max_per_item'] !== '' ? (float) $groups[$groupId]['max_per_item'] : (float) $groups[$groupId]['max'])
+                : ($optional && ($definition['max'] ?? '') !== '' ? max($min, (float) $definition['max']) : ($optional ? PHP_FLOAT_MAX : $expectedQty));
 
             if (!$optional && (!$selected || abs($selectedQty - $expectedQty) > 0.000001)) {
                 wc_add_notice(sprintf(__('Het verplichte onderdeel “%s” heeft een ongeldig aantal.', 'hb-ucs'), $source->get_name()), 'error');
@@ -107,6 +120,13 @@ final class BundleCart {
                 wc_add_notice(sprintf(__('Er is onvoldoende voorraad van “%s”.', 'hb-ucs'), $chosen->get_name()), 'error');
                 return false;
             }
+            if ($chosen->managing_stock() && !$chosen->backorders_allowed()) {
+                $stockId = method_exists($chosen, 'get_stock_managed_by_id') ? (int) $chosen->get_stock_managed_by_id() : (int) $chosen->get_id();
+                if ($stockId > 0) {
+                    $stockRequirements[$stockId] = (float) ($stockRequirements[$stockId] ?? 0.0) + $requiredStock;
+                    $stockProducts[$stockId] = wc_get_product($stockId) ?: $chosen;
+                }
+            }
             $attrs = $chosen instanceof \WC_Product_Variation ? BundleData::sanitize_attributes($chosen->get_variation_attributes()) : [];
             $validated[$key] = [
                 'id' => $chosen->get_id(),
@@ -116,6 +136,13 @@ final class BundleCart {
             ];
             $count += $selectedQty;
             $total += (float) wc_get_price_to_display($chosen, ['qty' => $selectedQty]);
+        }
+
+        foreach ($stockRequirements as $stockId => $requiredStock) {
+            if (!$stockProducts[$stockId]->has_enough_stock($requiredStock)) {
+                wc_add_notice(sprintf(__('Er is onvoldoende gezamenlijke voorraad van “%s” voor deze samenstelling.', 'hb-ucs'), $stockProducts[$stockId]->get_name()), 'error');
+                return false;
+            }
         }
 
         $minCount = max(0.0, (float) $product->get_meta('woosb_limit_whole_min'));

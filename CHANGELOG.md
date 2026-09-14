@@ -6,6 +6,18 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [Unreleased]
 
+### Added
+- Productbundels ondersteunen nu expliciete single- en multi-keuzegroepen via aanvullende `hb_ucs_bundle_groups`-meta en stabiele `group_id`-koppelingen in het bestaande `woosb_ids`-contract.
+- De WooCommerce producteditor bevat een progressive-disclosure groepsbuilder met productzoeker, verplaatsen/sorteren, groepsgrenzen en presentatieopties.
+- De productpagina toont een theme-neutrale cardconfigurator met plus/min, single-choice radio's, live groepsprogress, prijs/samenvatting en een toegankelijke mobiele bottom sheet.
+- Server-side groepsvalidatie en gerichte smoke-tests voor normalisatie, minimum/maximum, maximum per product, duplicaten en single choice.
+
+### Changed
+- Bundelsnapshots met keuzegroepen bewaren backward-compatible groepscontext als schema 2; legacy bundels en snapshots blijven op het bestaande pad zonder migratie.
+
+### Fixed
+- De subscription-editor triggert niet langer WooCommerce's standaard AJAX-save voor orderregels bij het herberekenen of opslaan van verzendregels.
+
 ## [0.5.0] — 2026-08-26
 
 ### Added

@@ -223,6 +223,86 @@
     max-width: 1120px;
 }
 
+.hb-ucs-bundle-groups {
+    display: grid;
+    width: 100%;
+    max-width: 1120px;
+    gap: 14px;
+    margin-bottom: 16px;
+}
+
+.hb-ucs-bundle-choice-group {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    border: 1px solid #a9cce7;
+    border-radius: var(--hb-ucs-admin-radius);
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(34, 113, 177, .08);
+}
+
+.hb-ucs-bundle-choice-group__header {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) 32px 32px;
+    gap: 10px;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 68px;
+    padding: 12px 14px;
+    background: linear-gradient(135deg, #f7fbff, var(--hb-ucs-admin-accent-soft));
+}
+
+.hb-ucs-bundle-choice-group__header > div {
+    min-width: 0;
+}
+
+.hb-ucs-bundle-group-handle { color: var(--hb-ucs-admin-muted); cursor: grab; }
+.hb-ucs-bundle-choice-group__title,
+.hb-ucs-bundle-choice-group__summary { display: block; }
+.hb-ucs-bundle-choice-group__title { color: var(--hb-ucs-admin-text); font-size: 14px; overflow-wrap: anywhere; }
+.hb-ucs-bundle-choice-group__summary { margin-top: 3px; color: var(--hb-ucs-admin-muted); font-size: 11px; overflow-wrap: anywhere; }
+.hb-ucs-bundle-group-toggle,
+.hb-ucs-bundle-group-remove { display: grid; width: 30px; height: 30px; padding: 0; place-items: center; border: 0; background: transparent; cursor: pointer; }
+.hb-ucs-bundle-group-remove { color: var(--hb-ucs-admin-danger); }
+.hb-ucs-bundle-choice-group__body { width: 100%; min-width: 0; max-width: 100%; padding: 16px; border-top: 1px solid #cfe2f2; }
+.hb-ucs-bundle-choice-group__body[hidden] { display: none; }
+.hb-ucs-bundle-group-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    gap: 13px;
+    margin-bottom: 16px;
+    padding: 15px;
+    border-radius: 9px;
+    background: #f8fafc;
+}
+.hb-ucs-bundle-group-fields label { display: grid; min-width: 0; max-width: 100%; gap: 5px; font-weight: 600; }
+#woocommerce-product-data .hb-ucs-bundle-group-fields > label {
+    float: none;
+    width: auto;
+    margin: 0;
+    padding: 0;
+}
+.hb-ucs-bundle-group-fields input,
+.hb-ucs-bundle-group-fields select,
+.hb-ucs-bundle-group-fields textarea { float: none; width: 100% !important; min-width: 0; max-width: 100%; margin: 0; }
+.hb-ucs-bundle-group-fields .hb-ucs-bundle-wide { grid-column: 1 / -1; }
+.hb-ucs-bundle-group-fields .hb-ucs-bundle-group-check { grid-template-columns: auto minmax(0, 1fr); align-items: center; align-self: end; }
+.hb-ucs-bundle-group-fields .hb-ucs-bundle-group-check input { width: auto !important; }
+.hb-ucs-bundle-group-products { display: grid; width: 100%; min-width: 0; max-width: 100%; gap: 10px; }
+.hb-ucs-bundle-group-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; width: 100%; min-width: 0; max-width: 100%; gap: 10px; margin-top: 12px; }
+.hb-ucs-bundle-group-add > * { min-width: 0; max-width: 100%; }
+.hb-ucs-bundle-group-add .select2-container { float: none; width: 100% !important; min-width: 0 !important; max-width: 100% !important; }
+.hb-ucs-bundle-item-rules { display: contents; }
+.hb-ucs-bundle-choice-group .hb-ucs-bundle-item-rules { display: none; }
+.hb-ucs-bundle-choice-group .hb-ucs-bundle-item { box-shadow: none; }
+.hb-ucs-bundle-choice-group .hb-ucs-bundle-item__header { background: #fff; }
+
 .hb-ucs-bundle-items.is-empty::after {
     content: attr(data-empty-text);
     display: block;
@@ -426,6 +506,13 @@
 }
 
 #woocommerce-product-data .hb-ucs-bundle-item-grid > label {
+    float: none;
+    width: auto;
+    margin: 0;
+    padding: 0;
+}
+
+#woocommerce-product-data .hb-ucs-bundle-item-rules > label {
     float: none;
     width: auto;
     margin: 0;
@@ -888,6 +975,20 @@
 
     .hb-ucs-bundle-item-grid .hb-ucs-bundle-wide {
         grid-column: auto;
+    }
+
+    .hb-ucs-bundle-group-fields,
+    .hb-ucs-bundle-group-add {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .hb-ucs-bundle-group-fields .hb-ucs-bundle-wide {
+        grid-column: auto;
+    }
+
+    .hb-ucs-bundle-group-add .button {
+        width: 100%;
+        white-space: normal;
     }
 }
 

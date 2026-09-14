@@ -25,6 +25,8 @@ $assert = static function (bool $condition, string $message) use (&$failures): v
 
 $class = 'HB\\UCS\\Modules\\Bundles\\Support\\BundleData';
 $assert(class_exists($class), 'BundleData class is not autoloadable.');
+$groupsClass = 'HB\\UCS\\Modules\\Bundles\\Support\\BundleGroups';
+$assert(class_exists($groupsClass), 'BundleGroups class is not autoloadable.');
 
 $blocksClass = 'HB\\UCS\\Modules\\Bundles\\Blocks\\BundleBlocks';
 $blocksIntegrationClass = 'HB\\UCS\\Modules\\Bundles\\Blocks\\BundleBlocksIntegration';
@@ -113,6 +115,7 @@ if (class_exists($class)) {
             'customer_description' => '<strong>Kies je formaat</strong>',
             'badge' => 'Favoriet',
             'group' => 'Dranken',
+            'group_id' => 'coffee_selection',
         ],
         'intro' => [
             'id' => 0,
@@ -124,6 +127,7 @@ if (class_exists($class)) {
     $normalized = $class::normalize_items($source);
     $assert(isset($normalized['coffee']), 'WPC product row was not normalized.');
     $assert(($normalized['coffee']['terms']['pa_size'] ?? []) === ['large', 'medium'], 'Variation restrictions were not preserved.');
+    $assert(($normalized['coffee']['group_id'] ?? '') === 'coffee_selection', 'Technical group_id was not preserved.');
     $assert(($normalized['intro']['type'] ?? '') === 'h2', 'WPC content row was not preserved.');
 
     $compact = $class::selection_to_string(['coffee' => $source['coffee']]);
@@ -147,10 +151,71 @@ if (class_exists($class)) {
     ]);
     $assert((float) ($legacyDefinition['legacy-option']['min'] ?? 0) === 2.0, 'Historical WPC minimum fallback failed.');
     $assert((float) ($legacyDefinition['legacy-option']['max'] ?? 0) === 5.0, 'Historical WPC maximum fallback failed.');
+    $assert(!array_key_exists('group_id', $legacyDefinition['legacy-option']), 'Legacy woosb_ids unexpectedly acquired an empty group_id.');
 
     $legacy = array_values($class::parse_selection('123/2'));
     $assert((int) ($legacy[0]['id'] ?? 0) === 123, 'Legacy id/quantity product ID parsing failed.');
     $assert((float) ($legacy[0]['qty'] ?? 0) === 2.0, 'Legacy id/quantity amount parsing failed.');
+
+    $legacyCompact = $class::selection_to_string(['legacy' => ['id' => 123, 'qty' => 2, 'attrs' => []]]);
+    $assert($legacyCompact === '123/legacy/2/', 'Legacy compact woosb_ids output changed unexpectedly.');
+
+    $groups = $class::normalize_groups([
+        'beer_selection' => [
+            'group_id' => 'beer_selection',
+            'title' => 'Kies je speciaalbieren',
+            'type' => 'invalid-type',
+            'min' => 4,
+            'max' => 2,
+            'max_per_item' => 3,
+            'allow_duplicates' => 1,
+            'layout' => 'cards',
+            'show_images' => 1,
+            'show_prices' => 1,
+        ],
+        'duplicate' => [
+            'group_id' => 'beer_selection',
+            'title' => 'Duplicaat',
+            'type' => 'single',
+            'min' => 1,
+            'max' => 8,
+        ],
+    ]);
+    $assert(($groups['beer_selection']['type'] ?? '') === 'multi', 'Invalid group type was not normalized.');
+    $assert((int) ($groups['beer_selection']['max'] ?? 0) === 4, 'Group maximum below minimum was not repaired.');
+    $assert(isset($groups['beer_selection_2']), 'Duplicate group IDs were not made unique.');
+    $assert((int) ($groups['beer_selection_2']['max'] ?? 0) === 1, 'Single group maximum was not constrained to one.');
+
+    if (class_exists($groupsClass)) {
+        $definition = [
+            'rude' => ['id' => 101, 'group_id' => 'beer_selection'],
+            'stoere' => ['id' => 102, 'group_id' => 'beer_selection'],
+            'weizen' => ['id' => 103, 'group_id' => 'beer_selection'],
+        ];
+        $beerGroup = $class::normalize_groups(['beer_selection' => [
+            'group_id' => 'beer_selection', 'title' => 'Bieren', 'type' => 'multi',
+            'min' => 4, 'max' => 6, 'max_per_item' => 3, 'allow_duplicates' => 1,
+        ]]);
+        $codes = static function (array $errors): array {
+            return array_column($errors, 'code');
+        };
+        $assert(in_array('minimum', $codes($groupsClass::validate($beerGroup, $definition, ['rude' => ['qty' => 3]])), true), 'Multi group below minimum was accepted.');
+        $assert($groupsClass::validate($beerGroup, $definition, ['rude' => ['qty' => 2], 'stoere' => ['qty' => 1], 'weizen' => ['qty' => 1]]) === [], 'Multi group at exact minimum was rejected.');
+        $assert($groupsClass::validate($beerGroup, $definition, ['rude' => ['qty' => 2], 'stoere' => ['qty' => 2], 'weizen' => ['qty' => 1]]) === [], 'Multi group between minimum and maximum was rejected.');
+        $assert(in_array('maximum', $codes($groupsClass::validate($beerGroup, $definition, ['rude' => ['qty' => 3], 'stoere' => ['qty' => 3], 'weizen' => ['qty' => 1]])), true), 'Multi group above maximum was accepted.');
+        $assert(in_array('max_per_item', $codes($groupsClass::validate($beerGroup, $definition, ['rude' => ['qty' => 4]])), true), 'Per-product maximum was not enforced.');
+        $noDuplicates = $class::normalize_groups(['coffee' => ['group_id' => 'coffee', 'title' => 'Koffie', 'type' => 'multi', 'min' => 0, 'max' => 3, 'allow_duplicates' => 0]]);
+        $assert(in_array('duplicates', $codes($groupsClass::validate($noDuplicates, ['coffee_a' => ['id' => 150, 'group_id' => 'coffee']], ['coffee_a' => ['qty' => 2]])), true), 'Disabled duplicate quantities were not enforced.');
+
+        $single = $class::normalize_groups(['package' => ['group_id' => 'package', 'title' => 'Verpakking', 'type' => 'single', 'min' => 1, 'max' => 1]]);
+        $singleDefinitions = ['box' => ['id' => 201, 'group_id' => 'package'], 'crate' => ['id' => 202, 'group_id' => 'package']];
+        $assert(in_array('minimum', $codes($groupsClass::validate($single, $singleDefinitions, [])), true), 'Required single group accepted no selection.');
+        $assert($groupsClass::validate($single, $singleDefinitions, ['box' => ['qty' => 1]]) === [], 'Single group rejected one selection.');
+        $assert(in_array('single', $codes($groupsClass::validate($single, $singleDefinitions, ['box' => ['qty' => 1], 'crate' => ['qty' => 1]])), true), 'Single group accepted multiple selections.');
+
+        $rogueDefinitions = ['rogue' => ['id' => 999, 'group_id' => 'missing_group']];
+        $assert(in_array('unknown_group', $codes($groupsClass::validate($single, $rogueDefinitions, ['rogue' => ['qty' => 1]])), true), 'Unknown/manipulated group relation was accepted.');
+    }
 }
 
 echo 'HB UCS: ' . (defined('HB_UCS_VERSION') ? HB_UCS_VERSION : 'inactive') . PHP_EOL;
