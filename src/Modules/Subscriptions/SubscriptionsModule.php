@@ -9602,6 +9602,11 @@ class SubscriptionsModule {
                 wp_add_inline_script('wc-enhanced-select', "jQuery(function($){ try { $(document.body).trigger('wc-enhanced-select-init'); } catch(e) {} });");
                 $subscriptionAdminScriptTemplate = <<<'JS'
 jQuery(function($){
+    var subscriptionItemsBox = $('#woocommerce-order-items');
+    if (subscriptionItemsBox.length) {
+        subscriptionItemsBox.off('click', 'button.add-line-item, button.add-order-item, button.add-order-fee, button.add-order-shipping, button.add-order-tax, button.save-action, button.calculate-action, .cancel-action');
+    }
+
     var cfg = {
         ajaxUrl: __AJAX_URL__,
         nonce: __NONCE__,
