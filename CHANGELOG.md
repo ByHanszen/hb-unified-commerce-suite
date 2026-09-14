@@ -4,7 +4,7 @@ Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehoud
 
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
-## [0.5.3] — 2026-09-14
+## [0.5.4] — 2026-09-14
 
 ### Added
 - Productbundels ondersteunen nu expliciete single- en multi-keuzegroepen via aanvullende `hb_ucs_bundle_groups`-meta en stabiele `group_id`-koppelingen in het bestaande `woosb_ids`-contract.
@@ -22,6 +22,7 @@ Het formaat is geïnspireerd op “Keep a Changelog”.
 - Een resterende `woocommerce_save_order_items`-AJAX-call voor een subscription-order wordt direct server-side afgevangen, ook wanneer WooCommerce zelf het order-ID niet kan laden, zodat de core-handler niet langer met een ongeldig orderobject kan crashen.
 - De AJAX-guard staat nu ook in de plugin-bootstrap zelf, zodat de bescherming actief is vóór de module-initialisatie en onafhankelijk van subscription-module-instellingen.
 - De AJAX-guard herkent de custom subscription-editor nu aan de eigen formuliervelden, ook wanneer WooCommerce het order type of de referer niet kan bepalen.
+- WooCommerce's eigen `save_order_items`-callback wordt voor subscription-requests volledig verwijderd voordat de AJAX-action wordt uitgevoerd, zodat `wc_save_order_items()` niet meer kan crashen.
 
 ## [0.5.0] — 2026-08-26
 
