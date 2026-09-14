@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HB Unified Commerce Suite
  * Description: Overkoepelende plugin met modulaire features.
- * Version: 0.5.1
+ * Version: 0.5.2
  * Author: Hoeksche Branders
  * Text Domain: hb-ucs
  */
@@ -12,7 +12,7 @@ if (!defined('HB_UCS_PLUGIN_FILE')) {
     define('HB_UCS_PLUGIN_FILE', __FILE__);
 }
 if (!defined('HB_UCS_VERSION')) {
-    define('HB_UCS_VERSION', '0.5.1');
+    define('HB_UCS_VERSION', '0.5.2');
 }
 
 add_action('before_woocommerce_init', function () {
@@ -29,6 +29,28 @@ spl_autoload_register(function ($class) {
     $path = __DIR__ . '/src/' . str_replace('\\', '/', $rel) . '.php';
     if (file_exists($path)) require_once $path;
 });
+
+add_action('wp_ajax_woocommerce_save_order_items', function () {
+    $orderId = isset($_REQUEST['order_id']) ? absint((string) wp_unslash($_REQUEST['order_id'])) : 0;
+    $subscriptionType = 'shop_subscription_hb';
+    $isSubscriptionOrder = $orderId > 0 && get_post_type($orderId) === $subscriptionType;
+    $referer = isset($_SERVER['HTTP_REFERER']) ? (string) wp_unslash($_SERVER['HTTP_REFERER']) : '';
+
+    if (!$isSubscriptionOrder && strpos($referer, 'page=wc-orders--' . $subscriptionType) !== false) {
+        $isSubscriptionOrder = true;
+    }
+
+    if (!$isSubscriptionOrder) {
+        return;
+    }
+
+    if (!current_user_can('edit_shop_orders')) {
+        wp_die(-1);
+    }
+
+    check_ajax_referer('order-item', 'security');
+    wp_send_json_success(['html' => '', 'notes_html' => '']);
+}, 1);
 
 register_activation_hook(__FILE__, function () {
     // Defaults voor hoofdopties
