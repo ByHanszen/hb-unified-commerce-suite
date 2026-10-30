@@ -27,12 +27,14 @@ class QLSModule {
         // Order metabox
         add_action('add_meta_boxes', [$this, 'add_order_metabox']);
         add_action('save_post_shop_order', [$this, 'save_order_meta'], 10, 3);
+        add_action('woocommerce_process_shop_order_meta', [$this, 'save_order_meta'], 60, 2);
 
         // Centrale filter voor connector (herbruikbaar in rest-filter en batch tools)
         add_filter('hb_ucs_qls_should_send_order', [$this, 'should_send_order'], 10, 2);
 
         // REST API: filter orders voor geselecteerde API user
         add_filter('rest_post_dispatch', [$this, 'rest_filter_orders_for_api_user'], 10, 3);
+        add_filter('woocommerce_rest_orders_prepare_object_query', [$this, 'rest_filter_order_query'], 100, 2);
 
         if ($this->has_active_servicepoint_plugin()) {
             add_action('wp_footer', [$this, 'render_servicepoint_modal_fix'], 99);
@@ -537,14 +539,16 @@ class QLSModule {
             'hb_qls_order_exclude',
             __('QLS: Order meenemen?', 'hb-ucs'),
             [$this, 'render_order_metabox'],
-            'shop_order',
+            array_values(array_unique(['shop_order', function_exists('wc_get_page_screen_id') ? wc_get_page_screen_id('shop-order') : 'woocommerce_page_wc-orders'])),
             'side',
             'default'
         );
     }
 
-    public function render_order_metabox(\WP_Post $post): void {
-        $val = get_post_meta($post->ID, self::META_ORDER, true) === '1' ? '1' : '0';
+    public function render_order_metabox($post): void {
+        $order = $post instanceof \WC_Order ? $post : wc_get_order($post instanceof \WP_Post ? $post->ID : $post);
+        if (!$order) return;
+        $val = $this->get_order_exclusion_meta($order, self::META_ORDER) === '1' ? '1' : '0';
         wp_nonce_field('hb_qls_order_meta', 'hb_qls_order_meta_nonce');
         echo '<p>';
         echo '<label>';
@@ -554,37 +558,51 @@ class QLSModule {
         echo '</p>';
 
         // Toon ook legacy meta als debug-info
-        $legacy = get_post_meta($post->ID, self::META_ORDER_LEGACY, true);
+        $legacy = $this->get_order_exclusion_meta($order, self::META_ORDER_LEGACY);
         if ($legacy !== '') {
             echo '<p class="description">' . esc_html(sprintf(__('Legacy meta (%s): %s', 'hb-ucs'), self::META_ORDER_LEGACY, $legacy)) . '</p>';
         }
     }
 
-    public function save_order_meta(int $post_id, $post, bool $update): void {
+    public function save_order_meta(int $post_id, $post = null, bool $update = true): void {
         if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
         if (wp_is_post_revision($post_id)) return;
         if (!isset($_POST['hb_qls_order_meta_nonce']) || !wp_verify_nonce($_POST['hb_qls_order_meta_nonce'], 'hb_qls_order_meta')) return;
-        if (!current_user_can('edit_post', $post_id)) return;
+        if (!current_user_can('edit_shop_order', $post_id)) return;
 
+        $order = $post instanceof \WC_Order ? $post : wc_get_order($post_id);
+        if (!$order || $order->get_type() !== 'shop_order') return;
         $val = isset($_POST['hb_qls_exclude_order']) ? '1' : '0';
-        update_post_meta($post_id, self::META_ORDER, $val);
+        $order->update_meta_data(self::META_ORDER, $val);
+        if (!$order->meta_exists(self::META_ORDER_LEGACY)) {
+            $legacy = get_post_meta($post_id, self::META_ORDER_LEGACY, true);
+            if ($legacy !== '') $order->update_meta_data(self::META_ORDER_LEGACY, $legacy);
+        }
+        $order->save();
+    }
+
+    private function get_order_exclusion_meta(\WC_Order $order, string $key): string {
+        if ($order->meta_exists($key)) return (string) $order->get_meta($key, true);
+        // Legacy values are read only when the active order store has no value.
+        return (string) get_post_meta($order->get_id(), $key, true);
     }
 
     /* -----------------------------
      * Beslislogica
      * ----------------------------- */
     public function should_send_order(bool $allow, int $order_id): bool {
+        if (!$allow) return false;
         $order = wc_get_order($order_id);
         if (!$order) return false;
 
         $opt = get_option(Settings::OPT_QLS, []);
 
         // 0) Legacy/handmatige overrides
-        $legacy = get_post_meta($order_id, self::META_ORDER_LEGACY, true);
+        $legacy = $this->get_order_exclusion_meta($order, self::META_ORDER_LEGACY);
         if ($legacy === '1') return false; // oude plugin exclude
         // legacy '0' = expliciet toestaan -> ga door
 
-        $manual = get_post_meta($order_id, self::META_ORDER, true);
+        $manual = $this->get_order_exclusion_meta($order, self::META_ORDER);
         if ($manual === '1') return false; // handmatig uitgesloten
         // manual '0' = expliciet toelaten -> ga door
 
@@ -627,10 +645,44 @@ class QLSModule {
     /* -----------------------------
      * REST API filtering
      * ----------------------------- */
+    public function rest_filter_order_query(array $args, \WP_REST_Request $request): array {
+        if (!$this->is_qls_order_request($request) || !preg_match('~^/wc/v[23]/orders/?$~', $request->get_route()) || $request->get_method() !== 'GET') return $args;
+        // Evaluate the same exclusion policy before pagination and total counting.
+        // CRUD queries work with both HPOS and the legacy order store.
+        $excluded = array_merge((array) ($args['post__not_in'] ?? []), (array) ($args['exclude'] ?? []));
+        $page = 1;
+        do {
+            // v3 finishes its status/created_via filters after this hook. Build
+            // exclusions independently so those later constraints remain valid.
+            $query = ['type' => 'shop_order', 'status' => array_keys(get_post_stati()), 'limit' => 200, 'page' => $page, 'offset' => ($page - 1) * 200, 'return' => 'ids', 'paginate' => false];
+            if (!empty($args['post__in'])) $query['post__in'] = $args['post__in'];
+            $ids = (array) wc_get_orders($query);
+            foreach ($ids as $id) {
+                if (!apply_filters('hb_ucs_qls_should_send_order', true, (int) $id)) $excluded[] = (int) $id;
+            }
+            $page++;
+        } while (count($ids) === 200);
+        $args['post__not_in'] = array_values(array_unique(array_map('intval', $excluded)));
+        // WP_Query ignores post__not_in when post__in is present. Keep the
+        // explicit include list consistent as well (an empty list means all).
+        if (!empty($args['post__in'])) {
+            $args['post__in'] = array_values(array_diff(array_map('intval', (array) $args['post__in']), $args['post__not_in']));
+            if (empty($args['post__in'])) $args['post__in'] = [0];
+        }
+        return $args;
+    }
+
+    private function is_qls_order_request(\WP_REST_Request $request): bool {
+        if (!preg_match('~^/wc/v[23]/orders(?:/\d+)?/?$~', $request->get_route())) return false;
+        $opt = get_option(Settings::OPT_QLS, []);
+        $apiUserId = (int) ($opt['api_user_id'] ?? 0);
+        return $apiUserId > 0 && get_current_user_id() === $apiUserId;
+    }
+
     public function rest_filter_orders_for_api_user($response, \WP_REST_Server $server, \WP_REST_Request $request) {
         // Alleen voor wc/v3 orders endpoints
         $route = $request->get_route();
-        if (strpos($route, '/wc/v3/orders') !== 0 && strpos($route, '/wc/v2/orders') !== 0) {
+        if (!$this->is_qls_order_request($request)) {
             return $response;
         }
 
@@ -646,16 +698,7 @@ class QLSModule {
 
         $data = $response->get_data();
         if (is_array($data) && isset($data[0]) && is_array($data[0])) {
-            // Collection
-            $filtered = [];
-            foreach ($data as $row) {
-                if (!isset($row['id'])) continue;
-                $oid = (int) $row['id'];
-                if ($oid > 0 && apply_filters('hb_ucs_qls_should_send_order', true, $oid)) {
-                    $filtered[] = $row;
-                }
-            }
-            $response->set_data($filtered);
+            // The collection and X-WP-Total headers already share the filtered query.
             return $response;
         }
 

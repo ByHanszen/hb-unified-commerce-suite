@@ -399,6 +399,16 @@ class ReturnsAdminPage {
             $statusForm .= '<option value="' . esc_attr($statusKey) . '" ' . selected((string) $request['status'], $statusKey, false) . '>' . esc_html($statusLabel) . '</option>';
         }
         $statusForm .= '</select></p>';
+        if ($order instanceof \WC_Order && $order->get_refunds()) {
+            $statusForm .= '<input type="hidden" name="refund_links_present" value="1" />';
+            $statusForm .= '<p><strong>' . esc_html__('Terugbetalingen bij deze retour', 'hb-ucs') . '</strong></p>';
+            $statusForm .= '<p class="description">' . esc_html__('Koppel alleen terugbetalingen voor dezelfde geretourneerde artikelen. Zo tellen deze aantallen eenmaal.', 'hb-ucs') . '</p>';
+            foreach ($order->get_refunds() as $refund) {
+                $linked = (int) $refund->get_meta(ReturnsModule::REFUND_REQUEST_META, true);
+                if ($linked > 0 && $linked !== $requestId) continue;
+                $statusForm .= '<p><label><input type="checkbox" name="refund_ids[]" value="' . esc_attr((string) $refund->get_id()) . '" ' . checked($linked, $requestId, false) . ' /> #' . esc_html((string) $refund->get_id()) . ' – ' . wp_kses_post(wc_price($refund->get_amount(), ['currency' => $order->get_currency()])) . '</label></p>';
+            }
+        }
         $statusForm .= '<p>';
         ob_start();
         submit_button(__('Status opslaan', 'hb-ucs'), 'primary', '', false);
@@ -499,6 +509,9 @@ class ReturnsAdminPage {
         check_admin_referer('hb_ucs_returns_update_status_' . $requestId, 'hb_ucs_returns_update_status_nonce');
 
         $status = isset($_POST['status']) ? sanitize_key((string) wp_unslash($_POST['status'])) : '';
+        if (isset($_POST['refund_links_present']) && !$this->module->set_linked_refunds($requestId, (array) ($_POST['refund_ids'] ?? []))) {
+            wp_die(esc_html__('De terugbetalingen konden niet aan deze retour worden gekoppeld.', 'hb-ucs'));
+        }
         $this->module->update_return_request_status($requestId, $status);
 
         if (isset($_POST['return_view']) && (string) wp_unslash($_POST['return_view']) === 'detail') {

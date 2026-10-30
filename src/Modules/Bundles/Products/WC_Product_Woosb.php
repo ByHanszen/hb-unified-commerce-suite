@@ -7,6 +7,7 @@ if (!class_exists('WC_Product_Woosb') && class_exists('WC_Product')) {
     class WC_Product_Woosb extends WC_Product {
         /** @var array<string,array<string,mixed>> */
         protected array $hb_ucs_bundle_items = [];
+        private ?float $hb_ucs_cart_price = null;
 
         public function __construct($product = 0) {
             parent::__construct($product);
@@ -100,7 +101,14 @@ if (!class_exists('WC_Product_Woosb') && class_exists('WC_Product')) {
             return $final < $regular ? (string) $final : '';
         }
 
+        /** A cart parent has an allocated price; catalog calculation must not replace it. */
+        public function set_bundle_cart_price(float $price): void {
+            $this->hb_ucs_cart_price = max(0.0, $price);
+            parent::set_price($this->hb_ucs_cart_price);
+        }
+
         public function get_price($context = 'view') {
+            if ($context === 'view' && $this->hb_ucs_cart_price !== null) return (string) $this->hb_ucs_cart_price;
             if ($context !== 'view' || $this->is_fixed_price()) {
                 return parent::get_price($context);
             }

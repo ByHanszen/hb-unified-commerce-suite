@@ -224,8 +224,9 @@ class InvoiceEmailModule {
             $invoice_number = (string) $order->get_order_number();
         }
 
-        $upload = wp_upload_dir();
-        $dir = trailingslashit($upload['basedir']).'hb-ucs-invoices';
+        // Attachments only need to exist while wp_mail reads them. Do not retain
+        // customer invoices under a predictable public uploads URL.
+        $dir = trailingslashit(get_temp_dir()) . 'hb-ucs-invoices-' . wp_generate_password(24, false, false);
         if (!file_exists($dir)) wp_mkdir_p($dir);
 
         $base = 'factuur-'.sanitize_file_name($invoice_number);
@@ -237,10 +238,69 @@ class InvoiceEmailModule {
                 $base = $maybe;
             }
         }
-        return [$dir, $base];
+        return [$dir, sanitize_file_name(basename($base))];
     }
 
-    protected function get_ubl_path_for_order(\WC_Order $order, $base_name = ''): string {
+    protected function ubl_xml_matches_order(string $xml, \WC_Order $order, $document = null): bool {
+        if ($xml === '' || strlen($xml) > 10 * MB_IN_BYTES || stripos($xml, '<!DOCTYPE') !== false || !class_exists('DOMDocument')) return false;
+        $previous = libxml_use_internal_errors(true);
+        try {
+            $dom = new \DOMDocument();
+            if (!$dom->loadXML($xml, LIBXML_NONET) || !$dom->documentElement || !in_array($dom->documentElement->localName, ['Invoice', 'CreditNote'], true)) return false;
+            $xpath = new \DOMXPath($dom);
+            $references = $xpath->query('/*/*[local-name()="OrderReference"]/*[local-name()="ID"]');
+            $orderIds = [(string) $order->get_id(), (string) $order->get_order_number()];
+            if ($references->length > 0) {
+                foreach ($references as $reference) {
+                    if (!in_array(trim($reference->textContent), $orderIds, true)) return false;
+                }
+                return true;
+            }
+            // Some UBL exports omit OrderReference but carry the exact invoice ID.
+            $numbers = [];
+            if ($document && method_exists($document, 'get_number')) {
+                $number = $document->get_number();
+                foreach (['get_formatted', 'get_plain'] as $method) {
+                    if (is_object($number) && method_exists($number, $method)) $numbers[] = (string) $number->$method();
+                }
+            }
+            $invoiceId = trim((string) $xpath->evaluate('string(/*/*[local-name()="ID"][1])'));
+            return $invoiceId !== '' && in_array($invoiceId, $numbers, true);
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
+        }
+    }
+
+    protected function ubl_file_matches_order(string $file, \WC_Order $order, $document = null): bool {
+        if (!is_file($file) || !is_readable($file) || filesize($file) > 10 * MB_IN_BYTES) return false;
+        $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+        if ($extension === 'xml') return $this->ubl_xml_matches_order((string) file_get_contents($file), $order, $document);
+        if ($extension !== 'zip' || !class_exists('ZipArchive')) return false;
+        $zip = new \ZipArchive();
+        if ($zip->open($file) !== true) return false;
+        try {
+            if ($zip->numFiles < 1 || $zip->numFiles > 50) return false;
+            $count = 0;
+            $size = 0;
+            for ($index = 0; $index < $zip->numFiles; $index++) {
+                $entry = $zip->statIndex($index);
+                if (!$entry) return false;
+                if (substr($entry['name'], -1) === '/') continue;
+                // Every attachment inside the archive must belong to this order.
+                $size += (int) $entry['size'];
+                if ($size > 10 * MB_IN_BYTES || strtolower(pathinfo($entry['name'], PATHINFO_EXTENSION)) !== 'xml') return false;
+                $xml = $zip->getFromIndex($index);
+                if (!is_string($xml) || !$this->ubl_xml_matches_order($xml, $order, $document)) return false;
+                $count++;
+            }
+            return $count > 0;
+        } finally {
+            $zip->close();
+        }
+    }
+
+    protected function get_ubl_path_for_order(\WC_Order $order, $base_name = '', $document = null): string {
         $uploads  = wp_upload_dir();
         $roots    = [
             trailingslashit($uploads['basedir']).'wpo_wcpdf/',
@@ -250,7 +310,6 @@ class InvoiceEmailModule {
             trailingslashit($uploads['basedir']).'wpo_wcpdf/UBL/',
             trailingslashit($uploads['basedir']).'hb-ucs-invoices/',
         ];
-        $order_no = preg_replace('~[^0-9A-Za-z_-]+~', '', (string) $order->get_order_number());
         $candidates = [];
         foreach ($roots as $root) {
             if (!is_dir($root)) continue;
@@ -263,17 +322,17 @@ class InvoiceEmailModule {
                 $basename = $fileInfo->getBasename();
                 $ext = strtolower(pathinfo($basename, PATHINFO_EXTENSION));
                 if (!in_array($ext, ['xml','zip'], true)) continue;
-                $lc = strtolower($basename);
-                if (
-                    ($base_name && strpos($lc, strtolower($base_name)) === 0) ||
-                    (strpos($lc, strtolower($order_no)) !== false) ||
-                    (strpos($lc, 'ubl') !== false)
-                ) {
+                if ($this->ubl_file_matches_order($fileInfo->getPathname(), $order, $document)) {
                     $candidates[] = $fileInfo->getPathname();
                 }
             }
         }
-        usort($candidates, fn($a,$b)=>filemtime($b)<=>filemtime($a));
+        $candidates = array_values(array_unique($candidates));
+        usort($candidates, static function ($a, $b) use ($base_name) {
+            $exactA = pathinfo($a, PATHINFO_FILENAME) === $base_name;
+            $exactB = pathinfo($b, PATHINFO_FILENAME) === $base_name;
+            return ($exactB <=> $exactA) ?: (filemtime($b) <=> filemtime($a));
+        });
         return $candidates[0] ?? '';
     }
 
@@ -310,12 +369,13 @@ class InvoiceEmailModule {
     public function maybe_block_pipfs_attachment_condition($allowed, $order, $email_id, $document_type) {
         if (!($order instanceof \WC_Order)) return $allowed;
         if (!$this->get_invoice_email_for_order($order)) return $allowed;
-        return false; // blokkeer
+        $types = $this->maybe_block_all_pipfs_docs_for_customer_mails(['invoice'], $email_id, $order);
+        return empty($types) ? false : $allowed;
     }
 
     // Laatste vangnet: verwijder paden naar wpo_wcpdf uit attachments
-    public function strip_pipfs_attachments_from_customer_mails($attachments, $email_id, $order, $sent_to_admin){
-        if ($sent_to_admin) return $attachments;
+    public function strip_pipfs_attachments_from_customer_mails($attachments, $email_id, $order, $email){
+        if ($email === true || ($email instanceof \WC_Email && !$email->is_customer_email())) return $attachments;
         if (!($order instanceof \WC_Order)) return $attachments;
         if (!$this->get_invoice_email_for_order($order)) return $attachments;
 
@@ -421,33 +481,22 @@ class InvoiceEmailModule {
             $tmp_att  = WPO_WCPDF()->main->get_tmp_path('attachments');   // bv. .../tmp/attachments/
             $scan_dirs = array_values(array_filter([$tmp_att, $tmp_base]));
 
-            $order_no = preg_replace('~[^0-9A-Za-z_-]+~', '', (string)$order->get_order_number());
             $candidates = [];
 
             foreach ($scan_dirs as $scan) {
                 if (!is_dir($scan)) continue;
                 foreach (glob(trailingslashit($scan).'*.{xml,XML,zip,ZIP}', GLOB_BRACE) ?: [] as $f) {
-                    $name = basename($f);
-                    $lc   = strtolower($name);
-
-                    // 1) exact jouw gewenste naam eerst
-                    if ($lc === strtolower($base_name . '.xml') || $lc === strtolower($base_name . '.zip')) {
-                        $candidates[] = $f;
-                        continue;
-                    }
-                    // 2) anders: match op base_name / ordernummer / 'ubl'
-                    if (
-                        strpos($lc, strtolower($base_name)) !== false ||
-                        strpos($lc, strtolower($order_no)) !== false ||
-                        strpos($lc, 'ubl') !== false
-                    ) {
-                        $candidates[] = $f;
-                    }
+                    if (!$this->ubl_file_matches_order($f, $order, $document)) continue;
+                    $candidates[] = $f;
                 }
             }
 
             // meest recente eerst
-            usort($candidates, fn($a,$b) => filemtime($b) <=> filemtime($a));
+            usort($candidates, static function ($a, $b) use ($base_name) {
+                $exactA = pathinfo($a, PATHINFO_FILENAME) === $base_name;
+                $exactB = pathinfo($b, PATHINFO_FILENAME) === $base_name;
+                return ($exactB <=> $exactA) ?: (filemtime($b) <=> filemtime($a));
+            });
 
             if (!empty($candidates)) {
                 $src = $candidates[0];
@@ -467,10 +516,10 @@ class InvoiceEmailModule {
     // (d) Laatste redmiddel: recursief zoeken in uploads (wpo_wcpdf/** & hb-ucs-invoices/)
     //
     if (!$ubl_path) {
-        $ubl_path = $this->get_ubl_path_for_order($order, $base_name);
+        $ubl_path = $this->get_ubl_path_for_order($order, $base_name, $document);
     }
 
-    if ($ubl_path && file_exists($ubl_path)) {
+    if ($ubl_path && $this->ubl_file_matches_order($ubl_path, $order, $document)) {
         $attachments[] = $ubl_path;
     }
 
@@ -493,6 +542,13 @@ class InvoiceEmailModule {
         $subject = sprintf(__('Uw factuur voor bestelling %s', 'hb-ucs'), $order->get_order_number());
         $headers = ['Content-Type: text/html; charset=UTF-8'];
 
-        wp_mail($to, $subject, $message, $headers, $attachments);
+        try {
+            wp_mail($to, $subject, $message, $headers, $attachments);
+        } finally {
+            foreach (glob(trailingslashit($dir) . '*') ?: [] as $temporaryFile) {
+                if (is_file($temporaryFile)) wp_delete_file($temporaryFile);
+            }
+            @rmdir($dir);
+        }
     }
 }

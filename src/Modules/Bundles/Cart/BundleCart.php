@@ -16,6 +16,7 @@ final class BundleCart {
     public function init(): void {
         add_filter('woocommerce_add_to_cart_validation', [$this, 'validate_add_to_cart'], 30, 5);
         add_filter('woocommerce_add_cart_item_data', [$this, 'add_cart_item_data'], 50, 4);
+        add_filter('woocommerce_get_cart_item_from_session', [$this, 'clear_session_pricing_marker']);
         add_action('woocommerce_add_to_cart', [$this, 'add_children'], 30, 6);
         add_action('woocommerce_before_calculate_totals', [$this, 'calculate_prices'], 9999);
         add_action('woocommerce_cart_item_removed', [$this, 'remove_related_items'], 10, 2);
@@ -285,6 +286,7 @@ final class BundleCart {
             $parentQty = max(0.0, (float) ($parent['quantity'] ?? 0));
             $children = [];
             $baseTotal = 0.0;
+            $hasB2BPricing = isset($parent['hb_ucs_b2b_unit_price']);
             foreach ((array) ($parent['woosb_keys'] ?? []) as $childKey) {
                 if (!isset($cart->cart_contents[$childKey])) {
                     continue;
@@ -296,18 +298,19 @@ final class BundleCart {
                 $componentQty = max(0.0, (float) ($child['woosb_qty'] ?? 0));
                 $child['quantity'] = $componentQty * $parentQty;
                 $fresh = wc_get_product((int) (!empty($child['variation_id']) ? $child['variation_id'] : $child['product_id']));
-                $unit = $fresh ? max(0.0, (float) $fresh->get_price()) : 0.0;
+                $unit = isset($child['hb_ucs_b2b_unit_price']) ? max(0.0, (float) $child['hb_ucs_b2b_unit_price']) : ($fresh ? max(0.0, (float) $fresh->get_price()) : 0.0);
                 $children[$childKey] = ['unit' => $unit, 'component_qty' => $componentQty];
+                $hasB2BPricing = $hasB2BPricing || isset($child['hb_ucs_b2b_unit_price']);
                 $baseTotal += $unit * $componentQty;
                 unset($child);
             }
 
             if ($fixed) {
-                $parentPrice = (float) $parent['data']->get_price('edit');
-                if (!empty($parent['hb_ucs_subs']['final_price'])) {
+                $parentPrice = isset($parent['hb_ucs_b2b_unit_price']) ? max(0.0, (float) $parent['hb_ucs_b2b_unit_price']) : (float) $parent['data']->get_price('edit');
+                if (!isset($parent['hb_ucs_b2b_unit_price']) && isset($parent['hb_ucs_subs']['final_price'])) {
                     $parentPrice = max(0.0, (float) $parent['hb_ucs_subs']['final_price']);
                 }
-                $cart->cart_contents[$parentKey]['data']->set_price($parentPrice);
+                $this->set_parent_cart_price($cart->cart_contents[$parentKey]['data'], $parentPrice);
                 foreach ($children as $childKey => $row) {
                     $cart->cart_contents[$childKey]['data']->set_price(0);
                 }
@@ -323,22 +326,33 @@ final class BundleCart {
             } elseif ($discount > 0) {
                 $targetTotal = max(0.0, $baseTotal * (100 - $discount) / 100);
             }
-            if (!empty($parent['hb_ucs_subs']) && isset($parent['hb_ucs_subs']['base_price'], $parent['hb_ucs_subs']['final_price'])) {
+            if (isset($parent['hb_ucs_b2b_unit_price'])) {
+                $targetTotal = max(0.0, (float) $parent['hb_ucs_b2b_unit_price']);
+            } elseif (!$hasB2BPricing && !empty($parent['hb_ucs_subs']) && isset($parent['hb_ucs_subs']['base_price'], $parent['hb_ucs_subs']['final_price'])) {
                 $subscriptionBase = max(0.0, (float) $parent['hb_ucs_subs']['base_price']);
                 $subscriptionFinal = max(0.0, (float) $parent['hb_ucs_subs']['final_price']);
                 if ($subscriptionBase > 0) {
                     $targetTotal *= $subscriptionFinal / $subscriptionBase;
                 }
             }
-            $ratio = $baseTotal > 0 ? $targetTotal / $baseTotal : 0.0;
-            foreach ($children as $childKey => $row) {
-                $price = (float) wc_format_decimal((string) ($row['unit'] * $ratio), wc_get_price_decimals());
+            $prices = BundleData::allocate_component_prices($children, $targetTotal, $parentQty);
+            foreach ($prices as $childKey => $price) {
                 $cart->cart_contents[$childKey]['data']->set_price(max(0.0, $price));
             }
-            $cart->cart_contents[$parentKey]['data']->set_price(0);
+            $this->set_parent_cart_price($cart->cart_contents[$parentKey]['data'], 0);
             $cart->cart_contents[$parentKey]['data']->set_tax_status('none');
-            $cart->cart_contents[$parentKey]['woosb_price'] = (float) wc_format_decimal((string) $targetTotal, wc_get_price_decimals());
+            $cart->cart_contents[$parentKey]['woosb_price'] = $parentQty > 0 ? round($targetTotal * $parentQty, wc_get_price_decimals()) / $parentQty : 0.0;
         }
+    }
+
+    private function set_parent_cart_price($product, float $price): void {
+        if (method_exists($product, 'set_bundle_cart_price')) $product->set_bundle_cart_price($price);
+        else $product->set_price($price);
+    }
+
+    public function clear_session_pricing_marker(array $item): array {
+        unset($item['hb_ucs_b2b_unit_price']);
+        return $item;
     }
 
     public function remove_related_items(string $removedKey, $cart): void {
@@ -501,16 +515,37 @@ final class BundleCart {
 
     public function display_parent_price(string $price, array $item): string {
         if (!empty($item['woosb_ids']) && empty($item['woosb_fixed_price']) && isset($item['woosb_price'])) {
-            return wc_price((float) $item['woosb_price']);
+            $amount = $this->get_component_display_subtotal($item);
+            if ($amount !== null) return wc_price($amount / max(1, (float) ($item['quantity'] ?? 1)));
         }
         return $price;
     }
 
     public function display_parent_subtotal(string $subtotal, array $item): string {
         if (!empty($item['woosb_ids']) && empty($item['woosb_fixed_price']) && isset($item['woosb_price'])) {
-            return wc_price((float) $item['woosb_price'] * (float) ($item['quantity'] ?? 1));
+            $amount = $this->get_component_display_subtotal($item);
+            if ($amount !== null) return wc_price($amount);
         }
         return $subtotal;
+    }
+
+    private function get_component_display_subtotal(array $parent): ?float {
+        if (!function_exists('WC') || !WC()->cart) return null;
+        $amount = 0.0;
+        $found = false;
+        $includeTax = WC()->cart->display_prices_including_tax();
+        foreach ((array) ($parent['woosb_keys'] ?? []) as $childKey) {
+            $child = WC()->cart->get_cart_item($childKey);
+            if (empty($child['woosb_parent_id']) || (string) ($child[BundleData::CART_INSTANCE] ?? '') !== (string) ($parent[BundleData::CART_INSTANCE] ?? '')) continue;
+            $found = true;
+            if (isset($child['line_subtotal'])) {
+                $amount += (float) $child['line_subtotal'] + ($includeTax ? (float) ($child['line_subtotal_tax'] ?? 0) : 0.0);
+            } else {
+                $args = ['qty' => (float) ($child['quantity'] ?? 0), 'price' => (float) $child['data']->get_price()];
+                $amount += $includeTax ? wc_get_price_including_tax($child['data'], $args) : wc_get_price_excluding_tax($child['data'], $args);
+            }
+        }
+        return $found ? $amount : null;
     }
 
     private function resolve_selected_product($source, array $selected, array $definition) {

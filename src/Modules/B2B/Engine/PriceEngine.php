@@ -19,6 +19,7 @@ class PriceEngine {
     private CustomerRulesStore $customerRules;
     private ProfilesStore $profiles;
     private WpcProductBundlesSupport $bundleSupport;
+    private \WeakMap $originalPrices;
 
     private static bool $guard = false;
     private static bool $html_guard = false;
@@ -31,6 +32,7 @@ class PriceEngine {
         $this->customerRules = new CustomerRulesStore();
         $this->profiles = new ProfilesStore();
         $this->bundleSupport = $bundleSupport;
+        $this->originalPrices = new \WeakMap();
     }
 
     private function round_wc(float $value, int $precision): float {
@@ -65,25 +67,31 @@ class PriceEngine {
         if (!is_object($cart) || !method_exists($cart, 'get_cart')) return;
 
         $user_id = Context::get_effective_user_id();
-        if ($user_id <= 0) return;
-
         $display = $this->resolve_display_settings($user_id);
-        if (($display['mode'] ?? '') === 'original') {
-            return;
-        }
 
         self::$guard = true;
         try {
             foreach ($cart->get_cart() as $cart_item_key => $cart_item) {
+                if (isset($cart->cart_contents[$cart_item_key])) unset($cart->cart_contents[$cart_item_key]['hb_ucs_b2b_unit_price']);
                 if (empty($cart_item['data']) || !is_object($cart_item['data'])) continue;
-                if ($this->bundleSupport->should_preserve_cart_item_price($cart_item)) continue;
+                $subscription = $this->is_subscription_cart_item($cart_item);
+                if (!$subscription && $this->bundleSupport->should_preserve_cart_item_price($cart_item)) continue;
                 $product = $cart_item['data'];
+                $pricingProduct = $this->get_cart_pricing_product($cart_item);
 
-                $adjusted = $this->get_adjusted_price_raw($product, $user_id);
-                if ($adjusted === null) continue;
+                $adjusted = $user_id > 0 && ($display['mode'] ?? '') !== 'original'
+                    ? $this->get_adjusted_price_raw($pricingProduct, $user_id)
+                    : null;
+                if ($adjusted === null) {
+                    if ($subscription) $product->set_price($cart_item['hb_ucs_subs']['final_price']);
+                    elseif (isset($this->originalPrices[$product])) $product->set_price($this->originalPrices[$product]);
+                    continue;
+                }
 
                 if (method_exists($product, 'set_price')) {
+                    if (!isset($this->originalPrices[$product])) $this->originalPrices[$product] = (string) $pricingProduct->get_price('edit');
                     $product->set_price($adjusted);
+                    if (isset($cart->cart_contents[$cart_item_key])) $cart->cart_contents[$cart_item_key]['hb_ucs_b2b_unit_price'] = $adjusted;
                 }
             }
         } finally {
@@ -308,7 +316,7 @@ class PriceEngine {
         }
         if ($mode !== 'both') return $price_html;
 
-        $product = $cart_item['data'] ?? null;
+        $product = $this->get_cart_pricing_product($cart_item);
         if (!is_object($product)) return $price_html;
 
         $s = $this->settings->get();
@@ -344,7 +352,7 @@ class PriceEngine {
         }
         if ($mode !== 'both') return $subtotal_html;
 
-        $product = $cart_item['data'] ?? null;
+        $product = $this->get_cart_pricing_product($cart_item);
         if (!is_object($product)) return $subtotal_html;
 
         $qty = isset($cart_item['quantity']) ? max(1, (int) $cart_item['quantity']) : 1;
@@ -465,10 +473,31 @@ class PriceEngine {
         return ['mode' => $mode, 'label' => $label];
     }
 
+    private function is_subscription_cart_item(array $item): bool {
+        $subscription = $item['hb_ucs_subs'] ?? null;
+        return is_array($subscription) && ($subscription['engine'] ?? '') === 'manual' && !empty($subscription['scheme']) && isset($subscription['final_price']);
+    }
+
+    private function get_cart_pricing_product(array $item) {
+        $product = $item['data'] ?? null;
+        if (!$this->is_subscription_cart_item($item) || !is_object($product)) return $product;
+        // Use the catalog basis: applying B2B to the already discounted
+        // subscription price would stack both discounts.
+        $catalog = wc_get_product($product->get_id());
+        if (!$catalog) return $product;
+        if ($this->bundleSupport->is_bundle_product($catalog) && method_exists($catalog, 'is_fixed_price') && !$catalog->is_fixed_price()) {
+            $price = $catalog->get_price();
+            $regular = $catalog->get_regular_price();
+            $catalog->set_price($price);
+            $catalog->set_regular_price($regular);
+        }
+        return $catalog;
+    }
+
     private function get_base_raw_price($product, string $baseMode): ?float {
         // Use unfiltered edit-context getters.
         $regular = method_exists($product, 'get_regular_price') ? (string) $product->get_regular_price('edit') : '';
-        $current = method_exists($product, 'get_price') ? (string) $product->get_price('edit') : '';
+        $current = $this->originalPrices[$product] ?? (method_exists($product, 'get_price') ? (string) $product->get_price('edit') : '');
 
         $reg = is_numeric($regular) ? (float) $regular : null;
         $cur = is_numeric($current) ? (float) $current : null;

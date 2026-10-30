@@ -374,6 +374,18 @@ class SubscriptionsModule {
 
         $changed = false;
 
+        $subscription = function_exists('wc_get_order') ? wc_get_order($subId) : null;
+        if ($subscription && $subscription->get_type() === $this->get_subscription_order_type()->get_type()) {
+            foreach ($metaMap as $metaKey => $metaValue) {
+                if (!$this->subscription_meta_values_equal($subscription->get_meta($metaKey, true), $metaValue)) {
+                    $subscription->update_meta_data($metaKey, $metaValue);
+                    $changed = true;
+                }
+            }
+            if (isset($metaMap[self::SUB_META_STATUS])) $this->apply_account_subscription_status_to_order($subscription, (string) $metaMap[self::SUB_META_STATUS]);
+            if ($changed) $subscription->save();
+        }
+
         foreach ($metaMap as $metaKey => $metaValue) {
             $changed = $this->update_subscription_post_meta_if_changed($subId, (string) $metaKey, $metaValue) || $changed;
         }
@@ -9001,7 +9013,7 @@ class SubscriptionsModule {
         return $key;
     }
 
-    private function mollie_request(string $method, string $path, ?array $body = null) {
+    private function mollie_request(string $method, string $path, ?array $body = null, string $idempotencyKey = '') {
         $apiKey = $this->get_mollie_api_key();
         if ($apiKey === '') {
             return new \WP_Error('hb_ucs_no_mollie_key', __('Mollie API key ontbreekt.', 'hb-ucs'));
@@ -9018,6 +9030,9 @@ class SubscriptionsModule {
         ];
         if ($body !== null) {
             $args['body'] = wp_json_encode($body);
+        }
+        if ($idempotencyKey !== '' && strtoupper($method) === 'POST') {
+            $args['headers']['Idempotency-Key'] = $idempotencyKey;
         }
 
         $resp = wp_remote_request($url, $args);
@@ -11375,7 +11390,7 @@ JS;
                 }
 
                 $result = $this->create_renewal_order_and_payment($subId, false);
-                if (is_wp_error($result)) {
+                if (is_wp_error($result) && $result->get_error_code() !== 'hb_ucs_busy' && $this->get_open_renewal_order_id_for_subscription($subId) <= 0) {
                     $this->persist_subscription_runtime_state($subId, 'on-hold');
                     $this->sync_subscription_order_type_record($subId);
                 }
@@ -11498,12 +11513,12 @@ JS;
             return;
         }
 
-        if ($this->get_open_renewal_order_id_for_subscription($subId) > 0) {
-            return;
-        }
-
         $blockingStatus = $this->get_subscription_runtime_blocking_status($subId);
         if ($blockingStatus !== '') {
+            return;
+        }
+        if ($this->get_open_renewal_order_id_for_subscription($subId) > 0) {
+            $this->create_renewal_order_and_payment($subId, true);
             return;
         }
 
@@ -11627,6 +11642,13 @@ JS;
     }
 
     private function create_renewal_order_and_payment(int $subId, bool $force = false) {
+        $canonicalId = $this->get_canonical_subscription_id($subId, false);
+        return \HB\UCS\Core\DatabaseLock::run('renewal:' . ($canonicalId > 0 ? $canonicalId : $subId), function () use ($subId, $force) {
+            return $this->create_renewal_order_and_payment_unlocked($subId, $force);
+        });
+    }
+
+    private function create_renewal_order_and_payment_unlocked(int $subId, bool $force = false) {
         if (!$force && !$this->subscription_is_eligible_for_auto_renewal($subId)) {
             return 0;
         }
@@ -11641,15 +11663,12 @@ JS;
             $this->sync_subscription_order_type_record($subId);
         }
 
+        $openRenewalOrderId = $this->get_open_renewal_order_id_for_subscription($subId);
+        if ($openRenewalOrderId > 0) {
+            return $this->start_renewal_payment(wc_get_order($openRenewalOrderId), $subId);
+        }
         if (!$force && $nextPayment > time()) {
             return 0;
-        }
-
-        if (!$force) {
-            $openRenewalOrderId = $this->get_open_renewal_order_id_for_subscription($subId);
-            if ($openRenewalOrderId > 0) {
-                return $openRenewalOrderId;
-            }
         }
 
         $latestRenewalOrderId = $this->get_latest_renewal_order_id_for_subscription($subId);
@@ -11871,7 +11890,7 @@ JS;
                 'order' => $this->build_renewal_order_debug_snapshot(wc_get_order((int) $order->get_id())),
             ]);
 
-            $this->persist_subscription_runtime_state($subId, $runtimeStatus, $nextPayment);
+            $this->persist_subscription_runtime_state($subId, $runtimeStatus, $requiresMandate ? null : $nextPayment);
             $created = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
             $createdTs = $created ? (int) $created->getTimestamp() : time();
             $this->persist_subscription_last_order_state($subId, (int) $order->get_id(), $createdTs);
@@ -11892,75 +11911,7 @@ JS;
                 return (int) $order->get_id();
             }
 
-            // Create Mollie recurring payment.
-            $webhookUrl = add_query_arg([
-                'hb_ucs_mollie_webhook' => '1',
-                'token' => $token,
-            ], home_url('/'));
-
-            $amountValue = number_format((float) $order->get_total(), 2, '.', '');
-            $payload = [
-                'amount' => [
-                    'currency' => (string) get_woocommerce_currency(),
-                    'value' => $amountValue,
-                ],
-                'description' => $this->get_mollie_payment_description($order),
-                'customerId' => $customerId,
-                'mandateId' => $mandateId,
-                'sequenceType' => 'recurring',
-                'method' => 'directdebit',
-                'webhookUrl' => $webhookUrl,
-                'metadata' => [
-                    'order_id' => (int) $order->get_id(),
-                    'subscription_id' => (int) $subId,
-                    'source' => 'hb_ucs',
-                ],
-            ];
-            $this->log_renewal_debug('renewal.create.before_mollie_request', $subId, [
-                'order' => $this->build_renewal_order_debug_snapshot(wc_get_order((int) $order->get_id())),
-                'payload' => [
-                    'amount' => $payload['amount'],
-                    'customerId' => $customerId,
-                    'mandateId' => $mandateId,
-                    'method' => 'directdebit',
-                ],
-            ]);
-
-            $payment = $this->mollie_request('POST', 'payments', $payload);
-            if (is_wp_error($payment)) {
-                $this->log_renewal_debug('renewal.create.mollie_error', $subId, [
-                    'order' => $this->build_renewal_order_debug_snapshot(wc_get_order((int) $order->get_id())),
-                    'error_code' => $payment->get_error_code(),
-                    'error_message' => $payment->get_error_message(),
-                ]);
-                return $payment;
-            }
-            $paymentId = isset($payment['id']) ? (string) $payment['id'] : '';
-            if ($paymentId === '') {
-                $this->log_renewal_debug('renewal.create.mollie_missing_payment_id', $subId, [
-                    'order' => $this->build_renewal_order_debug_snapshot(wc_get_order((int) $order->get_id())),
-                    'response' => $payment,
-                ]);
-                return new \WP_Error('hb_ucs_mollie_no_payment_id', __('Mollie gaf geen payment id terug.', 'hb-ucs'));
-            }
-
-            $freshOrder = wc_get_order((int) $order->get_id());
-            if ($freshOrder && is_object($freshOrder)) {
-                $freshOrder->update_meta_data(self::ORDER_META_MOLLIE_PAYMENT_ID, $paymentId);
-                $freshOrder->add_order_note(sprintf(__('HB UCS: Mollie recurring betaling gestart (%s).', 'hb-ucs'), $paymentId));
-                $freshOrder->save();
-                $statusForced = $this->force_order_status($freshOrder, 'on-hold', __('HB UCS: renewal wacht op SEPA incasso.', 'hb-ucs'));
-                $this->log_renewal_debug('renewal.create.after_mollie_payment_id', $subId, [
-                    'status_forced' => $statusForced,
-                    'payment_id' => $paymentId,
-                    'order' => $this->build_renewal_order_debug_snapshot(wc_get_order((int) $order->get_id())),
-                ]);
-            }
-
-            $this->add_subscription_admin_note($subId, __('Abonnement blijft actief totdat betaling mislukt, omdat een SEPA incasso betaling enige tijd nodig heeft om te verwerken.', 'hb-ucs'));
-            update_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, $paymentId);
-
-            return (int) $order->get_id();
+            return $this->start_renewal_payment($order, $subId);
         } catch (\Throwable $e) {
             $this->log_renewal_debug('renewal.create.exception', $subId, [
                 'message' => $e->getMessage(),
@@ -11972,6 +11923,50 @@ JS;
 
             return new \WP_Error('hb_ucs_renewal_exception', $e->getMessage());
         }
+    }
+
+    private function start_renewal_payment($order, int $subId) {
+        if (!$order instanceof \WC_Order) return new \WP_Error('hb_ucs_missing_renewal', __('Vervolgorder niet gevonden.', 'hb-ucs'));
+        $mode = (string) $order->get_meta(self::ORDER_META_RENEWAL_MODE, true);
+        if ($mode === 'manual' || ($mode === '' && !$this->payment_method_requires_mandate((string) $order->get_payment_method()))) return (int) $order->get_id();
+        $paymentId = (string) $order->get_meta(self::ORDER_META_MOLLIE_PAYMENT_ID, true);
+        $result = $paymentId;
+        if ($paymentId === '') {
+            $token = $this->get_webhook_token();
+            $customerId = (string) get_post_meta($subId, self::SUB_META_MOLLIE_CUSTOMER_ID, true);
+            $mandateId = (string) get_post_meta($subId, self::SUB_META_MOLLIE_MANDATE_ID, true);
+            if ($token === '' || $customerId === '' || $mandateId === '') {
+                return new \WP_Error('hb_ucs_missing_mandate', __('Betaalgegevens ontbreken. Vul het Mollie-mandaat en de webhookinstellingen aan en probeer dezelfde vervolgorder opnieuw.', 'hb-ucs'));
+            }
+            $payload = [
+                'amount' => ['currency' => $order->get_currency(), 'value' => number_format((float) $order->get_total(), 2, '.', '')],
+                'description' => $this->get_mollie_payment_description($order),
+                'customerId' => $customerId,
+                'mandateId' => $mandateId,
+                'sequenceType' => 'recurring',
+                'method' => 'directdebit',
+                'webhookUrl' => add_query_arg(['hb_ucs_mollie_webhook' => '1', 'token' => $token], home_url('/')),
+                'metadata' => ['order_id' => (int) $order->get_id(), 'subscription_id' => $subId, 'source' => 'hb_ucs'],
+            ];
+            $service = new \HB\UCS\Modules\Subscriptions\Payments\RenewalPaymentService(function ($method, $path, $body, $key) {
+                return $this->mollie_request($method, $path, $body, $key);
+            });
+            $result = $service->ensure_payment($order, $payload, hash('sha256', $this->get_mollie_api_key()));
+        }
+        if (is_wp_error($result)) {
+            $this->persist_subscription_runtime_state($subId, 'payment_pending');
+            $this->sync_subscription_order_type_record($subId);
+            return $result;
+        }
+        // The provider has accepted the payment. Advance the period only now.
+        $fresh = wc_get_order($order->get_id());
+        $nextPayment = $this->get_recorded_renewal_next_payment($fresh, $subId);
+        $status = $fresh->is_paid() ? 'active' : ($fresh->has_status(['failed', 'cancelled', 'refunded']) ? 'on-hold' : 'payment_pending');
+        $this->persist_subscription_runtime_state($subId, $status, $nextPayment);
+        update_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, (string) $result);
+        $fresh->add_order_note(sprintf(__('HB UCS: Mollie recurring betaling gekoppeld (%s).', 'hb-ucs'), $result));
+        $this->sync_subscription_order_type_record($subId);
+        return (int) $order->get_id();
     }
 
     private function get_latest_renewal_order_id_for_subscription(int $subId): int {

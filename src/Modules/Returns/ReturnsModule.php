@@ -26,6 +26,7 @@ class ReturnsModule {
     public const META_ESTIMATED_DELIVERY = '_hb_ucs_return_estimated_delivery';
     public const META_RETURN_DEADLINE = '_hb_ucs_return_deadline';
     public const META_ACTIVITY_LOG = '_hb_ucs_return_activity_log';
+    public const REFUND_REQUEST_META = '_hb_ucs_return_request_id';
 
     public function init(): void {
         if (!class_exists('WooCommerce')) {
@@ -378,13 +379,10 @@ class ReturnsModule {
             wp_send_json_error(['message' => __('De bestelling is niet meer geldig voor een retourmelding. Start opnieuw en controleer de gegevens.', 'hb-ucs')], 409);
         }
 
-        $availableItems = $this->get_returnable_items($order);
-        $selectedItems = $this->normalize_selected_items($rawItems, $availableItems);
-        if (empty($selectedItems)) {
-            wp_send_json_error(['message' => __('Selecteer minimaal één artikel en kies een geldig aantal.', 'hb-ucs')], 422);
+        $requestId = $this->submit_return_request($order, $rawItems, $reason);
+        if (is_wp_error($requestId)) {
+            wp_send_json_error(['message' => $requestId->get_error_message()], 409);
         }
-
-        $requestId = $this->create_return_request($order, $selectedItems, $reason);
         if ($requestId <= 0) {
             wp_send_json_error(['message' => __('De retourmelding kon niet worden opgeslagen.', 'hb-ucs')], 500);
         }
@@ -932,6 +930,7 @@ class ReturnsModule {
     protected function get_returnable_items($order): array {
         $settings = self::get_settings();
         $consumed = $this->get_consumed_quantities_for_order((int) $order->get_id());
+        $refunds = $this->get_refund_consumption($order);
         $items = [];
 
         foreach ((array) $order->get_items('line_item') as $itemId => $item) {
@@ -940,7 +939,8 @@ class ReturnsModule {
             }
 
             $orderedQty = max(0, (int) $item->get_quantity());
-            $remainingQty = max(0, $orderedQty - (int) ($consumed[(int) $itemId] ?? 0));
+            $usedQty = (int) ($consumed[(int) $itemId] ?? 0) + (int) ($refunds['refunded'][(int) $itemId] ?? 0) - (int) ($refunds['overlap'][(int) $itemId] ?? 0);
+            $remainingQty = max(0, $orderedQty - $usedQty);
             if ($remainingQty <= 0) {
                 continue;
             }
@@ -986,6 +986,67 @@ class ReturnsModule {
         }
 
         return $items;
+    }
+
+    protected function submit_return_request($order, array $rawItems, string $reason) {
+        return \HB\UCS\Core\DatabaseLock::run('return:' . $order->get_id(), function () use ($order, $rawItems, $reason) {
+            $available = $this->get_returnable_items(wc_get_order($order->get_id()));
+            $selected = $this->normalize_selected_items($rawItems, $available);
+            if (empty($selected)) return new \WP_Error('hb_ucs_no_return_items', __('Er zijn geen geldige retouraantallen meer beschikbaar.', 'hb-ucs'));
+            return $this->create_return_request($order, $selected, $reason);
+        });
+    }
+
+    protected function get_refund_consumption($order): array {
+        $refunded = [];
+        $overlap = [];
+        $linkedUsage = [];
+        foreach ($order->get_refunds() as $refund) {
+            $requestId = (int) $refund->get_meta(self::REFUND_REQUEST_META, true);
+            $requestItems = [];
+            if ($requestId > 0 && in_array(get_post_type($requestId), self::get_request_post_types(), true) && (int) get_post_meta($requestId, self::META_ORDER_ID, true) === (int) $order->get_id() && in_array((string) get_post_meta($requestId, self::META_STATUS, true), self::get_countable_statuses(), true)) {
+                foreach ((array) get_post_meta($requestId, self::META_ITEMS, true) as $row) {
+                    if (is_array($row)) $requestItems[(int) ($row['item_id'] ?? 0)] = max(0, (int) ($row['quantity'] ?? 0));
+                }
+            }
+            foreach ($refund->get_items('line_item') as $line) {
+                $itemId = (int) $line->get_meta('_refunded_item_id', true);
+                $qty = max(0, -(int) $line->get_quantity());
+                if ($itemId <= 0 || $qty <= 0) continue; // Monetary adjustments have no physical quantity.
+                $refunded[$itemId] = ($refunded[$itemId] ?? 0) + $qty;
+                $remainingLinked = max(0, ($requestItems[$itemId] ?? 0) - ($linkedUsage[$requestId][$itemId] ?? 0));
+                $shared = min($qty, $remainingLinked);
+                $linkedUsage[$requestId][$itemId] = ($linkedUsage[$requestId][$itemId] ?? 0) + $shared;
+                $overlap[$itemId] = ($overlap[$itemId] ?? 0) + $shared;
+            }
+        }
+        return ['refunded' => $refunded, 'overlap' => $overlap];
+    }
+
+    public function set_linked_refunds(int $requestId, array $refundIds): bool {
+        if (!in_array(get_post_type($requestId), self::get_request_post_types(), true)) return false;
+        $orderId = (int) get_post_meta($requestId, self::META_ORDER_ID, true);
+        if (!current_user_can('edit_shop_order', $orderId)) return false;
+        $order = wc_get_order($orderId);
+        if (!$order) return false;
+        $refundIds = array_values(array_unique(array_filter(array_map('absint', $refundIds))));
+        $refunds = [];
+        foreach ($order->get_refunds() as $refund) $refunds[$refund->get_id()] = $refund;
+        foreach ($refundIds as $refundId) {
+            if (!isset($refunds[$refundId])) return false;
+            $linked = (int) $refunds[$refundId]->get_meta(self::REFUND_REQUEST_META, true);
+            if ($linked > 0 && $linked !== $requestId) return false;
+        }
+        foreach ($refunds as $refundId => $refund) {
+            if (in_array($refundId, $refundIds, true)) {
+                $refund->update_meta_data(self::REFUND_REQUEST_META, $requestId);
+                $refund->save();
+            } elseif ((int) $refund->get_meta(self::REFUND_REQUEST_META, true) === $requestId) {
+                $refund->delete_meta_data(self::REFUND_REQUEST_META);
+                $refund->save();
+            }
+        }
+        return true;
     }
 
     protected function is_item_returnable($product, array $settings): bool {

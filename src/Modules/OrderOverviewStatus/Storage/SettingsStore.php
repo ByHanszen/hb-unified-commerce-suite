@@ -37,7 +37,7 @@ class SettingsStore {
             'statuses' => $this->sanitize_statuses(isset($raw['statuses']) && is_array($raw['statuses']) ? $raw['statuses'] : []),
         ];
 
-        $settings = array_replace_recursive($current, $settings);
+        $settings = array_replace($current, $settings);
         update_option(self::OPT, $settings, false);
 
         return $settings;

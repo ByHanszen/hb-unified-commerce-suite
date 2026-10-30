@@ -291,6 +291,35 @@ final class BundleData {
         return is_object($product) && method_exists($product, 'get_type') && (string) $product->get_type() === self::PRODUCT_TYPE;
     }
 
+    /** Allocate currency cents per component line, keeping unit prices precise. */
+    public static function allocate_component_prices(array $rows, float $target, float $parentQty = 1.0): array {
+        $scale = 10 ** wc_get_price_decimals();
+        $weight = 0.0;
+        foreach ($rows as $row) $weight += max(0.0, (float) $row['unit'] * (float) $row['component_qty']);
+        $cents = (int) round(max(0.0, $target * $parentQty) * $scale);
+        $remaining = $cents;
+        $lines = [];
+        $fractions = [];
+        foreach ($rows as $key => $row) {
+            $share = $weight > 0 ? $cents * max(0.0, (float) $row['unit'] * (float) $row['component_qty']) / $weight : 0.0;
+            $lines[$key] = (int) floor($share);
+            $fractions[$key] = $share - $lines[$key];
+            $remaining -= $lines[$key];
+        }
+        arsort($fractions, SORT_NUMERIC);
+        foreach ($fractions as $key => $_) {
+            if ($remaining <= 0) break;
+            $lines[$key]++;
+            $remaining--;
+        }
+        $prices = [];
+        foreach ($rows as $key => $row) {
+            $qty = (float) $row['component_qty'] * $parentQty;
+            $prices[$key] = $qty > 0 ? $lines[$key] / $scale / $qty : 0.0;
+        }
+        return $prices;
+    }
+
     public static function generate_instance_id(): string {
         return function_exists('wp_generate_uuid4') ? wp_generate_uuid4() : uniqid('hb-bundle-', true);
     }

@@ -8,7 +8,7 @@ if (!defined('ABSPATH')) exit;
 
 class RolesGuard {
     public static function can_manage(): bool {
-        return current_user_can('manage_woocommerce') || current_user_can('manage_options');
+        return current_user_can('manage_options') && current_user_can('promote_users');
     }
 
     public static function protected_roles(): array {
@@ -27,8 +27,22 @@ class RolesGuard {
     public static function can_delete_role(string $role): bool {
         $role = sanitize_key($role);
         if ($role === '') return false;
-        if (in_array($role, self::protected_roles(), true)) return false;
-        return (bool) get_role($role);
+        return self::can_edit_role($role);
+    }
+
+    public static function can_edit_role(string $role): bool {
+        $role = sanitize_key($role);
+        if (!self::can_manage() || in_array($role, self::protected_roles(), true)) return false;
+        $target = get_role($role);
+        return $target && self::can_assign_caps((array) $target->capabilities);
+    }
+
+    public static function can_assign_caps(array $caps): bool {
+        if (!self::can_manage()) return false;
+        foreach ($caps as $cap => $allowed) {
+            if ($allowed && !current_user_can((string) $cap)) return false;
+        }
+        return true;
     }
 
     public static function role_label(string $role): string {

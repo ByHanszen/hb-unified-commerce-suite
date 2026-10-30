@@ -57,7 +57,6 @@ mkdir -p "$plugin_dir"
 rsync -a --delete \
     --exclude=".git/" \
     --exclude=".github/" \
-    --exclude="tests/" \
     "$GITHUB_WORKSPACE/" "$plugin_dir/"
 
 wp plugin install woocommerce --activate --path="$WP_PATH"

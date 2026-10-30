@@ -809,7 +809,7 @@ class SubscriptionAdmin {
 
         $status = $this->get_subscription_status_for_order($order);
 
-        $actions['hb_ucs_create_renewal_order'] = __('Maak renewal order aan', 'hb-ucs');
+        $actions['hb_ucs_create_renewal_order'] = __('Maak of herstel vervolgorder', 'hb-ucs');
         $actions['hb_ucs_sync_customer_addresses'] = __('Synchroniseer klantadressen', 'hb-ucs');
 
         if ($status === 'paused' || $status === 'on-hold') {

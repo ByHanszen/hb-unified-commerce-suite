@@ -103,9 +103,18 @@ final class BundleOrders {
     }
 
     public function formatted_line_subtotal(string $subtotal, $item, $order = null): string {
-        if (is_object($item) && method_exists($item, 'get_meta') && $item->get_meta('_woosb_ids', true) && (float) $item->get_meta('_woosb_price', true) > 0 && (float) $item->get_total() <= 0) {
-            $currency = $order && method_exists($order, 'get_currency') ? $order->get_currency() : get_woocommerce_currency();
-            return wc_price((float) $item->get_meta('_woosb_price', true) * max(1, (float) $item->get_quantity()), ['currency' => $currency]);
+        if (is_object($item) && method_exists($item, 'get_meta') && $item->get_meta('_woosb_ids', true) && $item->get_meta('_woosb_fixed_price', true) !== 'yes' && (float) $item->get_total() <= 0 && $order instanceof \WC_Order) {
+            $instance = (string) $item->get_meta(BundleData::ORDER_INSTANCE, true);
+            if ($instance === '') return $subtotal;
+            $amount = 0.0;
+            $found = false;
+            $includeTax = get_option('woocommerce_tax_display_cart') === 'incl';
+            foreach ($order->get_items('line_item') as $child) {
+                if (!$child->get_meta('_woosb_parent_id', true) || (string) $child->get_meta(BundleData::ORDER_INSTANCE, true) !== $instance) continue;
+                $found = true;
+                $amount += $order->get_line_subtotal($child, $includeTax);
+            }
+            if ($found) return wc_price($amount, ['currency' => $order->get_currency()]);
         }
         return $subtotal;
     }

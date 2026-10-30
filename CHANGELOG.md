@@ -2,9 +2,19 @@
 
 Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehouden.
 
-## [Unreleased]
+## [0.5.9] - 2026-10-30
 
 ### Fixed
+- Audit A01/A08: rolbeheer vereist beheer- en promotierrechten, beschermt systeemrollen en verwerkt alle gebruikers bij rolverwijdering zonder verschuivende paginering.
+- Audit A02: UBL-bijlagen vereisen exacte document-/orderidentiteit in XML; bij twijfel wordt geen UBL meegestuurd. Nieuwe factuurbestanden zijn tijdelijk en de documentguard laat beheermails ongemoeid.
+- Audit A04: betaalherstel hergebruikt dezelfde vervolgorder en opgeslagen Mollie-opdracht met idempotentie en reconciliatie. De betaaltermijn schuift pas na acceptatie op; runtime-status wordt via WooCommerce CRUD opgeslagen.
+- Audit A05: de B2B-prijsbasis blijft stabiel bij herberekenen. Een toepasselijke B2B-prijs heeft voorrang op de abonnementsprijs, zonder beide kortingen te stapelen; zonder B2B-prijs blijft de abonnementsprijs gelden.
+- Audit A06/A07: QLS-uitsluiting ondersteunt order-CRUD en HPOS; uitsluitingen worden vóór paginering en totaalberekening toegepast.
+- Audit A09/A10: extra bestelstatussen kunnen worden verwijderd en opnieuw toegevoegd zonder oude regels of dubbele formulierindices.
+- Audit A11/A12: dynamische bundels tonen componentbedragen met de juiste btw en valuta; afrondingsresten worden over componentregels verdeeld met behoud van rekenprecisie.
+- De toegewezen winkelmandprijs van bundelhoofdregels wordt niet meer overschreven door de catalogusberekening. B2B-prijzen op bundels of onderdelen krijgen voorrang zonder extra abonnementskorting.
+- Audit A13: terugbetaalde productaantallen worden uitgesloten van retourbeschikbaarheid. Refunds kunnen in retourbeheer worden gekoppeld om dezelfde artikelen eenmaal te tellen; bedragcorrecties wijzigen geen aantallen.
+- Verlengingen en retouraanmeldingen gebruiken een databasevergrendeling rond controleren en aanmaken. Functionele regressies draaien naast de bestaande CI-smoketests.
 - Abonnementsregels worden via WooCommerce daadwerkelijk opgeslagen; de lege AJAX-succesmelding is verwijderd.
 - Aantalwijzigingen behouden de afgesproken stukprijs en korting, berekenen btw en totalen opnieuw en synchroniseren de gegevens voor vervolgbestellingen.
 - De eigen abonnementseditor bewaart korting en berekent btw opnieuw; de standaard WooCommerce-editor gebruikt weer zijn eigen JavaScript en opslagroute.

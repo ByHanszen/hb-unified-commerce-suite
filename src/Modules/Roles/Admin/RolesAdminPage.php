@@ -159,7 +159,9 @@ class RolesAdminPage {
             echo '<td><code>' . esc_html($slug) . '</code></td>';
             echo '<td>' . esc_html((string)$count) . '</td>';
             echo '<td>';
-            echo '<a class="button button-small" href="' . esc_url($editUrl) . '">' . esc_html__('Bewerken', 'hb-ucs') . '</a> ';
+            if (\HB\UCS\Modules\Roles\Support\RolesGuard::can_edit_role($slug)) {
+                echo '<a class="button button-small" href="' . esc_url($editUrl) . '">' . esc_html__('Bewerken', 'hb-ucs') . '</a> ';
+            }
             if (\HB\UCS\Modules\Roles\Support\RolesGuard::can_delete_role($slug)) {
                 echo '<a class="button button-small" href="' . esc_url($deleteUrl) . '" onclick="return confirm(\'' . esc_js(__('Rol verwijderen? Users met deze rol worden (optioneel) omgezet.', 'hb-ucs')) . '\');">' . esc_html__('Verwijderen', 'hb-ucs') . '</a>';
             } else {
@@ -209,7 +211,7 @@ class RolesAdminPage {
     private function render_edit(): void {
         $role = isset($_GET['role']) ? sanitize_key((string)$_GET['role']) : '';
         $r = $role ? get_role($role) : null;
-        if (!$role || !$r) {
+        if (!$role || !$r || !\HB\UCS\Modules\Roles\Support\RolesGuard::can_edit_role($role)) {
             echo '<div class="notice notice-error"><p>' . esc_html__('Rol niet gevonden.', 'hb-ucs') . '</p></div>';
             return;
         }
@@ -319,6 +321,9 @@ class RolesAdminPage {
         }
 
         $caps = \HB\UCS\Modules\Roles\Support\RolesGuard::caps_for_role($base);
+        if (!\HB\UCS\Modules\Roles\Support\RolesGuard::can_assign_caps($caps)) {
+            wp_die(esc_html__('Deze rechten mogen niet worden toegekend.', 'hb-ucs'), '', ['response' => 403]);
+        }
         $created = add_role($slug, $label, $caps);
         if (!$created) {
             $this->redirect_admin('new', ['hb_ucs_roles_notice' => 'error', 'hb_ucs_roles_code' => 'create_failed']);
@@ -345,9 +350,11 @@ class RolesAdminPage {
             $this->redirect_admin('edit', ['hb_ucs_roles_notice' => 'error', 'hb_ucs_roles_code' => 'missing', 'role' => $role]);
         }
 
-        \HB\UCS\Modules\Roles\Support\RolesGuard::update_role_label($role, $label);
-
         $desired = \HB\UCS\Modules\Roles\Support\RolesGuard::sanitize_caps($capsRaw);
+        if (!\HB\UCS\Modules\Roles\Support\RolesGuard::can_edit_role($role) || !\HB\UCS\Modules\Roles\Support\RolesGuard::can_assign_caps($desired)) {
+            wp_die(esc_html__('Deze rol of rechten mogen niet worden gewijzigd.', 'hb-ucs'), '', ['response' => 403]);
+        }
+        \HB\UCS\Modules\Roles\Support\RolesGuard::update_role_label($role, $label);
         $current = is_array($r->capabilities) ? $r->capabilities : [];
 
         // Remove caps not desired.
@@ -382,7 +389,11 @@ class RolesAdminPage {
         $opt = $this->settings->get();
         if (!empty($opt['reassign_users_on_delete'])) {
             $target = sanitize_key((string)($opt['reassign_target_role'] ?? 'customer'));
-            $this->reassign_users($role, $target);
+            if (!$this->reassign_users($role, $target) || $this->count_users_with_role($role) > 0) {
+                wp_die(esc_html__('Niet alle gebruikers konden worden overgezet. De rol is behouden.', 'hb-ucs'));
+            }
+        } elseif ($this->count_users_with_role($role) > 0) {
+            wp_die(esc_html__('Zet eerst de gebruikers over voordat u deze rol verwijdert.', 'hb-ucs'));
         }
 
         remove_role($role);
@@ -401,38 +412,33 @@ class RolesAdminPage {
         return (int) $q->get_total();
     }
 
-    private function reassign_users(string $from_role, string $to_role): void {
+    private function reassign_users(string $from_role, string $to_role): bool {
         $from_role = sanitize_key($from_role);
         $to_role = sanitize_key($to_role);
-        if (!$from_role || !$to_role) return;
-        if (!get_role($to_role)) return;
-
-        $q = new \WP_User_Query([
-            'role' => $from_role,
-            'fields' => 'ID',
-            'number' => 200,
-            'paged' => 1,
-        ]);
-
-        $paged = 1;
+        if (!$from_role || !$to_role || $from_role === $to_role) return false;
+        $target = get_role($to_role);
+        if (!$target || !\HB\UCS\Modules\Roles\Support\RolesGuard::can_assign_caps((array) $target->capabilities)) return false;
         do {
             $q = new \WP_User_Query([
                 'role' => $from_role,
                 'fields' => 'ID',
                 'number' => 200,
-                'paged' => $paged,
+                'paged' => 1,
+                'count_total' => false,
             ]);
             $ids = (array) $q->get_results();
             foreach ($ids as $uid) {
                 $uid = (int) $uid;
                 $u = get_user_by('id', $uid);
-                if (!$u) continue;
-                $u->remove_role($from_role);
-                if (!$u->has_cap($to_role)) {
+                if (!$u) return false;
+                if (!in_array($to_role, $u->roles, true)) {
                     $u->add_role($to_role);
                 }
+                $u->remove_role($from_role);
+                $fresh = get_user_by('id', $uid);
+                if (!$fresh || in_array($from_role, $fresh->roles, true) || !in_array($to_role, $fresh->roles, true)) return false;
             }
-            $paged++;
         } while (!empty($ids));
+        return true;
     }
 }

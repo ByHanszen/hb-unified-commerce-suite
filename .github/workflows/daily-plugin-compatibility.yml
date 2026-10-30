@@ -7,6 +7,8 @@ on:
   pull_request:
     paths:
       - "**/*.php"
+      - "**/*.js"
+      - "tests/**"
       - ".github/workflows/daily-plugin-compatibility.yml"
       - "tests/compatibility/**"
   push:
@@ -14,6 +16,8 @@ on:
       - main
     paths:
       - "**/*.php"
+      - "**/*.js"
+      - "tests/**"
       - ".github/workflows/daily-plugin-compatibility.yml"
       - "tests/compatibility/**"
 
@@ -86,6 +90,23 @@ jobs:
 
       - name: Run baseline smoke test
         run: bash tests/compatibility/smoke-test.sh "WordPress latest, WooCommerce latest, PHP ${{ matrix.php }}"
+
+      - name: Check JavaScript and status repeater regression
+        run: |
+          find src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          node tests/audit/status-repeater.cjs
+
+      - name: Run functional module regressions
+        run: |
+          plugin_tests="$WP_PATH/wp-content/plugins/hb-unified-commerce-suite/tests"
+          php "$plugin_tests/subscriptions/item-persistence.php"
+          php "$plugin_tests/audit/renewal-recovery.php"
+          php "$plugin_tests/audit/bundle-pricing.php"
+          HB_UCS_TEST_HPOS=no php "$plugin_tests/audit/runtime-regressions.php"
+          HB_UCS_TEST_HPOS=yes php "$plugin_tests/audit/runtime-regressions.php"
+          php "$plugin_tests/bundles/runtime-smoke.php"
+          php "$plugin_tests/product-search/runtime-smoke.php"
+          php "$plugin_tests/product-search/wordpress-integration.php"
 
   plugin-compatibility:
     name: Latest third-party plugins

@@ -65,12 +65,14 @@ jQuery(function ($) {
       });
     }
 
-    function nextIndex() {
-      return $rows.find('.hb-ucs-order-overview-status-row').length;
-    }
+    var rowIndex = 0;
+    $rows.find('[name]').each(function () {
+      var match = this.name.match(/\[statuses\]\[(\d+)\]/);
+      if (match) rowIndex = Math.max(rowIndex, Number(match[1]) + 1);
+    });
 
     function addRow() {
-      var markup = $template.html().replace(/__index__/g, String(nextIndex()));
+      var markup = $template.html().replace(/__index__/g, String(rowIndex++));
       var $markup = $(markup);
       $rows.append($markup);
       applySettingsPreview($markup);
