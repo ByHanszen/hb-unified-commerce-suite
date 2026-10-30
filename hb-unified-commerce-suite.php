@@ -30,51 +30,6 @@ spl_autoload_register(function ($class) {
     if (file_exists($path)) require_once $path;
 });
 
-function hb_ucs_is_subscription_order_items_ajax(): bool {
-    $action = isset($_REQUEST['action']) ? sanitize_key((string) wp_unslash($_REQUEST['action'])) : '';
-    if ($action !== 'woocommerce_save_order_items') {
-        return false;
-    }
-
-    $orderId = isset($_REQUEST['order_id']) ? absint((string) wp_unslash($_REQUEST['order_id'])) : 0;
-    $subscriptionType = 'shop_subscription_hb';
-    $isSubscriptionOrder = $orderId > 0 && get_post_type($orderId) === $subscriptionType;
-    $referer = isset($_SERVER['HTTP_REFERER']) ? (string) wp_unslash($_SERVER['HTTP_REFERER']) : '';
-    $postedItems = [];
-
-    if (isset($_REQUEST['items']) && is_string($_REQUEST['items'])) {
-        parse_str(wp_unslash($_REQUEST['items']), $postedItems);
-    }
-
-    $isSubscriptionEditorRequest = isset($postedItems['hb_ucs_shipping_lines_present'])
-        || isset($postedItems['hb_ucs_items_present'])
-        || isset($postedItems['hb_ucs_fees_present']);
-
-    if (!$isSubscriptionOrder && !$isSubscriptionEditorRequest && strpos($referer, 'page=wc-orders--' . $subscriptionType) !== false) {
-        $isSubscriptionOrder = true;
-    }
-
-    return $isSubscriptionOrder || $isSubscriptionEditorRequest;
-}
-
-function hb_ucs_handle_subscription_order_items_ajax(): void {
-    if (!current_user_can('edit_shop_orders')) {
-        wp_die(-1);
-    }
-
-    check_ajax_referer('order-item', 'security');
-    wp_send_json_success(['html' => '', 'notes_html' => '']);
-}
-
-add_action('init', function () {
-    if (!wp_doing_ajax() || !hb_ucs_is_subscription_order_items_ajax()) {
-        return;
-    }
-
-    remove_all_actions('wp_ajax_woocommerce_save_order_items');
-    add_action('wp_ajax_woocommerce_save_order_items', 'hb_ucs_handle_subscription_order_items_ajax', 1);
-}, 0);
-
 register_activation_hook(__FILE__, function () {
     // Defaults voor hoofdopties
     $defaults = [

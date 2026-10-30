@@ -224,7 +224,32 @@ class SubscriptionsModule {
         }
 
         check_ajax_referer('order-item', 'security');
-        wp_send_json_success(['html' => '', 'notes_html' => '']);
+        $order = wc_get_order($orderId);
+        if (!$order || $order->get_type() !== $subscriptionType) {
+            wp_send_json_error(['message' => __('Abonnement kon niet worden geladen.', 'hb-ucs')], 400);
+        }
+
+        $items = [];
+        if (isset($_POST['items']) && is_string($_POST['items'])) {
+            parse_str(wp_unslash($_POST['items']), $items);
+        }
+        if (isset($items['hb_ucs_items_present']) || isset($items['hb_ucs_fees_present']) || isset($items['hb_ucs_shipping_lines_present'])) {
+            // The custom editor uses a different payload; use its normal save route.
+            $originalPost = $_POST;
+            try {
+                $_POST = wp_slash($items);
+                $this->get_subscription_admin()->save_order_type_screen($orderId, $order);
+                $this->get_subscription_admin()->process_deferred_order_type_sync();
+            } finally {
+                $_POST = $originalPost;
+            }
+            ob_start();
+            $order = wc_get_order($orderId);
+            include WC_ABSPATH . 'includes/admin/meta-boxes/views/html-order-items.php';
+            $html = ob_get_clean();
+            wp_send_json_success(['html' => $html]);
+        }
+        // Standard rows continue through WooCommerce's real save and HTML response.
     }
 
     private function bootstrap_phase1_architecture(): void {
@@ -9621,7 +9646,6 @@ class SubscriptionsModule {
 
         // Subscription screens: use WooCommerce admin styles + enhanced selects for filters/product search.
         if ($screen->id === 'woocommerce_page_wc-orders--' . $this->get_subscription_order_type()->get_type() || $screen->id === 'admin_page_wc-orders--' . $this->get_subscription_order_type()->get_type()) {
-            wp_dequeue_script('wc-admin-order-meta-boxes');
 
             if (wp_style_is('woocommerce_admin_styles', 'registered') || wp_style_is('woocommerce_admin_styles', 'enqueued')) {
                 wp_enqueue_style('woocommerce_admin_styles');
@@ -9631,6 +9655,9 @@ class SubscriptionsModule {
                 wp_add_inline_script('wc-enhanced-select', "jQuery(function($){ try { $(document.body).trigger('wc-enhanced-select-init'); } catch(e) {} });");
                 $subscriptionAdminScriptTemplate = <<<'JS'
 jQuery(function($){
+    if (!$('[name="hb_ucs_items_present"]').length) {
+        return;
+    }
     document.addEventListener('click', function(event) {
         var target = event.target && event.target.closest ? event.target.closest('#save_order_items, button[name="save_order_items"]') : null;
         if (!target) {

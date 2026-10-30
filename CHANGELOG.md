@@ -2,6 +2,13 @@
 
 Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehouden.
 
+## [Unreleased]
+
+### Fixed
+- Abonnementsregels worden via WooCommerce daadwerkelijk opgeslagen; de lege AJAX-succesmelding is verwijderd.
+- Aantalwijzigingen behouden de afgesproken stukprijs en korting, berekenen btw en totalen opnieuw en synchroniseren de gegevens voor vervolgbestellingen.
+- De eigen abonnementseditor bewaart korting en berekent btw opnieuw; de standaard WooCommerce-editor gebruikt weer zijn eigen JavaScript en opslagroute.
+
 Het formaat is geïnspireerd op “Keep a Changelog”.
 
 ## [0.5.8] — 2026-09-14

@@ -19,6 +19,9 @@ class SubscriptionAdmin {
     /** @var array<int, array<int, array<string, mixed>>> */
     private static $postedShippingLinesByOrderId = [];
 
+    /** Original prices captured before WooCommerce applies posted quantities. */
+    private $originalItemPrices = [];
+
     /** @var SubscriptionService */
     private $service;
 
@@ -60,6 +63,9 @@ class SubscriptionAdmin {
         add_action('woocommerce_process_shop_order_meta', [$this, 'normalize_order_type_posted_status'], 5, 2);
         add_action('woocommerce_process_shop_order_meta', [$this, 'save_order_type_screen'], 60, 2);
         add_action('shutdown', [$this, 'process_deferred_order_type_sync'], 20);
+        add_action('woocommerce_before_save_order_items', [$this, 'capture_subscription_item_prices'], 1, 2);
+        add_action('woocommerce_before_save_order_item', [$this, 'preserve_subscription_item_prices'], 100);
+        add_action('woocommerce_saved_order_items', [$this, 'recalculate_saved_subscription_items'], 100, 2);
 
         foreach ($this->get_order_screen_ids() as $screenId) {
             add_action('add_meta_boxes_' . $screenId, [$this, 'register_order_type_meta_boxes']);
@@ -1149,6 +1155,9 @@ class SubscriptionAdmin {
             }
         }
 
+        if (isset($_POST['hb_ucs_items_present']) || isset($_POST['hb_ucs_fees_present']) || isset($_POST['hb_ucs_shipping_lines_present'])) {
+            $order->calculate_totals(true);
+        }
         if (method_exists($order, 'save')) {
             $order->save();
         }
@@ -1268,6 +1277,49 @@ class SubscriptionAdmin {
 
     public function get_service(): SubscriptionService {
         return $this->service;
+    }
+
+    public function capture_subscription_item_prices(int $orderId, array $posted): void {
+        $this->originalItemPrices = [];
+        $order = $this->get_subscription_order($orderId);
+        if (!$order) {
+            return;
+        }
+        foreach ($order->get_items('line_item') as $itemId => $item) {
+            $this->originalItemPrices[$itemId] = [
+                'qty' => (float) $item->get_quantity(),
+                'subtotal' => (float) $item->get_subtotal(),
+                'total' => (float) $item->get_total(),
+            ];
+        }
+    }
+
+    public function preserve_subscription_item_prices($item): void {
+        $original = $this->originalItemPrices[$item->get_id()] ?? null;
+        if (!$original || $original['qty'] <= 0 || (float) $item->get_quantity() <= 0) {
+            return;
+        }
+        $factor = (float) $item->get_quantity() / $original['qty'];
+        foreach (['subtotal', 'total'] as $field) {
+            $getter = 'get_' . $field;
+            $setter = 'set_' . $field;
+            // Core JS may already have scaled the amount. Also allow deliberate price edits.
+            if ($factor !== 1.0 && abs((float) $item->$getter() - $original[$field]) < 0.000001) {
+                $item->$setter(wc_format_decimal($original[$field] * $factor));
+            }
+        }
+        $item->update_meta_data('_hb_ucs_subscription_catalog_unit_price', (float) $item->get_subtotal() / (float) $item->get_quantity());
+    }
+
+    public function recalculate_saved_subscription_items(int $orderId, array $posted): void {
+        $this->originalItemPrices = [];
+        $order = $this->get_subscription_order($orderId);
+        if (!$order) {
+            return;
+        }
+        $order->calculate_totals(true);
+        $order->save();
+        $this->service->get_repository()->sync_order_type_self($orderId, false);
     }
 
     public function process_deferred_order_type_sync(): void {
@@ -1745,10 +1797,18 @@ class SubscriptionAdmin {
             $qty = 1;
         }
 
+        // Keep the agreed discount when the custom editor changes quantity or price.
+        $oldUnit = (float) ($fallback['unit_price'] ?? 0.0);
+        if (!empty($fallback['price_includes_tax'])) {
+            $priceProduct = $baseVariationId > 0 ? wc_get_product($baseVariationId) : $product;
+            $oldUnit = (float) wc_get_price_excluding_tax($priceProduct, ['qty' => 1, 'price' => $oldUnit]);
+        }
+        // The editor displays and submits prices excluding VAT.
         $unitPrice = isset($item['unit_price'])
             ? (float) wc_format_decimal((string) $item['unit_price'])
-            : (float) ($fallback['unit_price'] ?? 0.0);
-        $taxes = isset($fallback['taxes']) && is_array($fallback['taxes']) ? (array) $fallback['taxes'] : [];
+            : $oldUnit;
+        $oldCatalog = (float) ($fallback['catalog_unit_price'] ?? $oldUnit);
+        $catalogUnit = $oldUnit > 0 ? $unitPrice * ($oldCatalog / $oldUnit) : ($unitPrice === 0.0 ? $oldCatalog : $unitPrice);
         $displayMeta = isset($item['meta']) && is_array($item['meta']) ? $this->sanitize_subscription_display_meta_for_admin((array) $item['meta']) : [];
 
         return [
@@ -1757,8 +1817,9 @@ class SubscriptionAdmin {
             'source_order_item_id' => (int) ($fallback['source_order_item_id'] ?? 0),
             'qty' => $qty,
             'unit_price' => $unitPrice,
-            'price_includes_tax' => (int) ($fallback['price_includes_tax'] ?? 0),
-            'taxes' => $taxes,
+            'catalog_unit_price' => $catalogUnit,
+            'price_includes_tax' => 0,
+            'taxes' => [],
             'selected_attributes' => $selectedAttributes,
             'attribute_snapshot' => $selectedAttributes,
             'display_meta' => $displayMeta,
@@ -1785,6 +1846,7 @@ class SubscriptionAdmin {
             $product = $targetProductId > 0 && function_exists('wc_get_product') ? wc_get_product($targetProductId) : false;
             $qty = max(1, (int) ($item['qty'] ?? 1));
             $lineTotal = (float) ($item['unit_price'] ?? 0.0) * $qty;
+            $lineSubtotal = (float) ($item['catalog_unit_price'] ?? $item['unit_price'] ?? 0.0) * $qty;
 
             $orderItem = new \WC_Order_Item_Product();
             if ($product && is_object($product) && method_exists($orderItem, 'set_product')) {
@@ -1797,8 +1859,9 @@ class SubscriptionAdmin {
                 $orderItem->set_variation_id($baseVariationId);
             }
             $orderItem->set_quantity($qty);
-            $orderItem->set_subtotal($lineTotal);
+            $orderItem->set_subtotal($lineSubtotal);
             $orderItem->set_total($lineTotal);
+            $orderItem->add_meta_data('_hb_ucs_subscription_catalog_unit_price', $lineSubtotal / $qty, true);
             if (method_exists($orderItem, 'set_taxes')) {
                 $orderItem->set_taxes(isset($item['taxes']) && is_array($item['taxes']) ? (array) $item['taxes'] : []);
             }
@@ -1824,11 +1887,8 @@ class SubscriptionAdmin {
             $order->add_item($orderItem);
         }
 
-        if (method_exists($order, 'update_taxes')) {
-            $order->update_taxes();
-        }
         if (method_exists($order, 'calculate_totals')) {
-            $order->calculate_totals(false);
+            $order->calculate_totals(true);
         }
     }
 
