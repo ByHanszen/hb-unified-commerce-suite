@@ -2,6 +2,13 @@
 
 Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehouden.
 
+## [0.5.10] - 2026-11-02
+
+### Fixed
+- QLS: de controle op orderuitsluitingen gebruikt nu dezelfde datumvoorwaarden als de REST-aanvraag. Een import van een korte periode doorloopt daardoor niet meer alle historische orders. Lokale/GMT-datums, wijzigingsdatums en grensvoorwaarden blijven door WooCommerce bepaald; API-autorisatie en uitsluitingsregels blijven behouden.
+- QLS: stabiele ID-sortering voor de gepagineerde uitsluitingscontrole.
+- Regressietests voor begrensde QLS-imports via REST v2/v3, inclusief uitgesloten orders, gevulde pagina's en correcte totalen; de bestaande CI voert deze uit met CPT en HPOS.
+
 ## [0.5.9] - 2026-10-30
 
 ### Fixed
