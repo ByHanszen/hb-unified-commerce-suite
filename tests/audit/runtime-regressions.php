@@ -283,6 +283,46 @@ try {
     audit_equal($response->get_data()[0]['id'], $fixtureOrders[10], 'A07 eleventh order not missed');
     echo "PASS A06/A07: CRUD exclusion and filtering before pagination\n";
 
+    // A narrow QLS import must never hydrate unrelated historical orders.
+    // The old pre-pagination scan ignored date_query and evaluated every order.
+    $datedIds = [];
+    foreach (['2000-01-02T12:00:00', '2020-06-15T12:00:00', '2020-06-15T13:00:00'] as $index => $created) {
+        $fixture = new WC_Order();
+        $fixture->set_status('processing');
+        $fixture->set_date_created($created);
+        $fixture->update_meta_data(QLSModule::META_ORDER, $index === 1 ? '1' : '0');
+        $fixture->save();
+        $datedIds[] = $fixture->get_id();
+    }
+    foreach (['v2', 'v3'] as $version) {
+        $evaluated = [];
+        $trackEvaluation = static function ($allow, $id) use (&$evaluated) {
+            $evaluated[] = (int) $id;
+            return $allow;
+        };
+        add_filter('hb_ucs_qls_should_send_order', $trackEvaluation, 1, 2);
+        try {
+            $datedRequest = new WP_REST_Request('GET', '/wc/' . $version . '/orders');
+            $datedRequest->set_param('after', '2020-06-15T00:00:00');
+            $datedRequest->set_param('before', '2020-06-16T00:00:00');
+            $datedRequest->set_param('status', 'processing');
+            $datedRequest->set_param('per_page', 1);
+            $datedRequest->set_param('include', $datedIds);
+            $datedResponse = rest_do_request($datedRequest);
+        } finally {
+            remove_filter('hb_ucs_qls_should_send_order', $trackEvaluation, 1);
+        }
+        sort($evaluated);
+        $expectedEvaluated = [$datedIds[1], $datedIds[2]];
+        sort($expectedEvaluated);
+        audit_equal($evaluated, $expectedEvaluated, 'QLS ' . $version . ' evaluates only requested dates');
+        audit_equal($datedResponse->get_status(), 200, 'QLS ' . $version . ' bounded import succeeds');
+        audit_equal((int) $datedResponse->get_headers()['X-WP-Total'], 1, 'QLS ' . $version . ' excluded orders stay out of totals');
+        audit_equal(array_column($datedResponse->get_data(), 'id'), [$datedIds[2]], 'QLS ' . $version . ' permitted order fills page');
+    }
+    echo "PASS QLS: bounded date scan, exclusions and totals for v2/v3\n";
+
+
     $allocated = BundleData::allocate_component_prices(['a' => ['unit' => 5, 'component_qty' => 3]], 10);
     audit_equal(round($allocated['a'] * 3, 2), 10, 'A12 three units total 10');
     $rows = ['a' => ['unit' => 5, 'component_qty' => 3], 'b' => ['unit' => 7, 'component_qty' => 2]];
