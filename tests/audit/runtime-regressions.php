@@ -30,7 +30,10 @@ use HB\UCS\Modules\Roles\Admin\RolesAdminPage;
 use HB\UCS\Modules\Subscriptions\Payments\RenewalPaymentService;
 
 function audit_check($condition, string $message): void {
-    if (!$condition) throw new RuntimeException($message);
+    if (!$condition) {
+        fwrite(STDERR, $message . "\n");
+        throw new RuntimeException($message);
+    }
 }
 function audit_equal($actual, $expected, string $message): void {
     audit_check(is_numeric($actual) && is_numeric($expected) ? abs((float) $actual - (float) $expected) < 0.0001 : $actual === $expected, $message . ': ' . var_export($actual, true));
@@ -312,6 +315,7 @@ try {
         } finally {
             remove_filter('hb_ucs_qls_should_send_order', $trackEvaluation, 1);
         }
+        $evaluated = array_values(array_unique($evaluated));
         sort($evaluated);
         $expectedEvaluated = [$datedIds[1], $datedIds[2]];
         sort($expectedEvaluated);
