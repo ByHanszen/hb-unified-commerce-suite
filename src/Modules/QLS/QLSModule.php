@@ -655,7 +655,15 @@ class QLSModule {
             // v3 finishes its status/created_via filters after this hook. Build
             // exclusions independently so those later constraints remain valid.
             $query = ['type' => 'shop_order', 'status' => array_keys(get_post_stati()), 'limit' => 200, 'page' => $page, 'offset' => ($page - 1) * 200, 'return' => 'ids', 'paginate' => false];
+            // Keep the controller's exact date predicates (including GMT/local
+            // columns, modified dates and boundary inclusivity). Without this,
+            // every small QLS import hydrates the entire order history.
+            // Both CPT and HPOS accept this WP-style date_query.
+            if (!empty($args['date_query'])) $query['date_query'] = $args['date_query'];
             if (!empty($args['post__in'])) $query['post__in'] = $args['post__in'];
+            // Offset pagination must have a deterministic tie breaker.
+            $query['orderby'] = 'ID';
+            $query['order'] = 'ASC';
             $ids = (array) wc_get_orders($query);
             foreach ($ids as $id) {
                 if (!apply_filters('hb_ucs_qls_should_send_order', true, (int) $id)) $excluded[] = (int) $id;
