@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HB Unified Commerce Suite
  * Description: Overkoepelende plugin met modulaire features.
- * Version: 0.5.10
+ * Version: 0.5.11
  * Author: Hoeksche Branders
  * Text Domain: hb-ucs
  */
@@ -12,7 +12,7 @@ if (!defined('HB_UCS_PLUGIN_FILE')) {
     define('HB_UCS_PLUGIN_FILE', __FILE__);
 }
 if (!defined('HB_UCS_VERSION')) {
-    define('HB_UCS_VERSION', '0.5.10');
+    define('HB_UCS_VERSION', '0.5.11');
 }
 
 add_action('before_woocommerce_init', function () {
@@ -121,3 +121,4 @@ add_action('plugins_loaded', function () {
         \WP_CLI::add_command('hb-ucs subscriptions backfill-order-meta', 'HB\\UCS\\Modules\\Subscriptions\\Cli\\SubscriptionMetaBackfillCommand');
     }
 });
+

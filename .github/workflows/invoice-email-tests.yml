@@ -1,0 +1,30 @@
+name: Invoice email regression tests
+on:
+  push:
+    paths:
+      - 'src/Modules/Customers/**'
+      - 'src/Core/DatabaseLock.php'
+      - 'tests/invoice-email/**'
+      - '.github/workflows/invoice-email-tests.yml'
+  pull_request:
+    paths:
+      - 'src/Modules/Customers/**'
+      - 'src/Core/DatabaseLock.php'
+      - 'tests/invoice-email/**'
+      - '.github/workflows/invoice-email-tests.yml'
+permissions:
+  contents: read
+jobs:
+  invoice-email:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.2', '8.4']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - run: php -l src/Modules/Customers/InvoiceEmailModule.php
+      - run: php tests/invoice-email/runtime-smoke.php

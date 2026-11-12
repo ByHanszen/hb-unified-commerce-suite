@@ -8,6 +8,9 @@ if (!defined('ABSPATH')) {
 class InvoiceEmailModule {
     public const META_KEY = '_hb_invoice_email';
     private const OPT_SETTINGS = 'hb_ucs_invoice_email_settings';
+    private const LAST_ATTEMPT = '_hb_invoice_email_last_attempt';
+    private const ATTEMPT_PREFIX = '_hb_invoice_email_attempt_';
+    private const CLEANUP_HOOK = 'hb_ucs_invoice_email_cleanup';
 
     /** @var array|null */
     private $settings = null;
@@ -26,6 +29,13 @@ class InvoiceEmailModule {
         add_action('edit_user_profile_update', [$this, 'save_admin_profile_field']);
 
         add_action('woocommerce_order_status_completed', [$this, 'mail_invoice_to_alt_email'], 20, 1);
+        add_filter('woocommerce_mail_callback', [$this, 'route_manual_invoice'], 1000, 2);
+        add_action('wp_mail_succeeded', [$this, 'mail_succeeded']);
+        add_action('wp_mail_failed', [$this, 'mail_failed']);
+        add_action('wp_mail_smtp_mailcatcher_send_after', [$this, 'smtp_mail_finished'], 10, 2);
+        add_action('wp_mail_smtp_mailcatcher_send_failed', [$this, 'smtp_mail_failed'], 10, 2);
+        add_action(self::CLEANUP_HOOK, [$this, 'cleanup_attempt'], 10, 2);
+        add_action('woocommerce_admin_order_data_after_order_details', [$this, 'render_delivery_status']);
 
         // PIPFS: blokkeer bijlagen in standaard klantmails ALS er een factuuradres is (hoge prioriteit)
         add_filter('wpo_wcpdf_document_types_for_email', [$this, 'maybe_block_all_pipfs_docs_for_customer_mails'], 1000, 3);
@@ -224,10 +234,23 @@ class InvoiceEmailModule {
             $invoice_number = (string) $order->get_order_number();
         }
 
-        // Attachments only need to exist while wp_mail reads them. Do not retain
-        // customer invoices under a predictable public uploads URL.
-        $dir = trailingslashit(get_temp_dir()) . 'hb-ucs-invoices-' . wp_generate_password(24, false, false);
-        if (!file_exists($dir)) wp_mkdir_p($dir);
+        // Keep invoices outside the web root and restrict filesystem access.
+        $temporary_root = '';
+        foreach (array_unique([get_temp_dir(), sys_get_temp_dir()]) as $candidate) {
+            $candidate = realpath($candidate);
+            if (!$candidate || !is_writable($candidate)) continue;
+            $public = false;
+            foreach ([ABSPATH, defined('WP_CONTENT_DIR') ? WP_CONTENT_DIR : ABSPATH, $_SERVER['DOCUMENT_ROOT'] ?? ''] as $web_root) {
+                if ($web_root === '') continue;
+                $web_root = realpath($web_root) ?: $web_root;
+                if (strpos(trailingslashit($candidate), trailingslashit($web_root)) === 0) $public = true;
+            }
+            if (!$public) { $temporary_root = $candidate; break; }
+        }
+        if ($temporary_root === '') throw new \RuntimeException('Geen beschrijfbare tijdelijke map buiten de webroot beschikbaar.');
+        $dir = trailingslashit($temporary_root) . 'hb-ucs-invoices-' . wp_generate_password(24, false, false);
+        if (!wp_mkdir_p($dir)) throw new \RuntimeException('Tijdelijke factuurmap kon niet worden aangemaakt.');
+        @chmod($dir, 0700);
 
         $base = 'factuur-'.sanitize_file_name($invoice_number);
 
@@ -402,31 +425,221 @@ class InvoiceEmailModule {
     /* -----------------------------
      * Custom factuurmail naar alternatief e-mailadres
      * ----------------------------- */
+    /** Replace only WooCommerce's manual customer invoice, never order notifications. */
+    public function route_manual_invoice($callback, $email) {
+        if (!($email instanceof \WC_Email) || $email->id !== 'customer_invoice'
+            || !($email->object instanceof \WC_Order)
+            || !$this->get_invoice_email_for_order($email->object)) {
+            return $callback;
+        }
+        $order_id = $email->object->get_id();
+        return function (...$unused) use ($order_id): bool {
+            return $this->send_invoice($order_id, true);
+        };
+    }
+
     public function mail_invoice_to_alt_email($order_id): void {
+        $this->send_invoice((int) $order_id, false);
+    }
+
+    protected function send_invoice(int $order_id, bool $manual): bool {
+        // A connection-scoped database lock prevents simultaneous status changes
+        // or two admin requests from sending the same pending invoice twice.
+        $result = \HB\UCS\Core\DatabaseLock::run('invoice-email-' . $order_id, function () use ($order_id, $manual) {
+            $order = wc_get_order($order_id);
+            if (!$order) return false;
+            $to = $this->get_invoice_email_for_order($order);
+            if (!$to) return false;
+            $last = (string) $order->get_meta(self::LAST_ATTEMPT, true);
+            $previous = $this->get_attempt($order_id, $last);
+            $status = $previous['status'] ?? '';
+            // A pending transport may still deliver: do not generate a second mail.
+            if (in_array($status, ['sending', 'pending'], true)) return false;
+            if (!$manual && $status !== '') return false;
+
+            $attempt = wp_generate_uuid4();
+            $order->update_meta_data(self::LAST_ATTEMPT, $attempt);
+            $order->update_meta_data(self::ATTEMPT_PREFIX . $attempt, [
+                'status' => 'sending', 'recipient' => $to,
+                'created_at' => time(), 'updated_at' => time(),
+                'origin' => $manual ? 'woocommerce_manual' : 'completed',
+            ]);
+            $order->save();
+            // Also recovers interrupted PHP requests. Files are never kept forever
+            // after a third-party queue short-circuits wp_mail().
+            if (!wp_schedule_single_event(time() + 7 * DAY_IN_SECONDS, self::CLEANUP_HOOK, [$order_id, $attempt])) {
+                $this->finish_attempt($order_id, $attempt, 'failed', 'cleanup_schedule_failed', 'Opruimtaak kon niet worden gepland; verzending afgebroken.');
+                return false;
+            }
+            return $this->deliver_invoice($order, $to, $attempt);
+        });
+        return $result === true;
+    }
+
+    protected function get_attempt(int $order_id, string $attempt): array {
+        if ($attempt === '') return [];
+        $order = wc_get_order($order_id);
+        $state = $order ? $order->get_meta(self::ATTEMPT_PREFIX . $attempt, true) : [];
+        return is_array($state) ? $state : [];
+    }
+
+    protected function update_attempt(int $order_id, string $attempt, array $changes): void {
         $order = wc_get_order($order_id);
         if (!$order) return;
+        $state = $order->get_meta(self::ATTEMPT_PREFIX . $attempt, true);
+        if (!is_array($state) || !$state) return;
+        $order->update_meta_data(self::ATTEMPT_PREFIX . $attempt, array_merge($state, $changes, ['updated_at' => time()]));
+        $order->save();
+    }
 
-        $to = $this->get_invoice_email_for_order($order);
-        if (!$to) return; // geen alt adres => niets doen, standaard gedrag blijft intact
+    protected function safe_error(string $message): string {
+        $message = wp_strip_all_tags($message);
+        // Provider exceptions can contain request URLs, tokens or email addresses.
+        $message = preg_replace('~https?://\S+~i', '[URL]', $message);
+        $message = preg_replace('/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i', '[e-mailadres]', $message);
+        $message = preg_replace('/Bearer\s+[^\s,;]+/i', 'Bearer [verwijderd]', $message);
+        $message = preg_replace('/["\']?(?:access_token|refresh_token|client_secret|authorization|password|api[_-]?key)["\']?\s*[:=]\s*(?:"[^"]*"|\'[^\']*\'|[^\s,;]+)/i', '[geheim verwijderd]', $message);
+        return substr(sanitize_text_field($message), 0, 1000);
+    }
 
-        if (!function_exists('wcpdf_get_document')) return;
+    protected function finish_attempt(int $order_id, string $attempt, string $status, string $code = '', string $message = ''): void {
+        $state = $this->get_attempt($order_id, $attempt);
+        if (!$state || ($state['status'] ?? '') === $status) return;
+        // Duplicate transport hooks must not overwrite a confirmed successful send.
+        if (($state['status'] ?? '') === 'accepted') return;
+        $code = sanitize_key($code);
+        $message = $this->safe_error($message);
+        $this->update_attempt($order_id, $attempt, ['status' => $status, 'error_code' => $code, 'error_message' => $message]);
+        $labels = $this->status_labels();
+        $note = 'HB factuurmail: ' . ($labels[$status] ?? $status) . ' (' . $attempt . ').';
+        if ($code !== '') $note .= ' ' . $code . ': ' . $message;
+        $order = wc_get_order($order_id);
+        if ($order) $order->add_order_note($note);
+        if (function_exists('wc_get_logger')) {
+            wc_get_logger()->log(in_array($status, ['failed', 'uncertain'], true) ? 'error' : 'info', $note, [
+                'source' => 'hb-ucs-invoice-email', 'order_id' => $order_id, 'attempt_id' => $attempt,
+            ]);
+        }
+    }
+
+    protected function status_labels(): array {
+        return [
+            'sending' => __('Verzending gestart', 'hb-ucs'),
+            'pending' => __('In wachtrij; mailverwerking nog niet bevestigd', 'hb-ucs'),
+            'accepted' => __('Door mailserver geaccepteerd; aflevering niet bevestigd', 'hb-ucs'),
+            'failed' => __('Verzending mislukt', 'hb-ucs'),
+            'uncertain' => __('Uitkomst onzeker; controleer het maillog vóór opnieuw verzenden', 'hb-ucs'),
+        ];
+    }
+
+    /** Correlate callbacks across requests; never match by recipient or subject. */
+    protected function mail_identity($headers): array {
+        if (is_string($headers)) $headers = preg_split('/\r?\n/', $headers);
+        foreach ((array) $headers as $name => $header) {
+            // PHPMailer getCustomHeaders() returns [name, value] tuples.
+            if (is_array($header)) $header = implode(': ', $header);
+            elseif (is_string($name) && is_string($header)) $header = $name . ': ' . $header;
+            if (is_string($header) && preg_match('/^X-HB-Invoice-Attempt:\s*(\d+):([a-f0-9-]{36})\s*$/i', $header, $match)) {
+                return [(int) $match[1], strtolower($match[2])];
+            }
+        }
+        return [];
+    }
+
+    public function mail_succeeded($data): void {
+        $identity = $this->mail_identity($data['headers'] ?? []);
+        if ($identity) $this->finish_attempt($identity[0], $identity[1], 'accepted');
+    }
+
+    public function mail_failed($error): void {
+        if (!is_wp_error($error)) return;
+        $data = $error->get_error_data();
+        $identity = $this->mail_identity(is_array($data) ? ($data['headers'] ?? []) : []);
+        if ($identity) $this->record_transport_error($identity, (string) $error->get_error_code(), $error->get_error_message());
+    }
+
+    public function smtp_mail_finished($mailer, $catcher): void {
+        if (!is_object($catcher) || !method_exists($catcher, 'getCustomHeaders')) return;
+        $identity = $this->mail_identity($catcher->getCustomHeaders());
+        if ($identity && is_object($mailer) && method_exists($mailer, 'is_email_sent') && $mailer->is_email_sent() === true) {
+            $this->finish_attempt($identity[0], $identity[1], 'accepted');
+        }
+    }
+
+    public function smtp_mail_failed($message, $catcher): void {
+        if (!is_object($catcher) || !method_exists($catcher, 'getCustomHeaders')) return;
+        $identity = $this->mail_identity($catcher->getCustomHeaders());
+        if ($identity) $this->record_transport_error($identity, 'mailer_error', (string) $message);
+    }
+
+    protected function record_transport_error(array $identity, string $code, string $message): void {
+        // A timeout does not prove that the provider rejected the message. An
+        // automatic retry could deliver duplicates, so leave that choice to admin.
+        $uncertain = preg_match('/timeout|timed out|curl error 28|\b50[234]\b/i', $message);
+        $this->finish_attempt($identity[0], $identity[1], $uncertain ? 'uncertain' : 'failed', $code, $message);
+    }
+
+    public function cleanup_attempt($order_id, $attempt): void {
+        $order_id = (int) $order_id;
+        $attempt = (string) $attempt;
+        $state = $this->get_attempt($order_id, $attempt);
+        if (!$state) return;
+        if (in_array($state['status'] ?? '', ['sending', 'pending'], true)) {
+            if (time() - (int) $state['created_at'] < 7 * DAY_IN_SECONDS) return;
+            $this->finish_attempt($order_id, $attempt, 'uncertain', 'transport_unconfirmed', 'Binnen zeven dagen geen definitieve mailbevestiging ontvangen. Controleer het maillog.');
+        }
+        $dir = $state['directory'] ?? '';
+        // Never remove arbitrary directories, symlinks or third-party UBL sources.
+        if (is_string($dir) && preg_match('/^hb-ucs-invoices-[A-Za-z0-9]{24}$/', basename($dir)) && is_dir($dir) && !is_link($dir)) {
+            foreach (glob(trailingslashit($dir) . '*') ?: [] as $file) {
+                if (is_file($file) || is_link($file)) wp_delete_file($file);
+            }
+            @rmdir($dir);
+        }
+        $this->update_attempt($order_id, $attempt, ['directory' => '']);
+        wp_clear_scheduled_hook(self::CLEANUP_HOOK, [$order_id, $attempt]);
+    }
+
+    public function render_delivery_status($order): void {
+        if (!($order instanceof \WC_Order)) return;
+        $attempt = (string) $order->get_meta(self::LAST_ATTEMPT, true);
+        $state = $this->get_attempt($order->get_id(), $attempt);
+        if (!$state) return;
+        $labels = $this->status_labels();
+        echo '<p class="form-field form-field-wide"><strong>' . esc_html__('HB factuurmail', 'hb-ucs') . '</strong><br>';
+        echo esc_html($labels[$state['status']] ?? $state['status']);
+        echo '<br>' . esc_html($state['recipient'] ?? '');
+        if (!empty($state['error_message'])) echo '<br>' . esc_html(($state['error_code'] ?? '') . ': ' . $state['error_message']);
+        echo '<br><small>' . esc_html__('Opnieuw verzenden: gebruik de normale WooCommerce-actie voor factuur/bestelgegevens naar de klant.', 'hb-ucs') . '</small></p>';
+    }
+
+    protected function deliver_invoice(\WC_Order $order, string $to, string $attempt): bool {
+        $dir = '';
+        try {
+        if (!function_exists('wcpdf_get_document')) {
+            throw new \RuntimeException('PDF-factuurplugin is niet beschikbaar.');
+        }
 
         // 1) Haal factuurdocument op en genereer PDF
         $document = wcpdf_get_document('invoice', $order, true);
-        if (!$document) return;
+        if (!$document) throw new \RuntimeException('Factuurdocument kon niet worden aangemaakt.');
         $pdf_data = $document->get_pdf();
-        if (empty($pdf_data)) return;
+        if (empty($pdf_data)) throw new \RuntimeException('De PDF-factuur is leeg.');
 
         // 2) Bepaal bestandsbasis & directory
         [$dir, $base_name] = $this->build_file_base($document, $order);
 
+        $this->update_attempt($order->get_id(), $attempt, ['directory' => $dir]);
         // Sla PDF op
         $pdf_file = trailingslashit($dir) . $base_name . '.pdf';
-        file_put_contents($pdf_file, $pdf_data);
+        if (file_put_contents($pdf_file, $pdf_data) !== strlen($pdf_data)) {
+            throw new \RuntimeException('PDF-factuur kon niet volledig worden opgeslagen.');
+        }
+        @chmod($pdf_file, 0600);
+        $this->update_attempt($order->get_id(), $attempt, ['directory' => $dir]);
         $attachments = [$pdf_file];
 
         // 3) UBL toevoegen
-    // 3) UBL toevoegen
     $ubl_path = '';
 
     //
@@ -540,15 +753,40 @@ class InvoiceEmailModule {
 
         $message = method_exists($mailer, 'wrap_message') ? $mailer->wrap_message($heading, $body) : ('<h2>'.esc_html($heading).'</h2>'.$body);
         $subject = sprintf(__('Uw factuur voor bestelling %s', 'hb-ucs'), $order->get_order_number());
-        $headers = ['Content-Type: text/html; charset=UTF-8'];
+        $headers = [
+            'Content-Type: text/html; charset=UTF-8',
+            'X-HB-Invoice-Attempt: ' . $order->get_id() . ':' . $attempt,
+        ];
 
+        // Only this invoice bypasses WP Mail SMTP's secondary queue. The files
+        // stay present until the actual transport finishes, not merely enqueueing.
+        $immediate = function ($enqueue, $args) use ($order, $attempt) {
+            $identity = $this->mail_identity($args['headers'] ?? []);
+            return $identity === [$order->get_id(), $attempt] ? false : $enqueue;
+        };
+        add_filter('wp_mail_smtp_mail_catcher_send_enqueue_email', $immediate, PHP_INT_MAX, 2);
         try {
-            wp_mail($to, $subject, $message, $headers, $attachments);
+            $result = wp_mail($to, $subject, $message, $headers, $attachments);
         } finally {
-            foreach (glob(trailingslashit($dir) . '*') ?: [] as $temporaryFile) {
-                if (is_file($temporaryFile)) wp_delete_file($temporaryFile);
+            remove_filter('wp_mail_smtp_mail_catcher_send_enqueue_email', $immediate, PHP_INT_MAX);
+        }
+        $state = $this->get_attempt($order->get_id(), $attempt);
+        if (($state['status'] ?? '') === 'sending') {
+            // A true return can also mean a third-party queue accepted the job.
+            // Only a transport callback is allowed to mark the attempt accepted.
+            $this->finish_attempt($order->get_id(), $attempt, $result ? 'pending' : 'failed',
+                $result ? 'awaiting_transport' : 'wp_mail_false',
+                $result ? 'Wacht op bevestiging van de mailverwerking.' : 'wp_mail() gaf false terug zonder verdere foutinformatie.');
+        }
+        return ($this->get_attempt($order->get_id(), $attempt)['status'] ?? '') === 'accepted';
+        } catch (\Throwable $e) {
+            $this->finish_attempt($order->get_id(), $attempt, 'failed', 'invoice_exception', $e->getMessage());
+            return false;
+        } finally {
+            $state = $this->get_attempt($order->get_id(), $attempt);
+            if (in_array($state['status'] ?? '', ['accepted', 'failed', 'uncertain'], true)) {
+                $this->cleanup_attempt($order->get_id(), $attempt);
             }
-            @rmdir($dir);
         }
     }
 }
