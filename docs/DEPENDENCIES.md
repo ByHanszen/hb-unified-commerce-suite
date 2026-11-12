@@ -127,6 +127,12 @@ Werk dit document bij bij wijzigingen in:
 ## Module-details
 
 ### Invoice Email
+- Verzendstatus gebruikt WooCommerce order-CRUD (CPT en HPOS), bestelnotities en WooCommerce Logger (`hb-ucs-invoice-email`). Status `accepted` betekent acceptatie door de mailserver; aflevering wordt niet beweerd.
+- De handmatige WooCommerce-mail `customer_invoice` wordt via `woocommerce_mail_callback` vervangen door de HB-factuurmail voor accounts met een toegestaan geldig alternatief factuuradres. Overige mailtypes en accounts zonder alternatief adres blijven ongewijzigd.
+- Gebruikt `Core\\DatabaseLock` (MySQL/MariaDB GET_LOCK) tegen gelijktijdige dubbele verzending en WP-Cron voor herstel/opruimen van onderbroken of onbevestigde pogingen na zeven dagen. Een werkende WordPress-scheduler is hiervoor vereist.
+- WP Mail SMTP is optioneel. Bij aanwezigheid wordt uitsluitend voor de gemarkeerde HB-factuurmail de tweede wachtrij omzeild via `wp_mail_smtp_mail_catcher_send_enqueue_email`; acceptatie/fouten worden ook via de providerhooks geregistreerd. Andere mailers gebruiken `wp_mail_succeeded` en `wp_mail_failed`.
+- Tijdelijke bijlagen vereisen een beschrijfbare map buiten de webroot. Bij ontbreken van PDF, schrijffouten of transportfouten wordt een fout geregistreerd; er volgt geen standaardfactuurmail naar het gewone adres.
+- Geen automatische herhaling na time-outs: controleer eerst het mailproviderlog om dubbele factuurmails te voorkomen, gebruik daarna zo nodig de reguliere WooCommerce-factuuractie. Lopende/onbevestigde pogingen blokkeren een tweede verzending. Zie `tests/invoice-email/README.md`.
 - Bestand: `src/Modules/Customers/InvoiceEmailModule.php`
 - Vereist WooCommerce.
 - Optionele WPO WCPDF integratie via filters.

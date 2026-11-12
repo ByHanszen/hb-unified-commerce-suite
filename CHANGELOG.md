@@ -2,6 +2,15 @@
 
 Alle noemenswaardige wijzigingen aan deze plugin worden in dit bestand bijgehouden.
 
+## [0.5.11] - 2026-11-12
+
+### Fixed
+- Factuurmail: verzendstatus per poging via WooCommerce CRUD, zichtbaar bij de bestelling en in bestelnotities en het logboek `hb-ucs-invoice-email`. Acceptatie door de mailserver wordt onderscheiden van aflevering, wachtrij, mislukking en een onzekere time-out.
+- De reguliere WooCommerce-actie voor een klantfactuur/bestelgegevens verstuurt bij een geldig alternatief factuuradres dezelfde HB-factuurmail met PDF en eventuele gevalideerde UBL. Andere bestelberichten en klanten zonder alternatief adres behouden hun bestaande gedrag.
+- Alleen HB-factuurmails omzeilen de secundaire WP Mail SMTP-wachtrij, zodat tijdelijke bijlagen tijdens de daadwerkelijke verzending beschikbaar blijven. Onbevestigde wachtrijen behouden bestanden maximaal zeven dagen; definitieve uitkomsten ruimen ze direct op.
+- Verzendpogingen worden geserialiseerd met een databaselock. Herhaalde afrondingshooks sturen niet dubbel; expliciete herverzending via WooCommerce blijft mogelijk na een definitieve of onzekere uitkomst. Een nog lopende poging blokkeert dubbele verzending.
+- Regressietests voor verzending, handmatig herverzenden, fouten, time-outs, wachtrijen, correlatie van callbacks en opruimen van bijlagen op PHP 8.2 en 8.4.
+
 ## [0.5.10] - 2026-11-02
 
 ### Fixed
