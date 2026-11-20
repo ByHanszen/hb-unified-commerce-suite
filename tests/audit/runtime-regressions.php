@@ -266,7 +266,19 @@ try {
     audit_check(!$qls->should_send_order(true, $fixtureOrders[0]), 'A06 CRUD exclusion honored');
     audit_check($qls->should_send_order(true, $fixtureOrders[10]), 'A06 included order honored');
     $_POST = ['hb_qls_order_meta_nonce' => wp_create_nonce('hb_qls_order_meta'), 'hb_qls_exclude_order' => '1'];
-    $qls->save_order_meta($fixtureOrders[10], wc_get_order($fixtureOrders[10]));
+    $fullOrderSaves = 0;
+    $trackOrderSave = static function ($order) use (&$fullOrderSaves, $fixtureOrders) {
+        if ($order->get_id() === $fixtureOrders[10]) {
+            ++$fullOrderSaves;
+        }
+    };
+    add_action('woocommerce_before_order_object_save', $trackOrderSave);
+    try {
+        $qls->save_order_meta($fixtureOrders[10], wc_get_order($fixtureOrders[10]));
+    } finally {
+        remove_action('woocommerce_before_order_object_save', $trackOrderSave);
+    }
+    audit_equal($fullOrderSaves, 0, 'A06 metabox writes metadata without triggering a nested order save');
     audit_equal(wc_get_order($fixtureOrders[10])->get_meta(QLSModule::META_ORDER, true), '1', 'A06 metabox saves to active store');
     $_POST = ['hb_qls_order_meta_nonce' => wp_create_nonce('hb_qls_order_meta')];
     $qls->save_order_meta($fixtureOrders[10], wc_get_order($fixtureOrders[10]));
