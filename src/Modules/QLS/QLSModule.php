@@ -578,7 +578,8 @@ class QLSModule {
             $legacy = get_post_meta($post_id, self::META_ORDER_LEGACY, true);
             if ($legacy !== '') $order->update_meta_data(self::META_ORDER_LEGACY, $legacy);
         }
-        $order->save();
+        // Saving the full order here can re-enter save_post_shop_order on the posts datastore.
+        $order->save_meta_data();
     }
 
     private function get_order_exclusion_meta(\WC_Order $order, string $key): string {
