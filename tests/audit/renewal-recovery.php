@@ -117,8 +117,13 @@ try {
     $assert((int) get_post_meta($subId, '_hb_ucs_sub_next_payment', true) === $nextPayment, 'Duplicate webhooks do not advance the date again');
 
     echo "PASS A04: full renewal failure/recovery, same order/payment, period advancement\n";
+} catch (Throwable $error) {
+    fwrite(STDERR, (string) $error . PHP_EOL);
+    $exitCode = 1;
 } finally {
     $wpdb->query('ROLLBACK');
     remove_filter('pre_http_request', $mock, PHP_INT_MAX);
     remove_filter('pre_wp_mail', $noMail);
 }
+
+exit($exitCode ?? 0);
