@@ -55,6 +55,12 @@ try {
     $subId = $subscription->get_id();
     $repository->sync_order_type_self($subId, false);
     $module = new SubscriptionsModule();
+    $dueBatch = new ReflectionMethod($module, 'get_due_renewal_subscription_batch');
+    $recoverableBatch = new ReflectionMethod($module, 'get_recoverable_due_subscription_batch');
+    $mandateBatch = new ReflectionMethod($module, 'get_pending_mandate_subscription_batch');
+    $assert(in_array($subId, $dueBatch->invoke($module, time(), 100), true), 'Due active subscription is selected');
+    $assert(!in_array($subId, $recoverableBatch->invoke($module, time(), 100), true), 'Active subscription is excluded from recovery');
+    $assert(!in_array($subId, $mandateBatch->invoke($module, 100), true), 'Active subscription is excluded from mandate activation');
     $renew = new ReflectionMethod($module, 'create_renewal_order_and_payment');
     $renew->setAccessible(true);
     $result = $renew->invoke($module, $subId, true);
@@ -66,6 +72,7 @@ try {
     $assert(strpos(wp_json_encode($storedRequest), 'audit-webhook-token') === false, 'Webhook secret must not be stored in readable order metadata');
     $assert((int) get_post_meta($subId, '_hb_ucs_sub_next_payment', true) === $due, 'Failed attempt must not advance next payment');
     $assert((string) get_post_meta($subId, '_hb_ucs_sub_status', true) === 'payment_pending', 'Creation failure remains recoverable: ' . get_post_meta($subId, '_hb_ucs_sub_status', true));
+    $assert(in_array($subId, $recoverableBatch->invoke($module, time(), 100), true), 'Due payment creation failure is selected for recovery');
     $result = $renew->invoke($module, $subId, true);
     $assert($result === $firstOrderId, 'Retry uses the same renewal order: ' . (is_wp_error($result) ? $result->get_error_message() : var_export($result, true)));
     $assert(count($requests) === 2, 'Exactly one retry');
@@ -77,6 +84,38 @@ try {
     $assert($result === $firstOrderId && count($requests) === 2, 'Further retries do not create orders or payments');
     $orders = wc_get_orders(['limit' => -1, 'meta_query' => [['key' => '_hb_ucs_subscription_id', 'value' => (string) $subId], ['key' => '_hb_ucs_subscription_renewal', 'value' => '1']]]);
     $assert(count($orders) === 1, 'One renewal order across failure and recovery');
+    $nextPayment = (int) get_post_meta($subId, '_hb_ucs_sub_next_payment', true);
+    $assert(!in_array($subId, $recoverableBatch->invoke($module, time(), 100), true), 'A pending payment with a future date is excluded from recovery');
+    $assert(!in_array($subId, $mandateBatch->invoke($module, 100), true), 'Pending payment is not a pending mandate');
+
+    $notesMatching = static function (int $orderId, string $text): int {
+        $notes = wc_get_order_notes(['order_id' => $orderId]);
+        return count(array_filter($notes, static function ($note) use ($text) {
+            return strpos($note->content, $text) !== false;
+        }));
+    };
+    for ($i = 0; $i < 3; $i++) {
+        $module->process_due_renewals();
+        $renew->invoke($module, $subId, true);
+    }
+    $assert(count($requests) === 2, 'Repeated cron/manual requests do not create another payment');
+    $assert($notesMatching($firstOrderId, 'Mollie recurring betaling gekoppeld') === 1, 'Payment linkage is logged exactly once');
+    $assert((string) get_post_meta($subId, '_hb_ucs_sub_status', true) === 'payment_pending', 'Cron keeps the subscription pending while Mollie is pending');
+    $assert((int) get_post_meta($subId, '_hb_ucs_sub_next_payment', true) === $nextPayment, 'Repeated requests keep the next payment date');
+
+    $applyStatus = new ReflectionMethod($module, 'apply_mollie_renewal_payment_status');
+    $applyStatus->invoke($module, $firstOrderId, 'tr_audit_other_payment', 'paid');
+    $assert(wc_get_order($firstOrderId)->has_status('on-hold'), 'A mismatched payment cannot complete the renewal');
+    $applyStatus->invoke($module, $firstOrderId, 'tr_audit_renewal', 'pending');
+    $assert(wc_get_order($firstOrderId)->has_status('on-hold'), 'Pending Mollie status leaves the order on hold');
+    $applyStatus->invoke($module, $firstOrderId, 'tr_audit_renewal', 'paid');
+    $applyStatus->invoke($module, $firstOrderId, 'tr_audit_renewal', 'paid');
+    $applyStatus->invoke($module, $firstOrderId, 'tr_audit_renewal', 'failed');
+    $assert(wc_get_order($firstOrderId)->is_paid(), 'Mollie success completes the order and a stale failure does not undo it');
+    $assert($notesMatching($firstOrderId, 'Mollie recurring betaling tr_audit_renewal is betaald') === 1, 'Duplicate webhooks log payment completion exactly once');
+    $assert((string) get_post_meta($subId, '_hb_ucs_sub_status', true) === 'active', 'Paid renewal reactivates the subscription');
+    $assert((int) get_post_meta($subId, '_hb_ucs_sub_next_payment', true) === $nextPayment, 'Duplicate webhooks do not advance the date again');
+
     echo "PASS A04: full renewal failure/recovery, same order/payment, period advancement\n";
 } finally {
     $wpdb->query('ROLLBACK');

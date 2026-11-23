@@ -60,6 +60,7 @@ class SubscriptionsModule {
     private const ORDER_META_RENEWAL_PROCESSED = '_hb_ucs_subscription_renewal_processed';
     private const ORDER_META_RENEWAL_NEXT_PAYMENT = '_hb_ucs_subscription_renewal_next_payment';
     private const ORDER_META_MOLLIE_PAYMENT_ID = '_hb_ucs_mollie_payment_id';
+    private const ORDER_META_MOLLIE_FINAL_STATE = '_hb_ucs_mollie_final_state';
     private const ORDER_ITEM_META_SELECTED_ATTRIBUTES = '_hb_ucs_subscription_selected_attributes';
     private const ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT = '_hb_ucs_subscription_attribute_snapshot';
     private const ORDER_ITEM_META_SOURCE_ORDER_ITEM_ID = '_hb_ucs_subscription_source_order_item_id';
@@ -9517,53 +9518,87 @@ class SubscriptionsModule {
             exit;
         }
 
-        $order = wc_get_order($orderId);
-        if (!$order || !is_object($order)) {
-            status_header(200);
-            echo 'OK';
+        $result = $this->apply_mollie_renewal_payment_status($orderId, $paymentId, (string) ($payment['status'] ?? ''));
+        if (is_wp_error($result)) {
+            status_header(503);
+            echo 'Retry';
             exit;
-        }
-
-        $storedPaymentId = (string) $order->get_meta(self::ORDER_META_MOLLIE_PAYMENT_ID, true);
-        if ($storedPaymentId !== '' && $storedPaymentId !== $paymentId) {
-            status_header(200);
-            echo 'OK';
-            exit;
-        }
-
-        $status = isset($payment['status']) ? (string) $payment['status'] : '';
-        $subId = (int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true);
-
-        if ($status === 'paid') {
-            if (method_exists($order, 'payment_complete')) {
-                $order->payment_complete();
-            }
-            if (method_exists($order, 'add_order_note')) {
-                $order->add_order_note(sprintf(__('HB UCS: Mollie recurring betaling %s is betaald.', 'hb-ucs'), $paymentId));
-            }
-            if ($subId > 0) {
-                $paid = method_exists($order, 'get_date_paid') ? $order->get_date_paid() : null;
-                $paidTs = $paid ? (int) $paid->getTimestamp() : time();
-                $this->persist_subscription_last_order_state($subId, $orderId, $paidTs);
-                $this->persist_subscription_runtime_state($subId, 'active', $this->get_recorded_renewal_next_payment($order, $subId));
-                $this->sync_subscription_order_type_record($subId);
-            }
-        } elseif ($status === 'failed' || $status === 'canceled' || $status === 'expired') {
-            if (method_exists($order, 'update_status')) {
-                $order->update_status('failed', sprintf(__('HB UCS: Mollie recurring betaling %s is mislukt (%s).', 'hb-ucs'), $paymentId, $status));
-            }
-            if ($subId > 0) {
-                $created = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
-                $createdTs = $created ? (int) $created->getTimestamp() : time();
-                $this->persist_subscription_last_order_state($subId, $orderId, $createdTs);
-                $this->persist_subscription_runtime_state($subId, 'on-hold');
-                $this->sync_subscription_order_type_record($subId);
-            }
         }
 
         status_header(200);
         echo 'OK';
         exit;
+    }
+
+    private function apply_mollie_renewal_payment_status(int $orderId, string $paymentId, string $status) {
+        $failed = in_array($status, ['failed', 'canceled', 'expired'], true);
+        if ($status !== 'paid' && !$failed) {
+            return null;
+        }
+
+        $order = wc_get_order($orderId);
+        if (!$order instanceof \WC_Order || (string) $order->get_meta(self::ORDER_META_RENEWAL, true) !== '1') {
+            return null;
+        }
+
+        $subId = (int) $order->get_meta(self::ORDER_META_SUBSCRIPTION_ID, true);
+        if ($subId <= 0) {
+            return null;
+        }
+
+        $canonicalId = $this->get_canonical_subscription_id($subId, false);
+        $lockId = $canonicalId > 0 ? $canonicalId : $subId;
+
+        return \HB\UCS\Core\DatabaseLock::run('renewal:' . $lockId, function () use ($orderId, $paymentId, $status, $failed, $subId, $lockId) {
+            $order = wc_get_order($orderId);
+            if (!$order instanceof \WC_Order) {
+                return null;
+            }
+
+            $storedPaymentId = (string) $order->get_meta(self::ORDER_META_MOLLIE_PAYMENT_ID, true);
+            $finalState = $paymentId . ':' . ($failed ? 'failed' : 'paid');
+            if (($storedPaymentId !== '' && $storedPaymentId !== $paymentId)
+                || (string) $order->get_meta(self::ORDER_META_MOLLIE_FINAL_STATE, true) === $finalState
+                || $order->has_status('refunded')
+                || ($failed && ($order->is_paid() || $order->get_date_paid()))) {
+                return null;
+            }
+
+            if ($storedPaymentId === '') {
+                $order->update_meta_data(self::ORDER_META_MOLLIE_PAYMENT_ID, $paymentId);
+                $order->save();
+            }
+
+            if ($failed) {
+                if (!$order->has_status('failed')) {
+                    $note = sprintf(__('HB UCS: Mollie recurring betaling %1$s is mislukt (%2$s).', 'hb-ucs'), $paymentId, $status);
+                    if (!$order->update_status('failed', $note)) {
+                        return new \WP_Error('hb_ucs_payment_status_failed', __('De betaalstatus kon nog niet worden verwerkt.', 'hb-ucs'));
+                    }
+                }
+            } elseif (!$order->is_paid() && !$order->get_date_paid()) {
+                if (!$order->payment_complete($paymentId)) {
+                    return new \WP_Error('hb_ucs_payment_completion_failed', __('De betaling kon nog niet worden verwerkt.', 'hb-ucs'));
+                }
+                $order->add_order_note(sprintf(__('HB UCS: Mollie recurring betaling %s is betaald.', 'hb-ucs'), $paymentId));
+            }
+
+            $lastOrderId = (int) get_post_meta($lockId, self::SUB_META_LAST_ORDER_ID, true);
+            if ($lastOrderId === 0 || $lastOrderId === $orderId) {
+                $date = $failed ? $order->get_date_created() : $order->get_date_paid();
+                $this->persist_subscription_last_order_state($subId, $orderId, $date ? (int) $date->getTimestamp() : time());
+                $this->persist_subscription_runtime_state(
+                    $subId,
+                    $failed ? 'on-hold' : 'active',
+                    $failed ? null : $this->get_recorded_renewal_next_payment($order, $subId)
+                );
+                $this->sync_subscription_order_type_record($subId);
+            }
+
+            $order->update_meta_data(self::ORDER_META_MOLLIE_FINAL_STATE, $finalState);
+            $order->save_meta_data();
+            return null;
+        });
     }
 
     private function calculate_next_payment_timestamp(int $subId): int {
@@ -11296,6 +11331,9 @@ JS;
                 }
 
                 $processedPendingIds[$subId] = true;
+                if ((string) get_post_meta($subId, self::SUB_META_STATUS, true) !== 'pending_mandate') {
+                    continue;
+                }
 
                 $parentOrderId = (int) get_post_meta($subId, self::SUB_META_PARENT_ORDER_ID, true);
                 $parentOrder = $parentOrderId > 0 ? wc_get_order($parentOrderId) : null;
@@ -11385,7 +11423,8 @@ JS;
 
                 $processedDueIds[$subId] = true;
 
-                if (!$this->subscription_is_eligible_for_auto_renewal($subId)) {
+                $dueAt = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
+                if ($dueAt <= 0 || $dueAt > $now || !$this->subscription_is_eligible_for_auto_renewal($subId)) {
                     continue;
                 }
 
@@ -11499,6 +11538,11 @@ JS;
 
     private function maybe_recover_due_subscription_state(int $subId): void {
         if ($subId <= 0) {
+            return;
+        }
+
+        $dueAt = (int) get_post_meta($subId, self::SUB_META_NEXT_PAYMENT, true);
+        if ($dueAt <= 0 || $dueAt > time()) {
             return;
         }
 
@@ -11930,6 +11974,10 @@ JS;
         $mode = (string) $order->get_meta(self::ORDER_META_RENEWAL_MODE, true);
         if ($mode === 'manual' || ($mode === '' && !$this->payment_method_requires_mandate((string) $order->get_payment_method()))) return (int) $order->get_id();
         $paymentId = (string) $order->get_meta(self::ORDER_META_MOLLIE_PAYMENT_ID, true);
+        if ($paymentId !== '' && $paymentId === (string) get_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, true)) {
+            return (int) $order->get_id();
+        }
+
         $result = $paymentId;
         if ($paymentId === '') {
             $token = $this->get_webhook_token();
@@ -11963,9 +12011,11 @@ JS;
         $nextPayment = $this->get_recorded_renewal_next_payment($fresh, $subId);
         $status = $fresh->is_paid() ? 'active' : ($fresh->has_status(['failed', 'cancelled', 'refunded']) ? 'on-hold' : 'payment_pending');
         $this->persist_subscription_runtime_state($subId, $status, $nextPayment);
-        update_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, (string) $result);
-        $fresh->add_order_note(sprintf(__('HB UCS: Mollie recurring betaling gekoppeld (%s).', 'hb-ucs'), $result));
         $this->sync_subscription_order_type_record($subId);
+        update_post_meta($subId, self::SUB_META_LAST_PAYMENT_ID, (string) $result);
+        if ($paymentId === '') {
+            $fresh->add_order_note(sprintf(__('HB UCS: Mollie recurring betaling gekoppeld (%s).', 'hb-ucs'), $result));
+        }
         return (int) $order->get_id();
     }
 
