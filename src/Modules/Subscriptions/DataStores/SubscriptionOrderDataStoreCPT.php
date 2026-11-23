@@ -11,6 +11,19 @@ class SubscriptionOrderDataStoreCPT extends \WC_Order_Data_Store_CPT {
     private const ORDER_ITEM_META_ATTRIBUTE_SNAPSHOT = '_hb_ucs_subscription_attribute_snapshot';
     private const ORDER_ITEM_META_CATALOG_UNIT_PRICE = '_hb_ucs_subscription_catalog_unit_price';
 
+    protected function get_wp_query_args($query_vars) {
+        $args = parent::get_wp_query_args($query_vars);
+        $metaQuery = $query_vars['meta_query'] ?? [];
+        if (!empty($metaQuery) && is_array($metaQuery)) {
+            // WooCommerce's CPT adapter omits caller-supplied meta_query.
+            $args['meta_query'] = empty($args['meta_query'])
+                ? $metaQuery
+                : ['relation' => 'AND', $args['meta_query'], $metaQuery];
+        }
+
+        return $args;
+    }
+
     public function read(&$order) {
         parent::read($order);
     }
