@@ -7,8 +7,15 @@ set -Eeuo pipefail
 : "${DB_PASSWORD:=root}"
 : "${DB_HOST:=127.0.0.1:3306}"
 
+db_host="${DB_HOST%:*}"
+client_options=(--protocol=tcp --host="$db_host" --port="${DB_HOST##*:}" --user="$DB_USER")
+if [[ "$db_host" == "127.0.0.1" ]]; then
+    # Match WordPress's connection to the disposable database exposed on the runner.
+    client_options+=(--skip-ssl)
+fi
+
 for attempt in {1..30}; do
-    if mysqladmin ping --host="${DB_HOST%:*}" --port="${DB_HOST##*:}" --user="$DB_USER" --password="$DB_PASSWORD" --silent; then
+    if MYSQL_PWD="$DB_PASSWORD" mariadb "${client_options[@]}" --batch --skip-column-names --execute='SELECT 1' >/dev/null; then
         break
     fi
     if [[ "$attempt" -eq 30 ]]; then
