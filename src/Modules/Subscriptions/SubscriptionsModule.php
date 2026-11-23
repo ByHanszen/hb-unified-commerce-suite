@@ -11461,7 +11461,7 @@ JS;
             $queryArgs['exclude'] = $excludeIds;
         }
 
-        return array_values(array_filter(array_map('intval', (array) wc_get_orders($queryArgs))));
+        return $this->query_subscription_batch_ids($queryArgs);
     }
 
     private function get_due_renewal_subscription_batch(int $now, int $limit, array $excludeIds = []): array {
@@ -11497,7 +11497,7 @@ JS;
             $queryArgs['exclude'] = $excludeIds;
         }
 
-        return array_values(array_filter(array_map('intval', (array) wc_get_orders($queryArgs))));
+        return $this->query_subscription_batch_ids($queryArgs);
     }
 
     private function get_recoverable_due_subscription_batch(int $now, int $limit, array $excludeIds = []): array {
@@ -11533,7 +11533,13 @@ JS;
             $queryArgs['exclude'] = $excludeIds;
         }
 
-        return array_values(array_filter(array_map('intval', (array) wc_get_orders($queryArgs))));
+        return $this->query_subscription_batch_ids($queryArgs);
+    }
+
+    private function query_subscription_batch_ids(array $queryArgs): array {
+        // HB subscription records use CPT storage even when shop orders use HPOS.
+        $dataStore = \WC_Data_Store::load(\HB\UCS\Modules\Subscriptions\OrderTypes\SubscriptionOrderType::DATA_STORE);
+        return array_values(array_filter(array_map('intval', (array) $dataStore->query($queryArgs))));
     }
 
     private function maybe_recover_due_subscription_state(int $subId): void {
